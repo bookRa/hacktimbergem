@@ -62,3 +62,106 @@ Accurate mapping between frontend canvas boxes and PDF space is critical.
 
 ---
 For more details, see `PRD.md`. When in doubt, prioritize manual-first, traceable, and flexible workflows.
+
+## Backend Ingestion & Processing Workflow
+This section codifies the minimal ingestion pipeline and conventions so future changes stay aligned.
+
+### Tech Stack (Initial Phase)
+- FastAPI for HTTP API + lightweight background tasks (upgrade path: Celery/RQ if needed)
+- PyMuPDF (fitz) for: page count, page rendering (300 DPI PNG), structured text (`page.get_text('dict')`)
+- Storage: filesystem under `projects/{project_id}` acts as source of truth for generated artifacts in early iterations
+- Pydantic models for response schemas (status, errors) once stabilized
+
+### Directory Layout (Per Project)
+```
+projects/{project_id}/
+  original.pdf
+  manifest.json              # authoritative status + progress
+  pages/                     # rendered page rasters
+    page_1.png
+    page_2.png
+  ocr/                       # structured OCR output per page (JSON)
+    page_1.json
+    page_2.json
+  logs/
+    ingest.log (optional later)
+```
+
+### Manifest Schema (Incremental)
+```
+{
+  "project_id": "...",
+  "status": "queued" | "render" | "ocr" | "complete" | "error",
+  "num_pages": 12,
+  "stages": {
+    "render": {"done": 3, "total": 12},
+    "ocr": {"done": 0, "total": 12}
+  },
+  "started_at": 1736423423.234,
+  "completed_at": null,
+  "error": null
+}
+```
+
+### Status Flow
+1. `queued` → file stored, manifest initialized
+2. `render` → pages rasterized to 300 DPI PNG (sequential)
+3. `ocr` → structured text extraction (PyMuPDF dict) per page
+4. `complete` OR `error` with `error` message
+
+### Coordinate Mapping Consistency
+- All OCR block / line / span bounding boxes are already in PDF point space from PyMuPDF; treat them as canonical.
+- Frontend renders raster width/height → compute `scale_x = raster_w / page_width_pts` (same principle as annotation mapping rules above).
+- Never convert OCR data to pixel coordinates for storage; derive on demand in client.
+
+### Rendering Rules
+- DPI baseline: 300 (Matrix: `fitz.Matrix(300/72, 300/72)`).
+- PNG export no alpha unless transparency becomes semantically useful.
+- Filenames stable, 1-based page numbering (`page_{n}.png`).
+
+### OCR Simplification
+- Source: `page.get_text('dict')`.
+- Include only text blocks (`block['type'] == 0`).
+- Flatten spans under each line; provide aggregated block `text` (joined line texts with `\n`).
+- Defer advanced layout (tables, columns) to a later phase; design JSON to be forward-compatible.
+
+### API Endpoints (Initial)
+- `POST /api/projects` (multipart pdf) → `{ project_id, status }`
+- `GET /api/projects/{project_id}/status` → manifest JSON
+- `GET /api/projects/{project_id}/pages/{n}.png` → page image
+- `GET /api/projects/{project_id}/ocr/{n}` → OCR JSON
+
+### Frontend Interaction
+- After successful upload, poll status every 1–2s until `complete` or `error`.
+- Use manifest progress counters to display per-stage progress bars (render vs ocr) once UI adds them.
+
+### Error Handling Conventions
+- Any exception sets `status = error` and writes `error` string in manifest.
+- 404 for missing project/page/ocr files.
+- Avoid partial writes: write manifest via atomic replace (temp file rename).
+
+### Scaling / Future Upgrades
+- Swap filesystem for object storage (S3) → same relative paths inside bucket.
+- Introduce job queue: keep manifest contract identical so frontend unchanged.
+- Add WebSocket push layer later; polling remains fallback.
+
+### Testing Guidelines (Early Phase)
+- Unit: manifest utilities (read/write/update) pure functions.
+- Smoke: ingest a small 2-page PDF in temp dir, assert produced files & status flow.
+
+### Performance Notes
+- Sequential page processing reduces peak memory; each pixmap freed after save.
+- PyMuPDF text extraction is usually fast enough; parallelization deferred.
+
+### Security / Validation
+- Enforce max PDF size (configurable) before ingest.
+- Reject non-PDF MIME types early.
+- Project IDs are random hex; no user enumeration risk in simple prototype.
+
+### Invariants
+- Manifest is single source of truth for progress & status.
+- All bounding boxes in persisted artifacts are in unrotated PDF coordinate space.
+- Frontend never trusts client-computed dimensions for OCR; always derive scale from actual raster dimensions.
+
+---
+Backend contributors must follow these guidelines to maintain traceability, coordinate correctness, and incremental evolvability.
