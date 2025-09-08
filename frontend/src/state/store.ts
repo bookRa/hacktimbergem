@@ -41,6 +41,10 @@ interface AppState {
     setZoomMode: (m: ZoomState['mode']) => void;
     setManualScale: (s: number) => void;
     effectiveScale: (pageIndex: number) => number;
+    // OCR block meta state (per page -> per block index)
+    ocrBlockState: Record<number, Record<number, { status: 'unverified' | 'accepted' | 'flagged' | 'noise'; }>>;
+    initBlocksForPage: (pageIndex: number, count: number) => void;
+    setBlockStatus: (pageIndex: number, blockIndex: number, status: 'unverified' | 'accepted' | 'flagged' | 'noise') => void;
     // Toast notifications
     toasts: { id: string; kind: 'info' | 'error' | 'success'; message: string; createdAt: number; timeoutMs?: number; }[];
     addToast: (t: { kind?: 'info' | 'error' | 'success'; message: string; timeoutMs?: number; }) => void;
@@ -62,6 +66,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     manifest: null,
     manifestStatus: 'idle',
     toasts: [],
+    ocrBlockState: {},
     uploadAndStart: async (file: File) => {
         // parallel: upload to backend and local load for immediate viewing
         const form = new FormData();
@@ -119,13 +124,15 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         set(state => ({ pageImages: { ...state.pageImages, [pageIndex]: url } }));
     },
     fetchPageOcr: async (pageIndex: number) => {
-        const { projectId, pageOcr } = get();
+    const { projectId, pageOcr, initBlocksForPage } = get();
         if (!projectId) return;
         if (pageOcr[pageIndex]) return; // cached
         const resp = await fetch(`/api/projects/${projectId}/ocr/${pageIndex + 1}`);
         if (!resp.ok) return;
         const data = await resp.json();
-        set(state => ({ pageOcr: { ...state.pageOcr, [pageIndex]: data } }));
+    set(state => ({ pageOcr: { ...state.pageOcr, [pageIndex]: data } }));
+    const blocks = data?.blocks || [];
+    initBlocksForPage(pageIndex, blocks.length);
     },
     toggleOcr: () => set(state => ({ showOcr: !state.showOcr })),
     loadPdf: async (file: File) => {
@@ -172,6 +179,23 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         if (!meta) return 1;
         return zoom.mode === 'fit' ? meta.fitPageScale : zoom.manualScale;
     },
+    initBlocksForPage: (pageIndex: number, count: number) => set(state => {
+        if (state.ocrBlockState[pageIndex]) return {};
+        const meta: Record<number, { status: 'unverified' }> = {};
+        for (let i = 0; i < count; i++) meta[i] = { status: 'unverified' };
+        return { ocrBlockState: { ...state.ocrBlockState, [pageIndex]: meta } };
+    }),
+    setBlockStatus: (pageIndex, blockIndex, status) => set(state => {
+        const pageMeta = state.ocrBlockState[pageIndex];
+        if (!pageMeta || !pageMeta[blockIndex]) return {};
+        if (pageMeta[blockIndex].status === status) return {};
+        return {
+            ocrBlockState: {
+                ...state.ocrBlockState,
+                [pageIndex]: { ...pageMeta, [blockIndex]: { status } }
+            }
+        };
+    }),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {
         const id = Math.random().toString(36).slice(2);
         const toast = { id, kind, message, createdAt: Date.now(), timeoutMs };
