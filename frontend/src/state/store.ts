@@ -21,6 +21,12 @@ interface AppState {
     currentPageIndex: number;     // zero-based
     pagesMeta: Record<number, PageRenderMeta>; // keyed by zero-based index
     zoom: ZoomState;
+    // Backend ingestion state
+    projectId: string | null;
+    manifest: any | null;
+    manifestStatus: 'idle' | 'polling' | 'complete' | 'error';
+    uploadAndStart: (file: File) => Promise<void>; // uploads to backend & loads local PDF
+    pollManifest: () => Promise<void>;
     loadPdf: (file: File) => Promise<void>;
     setCurrentPageIndex: (i: number) => void;
     setPageMeta: (meta: PageRenderMeta) => void;
@@ -38,6 +44,51 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     currentPageIndex: 0,
     pagesMeta: {},
     zoom: { mode: 'fit', manualScale: 1, lastManualScale: 1 },
+    projectId: null,
+    manifest: null,
+    manifestStatus: 'idle',
+    uploadAndStart: async (file: File) => {
+        // parallel: upload to backend and local load for immediate viewing
+        const form = new FormData();
+        form.append('file', file);
+        try {
+            const uploadPromise = fetch('/api/projects', { method: 'POST', body: form })
+                .then(r => { if (!r.ok) throw new Error('Upload failed'); return r.json(); });
+            await get().loadPdf(file); // local preview
+            const resp = await uploadPromise;
+            set({ projectId: resp.project_id, manifestStatus: 'polling' });
+            get().pollManifest();
+        } catch (e) {
+            console.error(e);
+            set({ manifestStatus: 'error' });
+        }
+    },
+    pollManifest: async () => {
+        const { projectId } = get();
+        if (!projectId) return;
+        let done = false;
+        while (!done) {
+            try {
+                const r = await fetch(`/api/projects/${projectId}/status`);
+                if (!r.ok) throw new Error('Status fetch failed');
+                const data = await r.json();
+                set({ manifest: data });
+                if (data.status === 'complete') {
+                    set({ manifestStatus: 'complete' });
+                    done = true;
+                } else if (data.status === 'error') {
+                    set({ manifestStatus: 'error' });
+                    done = true;
+                } else {
+                    await new Promise(r => setTimeout(r, 1500));
+                }
+            } catch (e) {
+                console.error(e);
+                set({ manifestStatus: 'error' });
+                done = true;
+            }
+        }
+    },
     loadPdf: async (file: File) => {
         const arrayBuf = await file.arrayBuffer();
         const loadingTask = getDocument({ data: arrayBuf });

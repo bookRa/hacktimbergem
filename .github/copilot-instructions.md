@@ -57,6 +57,10 @@ Accurate mapping between frontend canvas boxes and PDF space is critical.
 - **Precision:** Keep 3–4 decimal places in storage (float) to avoid cumulative drift; round only for display.
 - **Sanity Checks:** Reject boxes that extend outside `page.rect` (allow tiny epsilon of 0.5 pt). Clamp before writing.
 - **Transform Utility:** Implement a single helper (e.g., `convert_canvas_box_to_pdf(box, render_meta)`) used everywhere to avoid drift / duplicated math.
+- **Shared Helpers Implemented:**
+  - Backend: `backend/app/coords.py` exports `RenderMeta`, `canvas_to_pdf`, `pdf_to_canvas`, and a roundtrip helper. Extend these rather than creating new math paths.
+  - Frontend: `frontend/src/utils/coords.ts` mirrors backend logic; any divergence must include test coverage proving equivalence.
+  - Tests: `backend/tests/test_coords.py` and `frontend/src/utils/__tests__/coords.test.ts` must be updated for any change impacting transforms (include rotation, scaling, clamping edge cases).
 - **Back Conversion Example:** For highlight overlays: fetch stored PDF box → multiply by current scale(s) → apply `dpr` → draw on canvas.
 - **Invariant:** All persisted `bounding_box` values are always in unrotated MuPDF page coordinates.
 

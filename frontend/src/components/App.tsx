@@ -5,11 +5,13 @@ import { PdfCanvas } from './PdfCanvas';
 import { ZoomControls } from './ZoomControls';
 import { RightPanel } from './RightPanel';
 import { useProjectStore, ProjectStore } from '../state/store';
+import { StatusBanner } from './StatusBanner';
 
 export const App: React.FC = () => {
     const pdfDoc = useProjectStore((s: ProjectStore) => s.pdfDoc);
     return (
         <div className="app-shell">
+            <StatusBanner />
             {!pdfDoc && <UploadArea />}
             {pdfDoc && (
                 <div className="three-pane">

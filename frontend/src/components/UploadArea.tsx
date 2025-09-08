@@ -2,13 +2,13 @@ import React, { useCallback } from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const UploadArea: React.FC = () => {
-    const { loadPdf } = useProjectStore((s: ProjectStore) => ({ loadPdf: s.loadPdf }));
+    const { uploadAndStart } = useProjectStore((s: ProjectStore) => ({ uploadAndStart: s.uploadAndStart }));
 
     const onChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        await loadPdf(file);
-    }, [loadPdf]);
+        await uploadAndStart(file);
+    }, [uploadAndStart]);
 
     return (
         <div className="upload-container">
@@ -16,7 +16,7 @@ export const UploadArea: React.FC = () => {
                 <h1>Timbergem</h1>
                 <p>Select a multi-page PDF to begin building the knowledge graph.</p>
                 <input type="file" accept="application/pdf" onChange={onChange} />
-                <p className="hint">PDF never leaves the browser in this prototype. TODO: wire backend upload & processing pipeline.</p>
+                <p className="hint">File uploads to backend for rendering & OCR. Preview loads immediately while processing continues.</p>
             </div>
         </div>
     );
