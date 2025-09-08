@@ -14,6 +14,7 @@ const RASTER_SCALE = TARGET_DPI / PDF_POINT_DPI; // ~4.1667
 export const PdfCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const pageWrapperRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
 
     const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget } = useProjectStore((s: ProjectStore & any) => ({
@@ -264,7 +265,7 @@ export const PdfCanvas: React.FC = () => {
 
     return (
         <div ref={containerRef} className="pdf-canvas-wrapper" style={{ padding: '8px' }}>
-            <div style={{ margin: '0 auto', position: 'relative', width: displayWidth, height: displayHeight }}>
+            <div ref={pageWrapperRef} style={{ margin: '0 auto', position: 'relative', width: displayWidth, height: displayHeight }}>
                 {pageImages[currentPageIndex] ? (
                     <>
                         <img
@@ -275,7 +276,7 @@ export const PdfCanvas: React.FC = () => {
                         />
                         {showOcr && <>
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
-                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} />
+                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                         </>}
                     </>
                 ) : (
@@ -283,7 +284,7 @@ export const PdfCanvas: React.FC = () => {
                         <canvas ref={canvasRef} className="pdf-canvas" style={{ width: displayWidth, height: displayHeight, background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }} />
                         {showOcr && <>
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
-                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} />
+                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                         </>}
                     </>
                 )}
