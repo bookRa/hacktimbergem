@@ -41,6 +41,10 @@ interface AppState {
     setZoomMode: (m: ZoomState['mode']) => void;
     setManualScale: (s: number) => void;
     effectiveScale: (pageIndex: number) => number;
+    // Toast notifications
+    toasts: { id: string; kind: 'info' | 'error' | 'success'; message: string; createdAt: number; timeoutMs?: number; }[];
+    addToast: (t: { kind?: 'info' | 'error' | 'success'; message: string; timeoutMs?: number; }) => void;
+    dismissToast: (id: string) => void;
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
@@ -57,6 +61,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     projectId: null,
     manifest: null,
     manifestStatus: 'idle',
+    toasts: [],
     uploadAndStart: async (file: File) => {
         // parallel: upload to backend and local load for immediate viewing
         const form = new FormData();
@@ -71,6 +76,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         } catch (e) {
             console.error(e);
             set({ manifestStatus: 'error' });
+            get().addToast({ kind: 'error', message: 'Upload failed' });
         }
     },
     pollManifest: async () => {
@@ -85,9 +91,11 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 set({ manifest: data });
                 if (data.status === 'complete') {
                     set({ manifestStatus: 'complete' });
+                    get().addToast({ kind: 'success', message: 'Processing complete' });
                     done = true;
                 } else if (data.status === 'error') {
                     set({ manifestStatus: 'error' });
+                    get().addToast({ kind: 'error', message: 'Processing error' });
                     done = true;
                 } else {
                     await new Promise(r => setTimeout(r, 1500));
@@ -95,6 +103,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             } catch (e) {
                 console.error(e);
                 set({ manifestStatus: 'error' });
+                get().addToast({ kind: 'error', message: 'Processing error (network)' });
                 done = true;
             }
         }
@@ -162,5 +171,19 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         const meta = pagesMeta[pageIndex];
         if (!meta) return 1;
         return zoom.mode === 'fit' ? meta.fitPageScale : zoom.manualScale;
-    }
+    },
+    addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {
+        const id = Math.random().toString(36).slice(2);
+        const toast = { id, kind, message, createdAt: Date.now(), timeoutMs };
+        set(state => ({ toasts: [...state.toasts, toast] }));
+        if (timeoutMs && timeoutMs > 0) {
+            setTimeout(() => {
+                const { toasts } = get();
+                if (toasts.find(t => t.id === id)) {
+                    set({ toasts: toasts.filter(t => t.id !== id) });
+                }
+            }, timeoutMs);
+        }
+    },
+    dismissToast: (id: string) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) }))
 }));

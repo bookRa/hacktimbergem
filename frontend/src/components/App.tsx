@@ -6,12 +6,14 @@ import { ZoomControls } from './ZoomControls';
 import { RightPanel } from './RightPanel';
 import { useProjectStore, ProjectStore } from '../state/store';
 import { StatusBanner } from './StatusBanner';
+import { ToastContainer } from './ToastContainer';
 
 export const App: React.FC = () => {
     const pdfDoc = useProjectStore((s: ProjectStore) => s.pdfDoc);
     return (
         <div className="app-shell">
             <StatusBanner />
+            <ToastContainer />
             {!pdfDoc && <UploadArea />}
             {pdfDoc && (
                 <div className="three-pane">

@@ -7,9 +7,10 @@ function pct(done?: number, total?: number) {
 }
 
 export const StatusBanner: React.FC = () => {
-    const { manifest, manifestStatus } = useProjectStore((s: ProjectStore) => ({
+    const { manifest, manifestStatus, toasts } = useProjectStore((s: ProjectStore) => ({
         manifest: s.manifest,
-        manifestStatus: s.manifestStatus
+        manifestStatus: s.manifestStatus,
+        toasts: (s as any).toasts || []
     }));
     if (manifestStatus === 'idle') return null;
     const status = manifest?.status ?? manifestStatus;
@@ -17,19 +18,23 @@ export const StatusBanner: React.FC = () => {
     const ocrStage = manifest?.stages?.ocr;
     const isComplete = status === 'complete';
     const isError = status === 'error';
+    // Hide banner entirely once complete; completion is communicated via toast.
+    if (isComplete) return null;
+    // Offset above toast stack if any
+    const bottomOffset = (toasts?.length || 0) > 0 ? 96 : 16; // crude vertical spacing
     return (
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-            <div style={{ margin: '8px', padding: '6px 12px', background: isError ? '#b3261e' : '#1f2937', color: '#fff', borderRadius: 8, fontSize: 12, minWidth: 260, boxShadow: '0 2px 6px rgba(0,0,0,0.35)', pointerEvents: 'auto' }}>
-                <div style={{ fontWeight: 600, letterSpacing: .5, marginBottom: 4 }}>
-                    {isError ? 'Processing Error' : isComplete ? 'Processing Complete' : 'Processing PDF'}
+        <div style={{ position: 'fixed', bottom: bottomOffset, right: 16, zIndex: 900, pointerEvents: 'none' }}>
+            <div style={{ padding: '8px 14px', background: isError ? '#b3261e' : '#1f2937', color: '#fff', borderRadius: 10, fontSize: 12, width: 260, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', pointerEvents: 'auto', backdropFilter: 'blur(4px)' }}>
+                <div style={{ fontWeight: 600, letterSpacing: .5, marginBottom: 6 }}>
+                    {isError ? 'Processing Error' : 'Processing PDF'}
                 </div>
-                {!isError && !isComplete && (
-                    <div style={{ display: 'grid', gap: 4 }}>
+                {!isError && (
+                    <div style={{ display: 'grid', gap: 6 }}>
                         <StageProgress label="Render" done={renderStage?.done} total={renderStage?.total} />
                         <StageProgress label="OCR" done={ocrStage?.done} total={ocrStage?.total} />
                     </div>
                 )}
-                {isError && <div style={{ fontSize: 11, opacity: .85 }}>{manifest?.error || 'Unknown error'}</div>}
+                {isError && <div style={{ fontSize: 11, opacity: .85, lineHeight: 1.3 }}>{manifest?.error || 'Unknown error'}</div>}
             </div>
         </div>
     );
