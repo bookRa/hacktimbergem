@@ -14,7 +14,7 @@ export const PdfCanvas: React.FC = () => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
 
-    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom } = useProjectStore((s: ProjectStore) => ({
+    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode } = useProjectStore((s: ProjectStore) => ({
         pdfDoc: s.pdfDoc,
         currentPageIndex: s.currentPageIndex,
         pages: s.pages,
@@ -22,7 +22,9 @@ export const PdfCanvas: React.FC = () => {
         pagesMeta: s.pagesMeta,
         effectiveScale: s.effectiveScale,
         updateFitScale: s.updateFitScale,
-        zoom: s.zoom
+        zoom: s.zoom,
+        setManualScale: s.setManualScale,
+        setZoomMode: s.setZoomMode
     }));
 
     // Render page and compute fit scale
@@ -114,6 +116,106 @@ export const PdfCanvas: React.FC = () => {
     const scale = Math.max(0.01, rawScale);
     const displayWidth = meta ? meta.nativeWidth * scale : 0;
     const displayHeight = meta ? meta.nativeHeight * scale : 0;
+
+    // Pointer-centered zoom utility
+    const applyPointerZoom = (deltaFactor: number, clientX: number, clientY: number) => {
+        if (!meta || !containerRef.current) return;
+        // Switch to manual if currently fit so user adjusts freely
+        if (zoom.mode === 'fit') setZoomMode('manual');
+        const container = containerRef.current;
+        const rect = container.getBoundingClientRect();
+        const offsetX = clientX - rect.left + container.scrollLeft - 8; // subtract padding
+        const offsetY = clientY - rect.top + container.scrollTop - 8;
+        const preScale = scale;
+        const nextScale = Math.min(4, Math.max(0.05, preScale * deltaFactor));
+        if (Math.abs(nextScale - preScale) < 0.0001) return;
+        // Maintain pointer anchor: compute new scroll so that (offset / preScale) == (newOffset / nextScale)
+        const normX = offsetX / preScale;
+        const normY = offsetY / preScale;
+        setManualScale(nextScale);
+        requestAnimationFrame(() => {
+            const newOffsetX = normX * nextScale;
+            const newOffsetY = normY * nextScale;
+            const dx = newOffsetX - offsetX;
+            const dy = newOffsetY - offsetY;
+            container.scrollLeft += dx;
+            container.scrollTop += dy;
+        });
+    };
+
+    // Wheel & pinch handlers
+    useEffect(() => {
+        const holder = containerRef.current;
+        if (!holder) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return; // only modify when modifier pressed
+            // Prevent page zoom (browser default for ctrl+wheel)
+            e.preventDefault();
+            const direction = e.deltaY > 0 ? -1 : 1;
+            // Use smooth exponential step
+            const factor = direction > 0 ? 1.1 : 1 / 1.1;
+            applyPointerZoom(factor, e.clientX, e.clientY);
+        };
+
+        // Basic two-pointer pinch using pointer events
+        let pointers: Map<number, PointerEvent> = new Map();
+        let initialDist = 0;
+        let initialScale = scale;
+
+        const calcDist = () => {
+            if (pointers.size !== 2) return 0;
+            const pts = Array.from(pointers.values());
+            const dx = pts[0].clientX - pts[1].clientX;
+            const dy = pts[0].clientY - pts[1].clientY;
+            return Math.hypot(dx, dy);
+        };
+
+        const onPointerDown = (e: PointerEvent) => {
+            pointers.set(e.pointerId, e);
+            if (pointers.size === 2) {
+                initialDist = calcDist();
+                initialScale = scale;
+            }
+        };
+        const onPointerMove = (e: PointerEvent) => {
+            if (!pointers.has(e.pointerId)) return;
+            pointers.set(e.pointerId, e);
+            if (pointers.size === 2 && initialDist > 0) {
+                const dist = calcDist();
+                if (dist > 0) {
+                    const ratio = dist / initialDist;
+                    const desired = Math.min(4, Math.max(0.05, initialScale * ratio));
+                    const pts = Array.from(pointers.values());
+                    const centerX = (pts[0].clientX + pts[1].clientX) / 2;
+                    const centerY = (pts[0].clientY + pts[1].clientY) / 2;
+                    applyPointerZoom(desired / scale, centerX, centerY);
+                }
+            }
+        };
+        const onPointerUp = (e: PointerEvent) => {
+            pointers.delete(e.pointerId);
+            if (pointers.size < 2) {
+                initialDist = 0;
+            }
+        };
+
+        holder.addEventListener('wheel', handleWheel, { passive: false });
+        holder.addEventListener('pointerdown', onPointerDown);
+        holder.addEventListener('pointermove', onPointerMove);
+        holder.addEventListener('pointerup', onPointerUp);
+        holder.addEventListener('pointercancel', onPointerUp);
+        holder.addEventListener('pointerleave', onPointerUp);
+
+        return () => {
+            holder.removeEventListener('wheel', handleWheel);
+            holder.removeEventListener('pointerdown', onPointerDown);
+            holder.removeEventListener('pointermove', onPointerMove);
+            holder.removeEventListener('pointerup', onPointerUp);
+            holder.removeEventListener('pointercancel', onPointerUp);
+            holder.removeEventListener('pointerleave', onPointerUp);
+        };
+    }, [applyPointerZoom, scale, zoom.mode]);
 
     if (!pdfDoc) return null;
 
