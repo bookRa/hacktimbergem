@@ -45,6 +45,25 @@ interface AppState {
     ocrBlockState: Record<number, Record<number, { status: 'unverified' | 'accepted' | 'flagged' | 'noise'; }>>;
     initBlocksForPage: (pageIndex: number, count: number) => void;
     setBlockStatus: (pageIndex: number, blockIndex: number, status: 'unverified' | 'accepted' | 'flagged' | 'noise') => void;
+    // OCR interaction state
+    hoveredBlock: Record<number, number | null>; // per page hovered block index
+    setHoveredBlock: (pageIndex: number, blockIndex: number | null) => void;
+    selectedBlocks: Record<number, number[]>; // per page list of selected block indices
+    toggleSelectBlock: (pageIndex: number, blockIndex: number, additive?: boolean) => void;
+    clearSelection: (pageIndex: number) => void;
+    setSelectedBlocks: (pageIndex: number, indices: number[], additive?: boolean) => void;
+    bulkSetStatus: (pageIndex: number, status: 'unverified' | 'accepted' | 'flagged' | 'noise') => void;
+    mergeSelectedBlocks: (pageIndex: number) => void; // create synthetic merged block
+    // Notes entities (promoted selections)
+    notes: { id: string; pageIndex: number; blockIds: number[]; bbox: [number, number, number, number]; text: string; createdAt: number; }[];
+    promoteSelectionToNote: (pageIndex: number) => void;
+    // Panel tabs
+    rightPanelTab: 'blocks' | 'entities';
+    setRightPanelTab: (tab: 'blocks' | 'entities') => void;
+    // Scroll targeting for PdfCanvas
+    scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
+    setScrollTarget: (pageIndex: number, blockIndex: number) => void;
+    clearScrollTarget: () => void;
     // Toast notifications
     toasts: { id: string; kind: 'info' | 'error' | 'success'; message: string; createdAt: number; timeoutMs?: number; }[];
     addToast: (t: { kind?: 'info' | 'error' | 'success'; message: string; timeoutMs?: number; }) => void;
@@ -67,6 +86,11 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     manifestStatus: 'idle',
     toasts: [],
     ocrBlockState: {},
+    hoveredBlock: {},
+    selectedBlocks: {},
+    notes: [],
+    rightPanelTab: 'blocks',
+    scrollTarget: null,
     uploadAndStart: async (file: File) => {
         // parallel: upload to backend and local load for immediate viewing
         const form = new FormData();
@@ -124,15 +148,15 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         set(state => ({ pageImages: { ...state.pageImages, [pageIndex]: url } }));
     },
     fetchPageOcr: async (pageIndex: number) => {
-    const { projectId, pageOcr, initBlocksForPage } = get();
+        const { projectId, pageOcr, initBlocksForPage } = get();
         if (!projectId) return;
         if (pageOcr[pageIndex]) return; // cached
         const resp = await fetch(`/api/projects/${projectId}/ocr/${pageIndex + 1}`);
         if (!resp.ok) return;
         const data = await resp.json();
-    set(state => ({ pageOcr: { ...state.pageOcr, [pageIndex]: data } }));
-    const blocks = data?.blocks || [];
-    initBlocksForPage(pageIndex, blocks.length);
+        set(state => ({ pageOcr: { ...state.pageOcr, [pageIndex]: data } }));
+        const blocks = data?.blocks || [];
+        initBlocksForPage(pageIndex, blocks.length);
     },
     toggleOcr: () => set(state => ({ showOcr: !state.showOcr })),
     loadPdf: async (file: File) => {
@@ -196,6 +220,107 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             }
         };
     }),
+    setHoveredBlock: (pageIndex, blockIndex) => set(state => ({
+        hoveredBlock: { ...state.hoveredBlock, [pageIndex]: blockIndex }
+    })),
+    toggleSelectBlock: (pageIndex, blockIndex, additive) => set(state => {
+        const existing = state.selectedBlocks[pageIndex] || [];
+        let next: number[];
+        if (additive) {
+            if (existing.includes(blockIndex)) next = existing.filter(b => b !== blockIndex); else next = [...existing, blockIndex];
+        } else {
+            // single select replace
+            if (existing.length === 1 && existing[0] === blockIndex) next = []; else next = [blockIndex];
+        }
+        return { selectedBlocks: { ...state.selectedBlocks, [pageIndex]: next } };
+    }),
+    clearSelection: (pageIndex) => set(state => ({ selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] } })),
+    setSelectedBlocks: (pageIndex, indices, additive) => set(state => {
+        const existing = state.selectedBlocks[pageIndex] || [];
+        let next = indices;
+        if (additive) {
+            const set = new Set(existing);
+            indices.forEach(i => set.add(i));
+            next = Array.from(set).sort((a, b) => a - b);
+        }
+        return { selectedBlocks: { ...state.selectedBlocks, [pageIndex]: next } };
+    }),
+    bulkSetStatus: (pageIndex, status) => set(state => {
+        const meta = state.ocrBlockState[pageIndex];
+        if (!meta) return {};
+        const selected = state.selectedBlocks[pageIndex] || [];
+        if (!selected.length) return {};
+        const updated: Record<number, { status: 'unverified' | 'accepted' | 'flagged' | 'noise' }> = { ...meta };
+        selected.forEach(i => { if (updated[i]) updated[i] = { status }; });
+        return { ocrBlockState: { ...state.ocrBlockState, [pageIndex]: updated } };
+    }),
+    mergeSelectedBlocks: (pageIndex) => set((state): Partial<AppState> => {
+        const ocr = state.pageOcr[pageIndex];
+        if (!ocr) return {};
+        const selected = (state.selectedBlocks[pageIndex] || []).sort((a, b) => a - b);
+        if (selected.length < 2) return {};
+        const blocks = ocr.blocks || [];
+        const chosen = selected.map(i => blocks[i]).filter(Boolean);
+        if (!chosen.length) return {};
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        const texts: string[] = [];
+        chosen.forEach(b => {
+            const [bx1, by1, bx2, by2] = b.bbox;
+            if (bx1 < x1) x1 = bx1; if (by1 < y1) y1 = by1; if (bx2 > x2) x2 = bx2; if (by2 > y2) y2 = by2;
+            if (b.text) texts.push(b.text.trim());
+        });
+        const merged = { bbox: [x1, y1, x2, y2], text: texts.join('\n\n'), merged_from: selected };
+        const newBlocks = [...blocks, merged];
+        const newOcr = { ...ocr, blocks: newBlocks };
+        const newIndex = newBlocks.length - 1;
+        const pageMeta = state.ocrBlockState[pageIndex] || {};
+        const updatedMeta: Record<number, { status: 'unverified' | 'accepted' | 'flagged' | 'noise'; }> = { ...pageMeta, [newIndex]: { status: 'unverified' } };
+        return {
+            pageOcr: { ...state.pageOcr, [pageIndex]: newOcr },
+            ocrBlockState: { ...state.ocrBlockState, [pageIndex]: updatedMeta },
+            selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [newIndex] }
+        };
+    }),
+    promoteSelectionToNote: (pageIndex) => set((state): Partial<AppState> => {
+        const ocr = state.pageOcr[pageIndex];
+        if (!ocr) return {};
+        const selected = (state.selectedBlocks[pageIndex] || []).sort((a, b) => a - b);
+        if (!selected.length) return {};
+        const blocks = ocr.blocks || [];
+        const chosen = selected.map(i => blocks[i]).filter(Boolean);
+        if (!chosen.length) return {};
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        const texts: string[] = [];
+        chosen.forEach(b => {
+            const [bx1, by1, bx2, by2] = b.bbox;
+            if (bx1 < x1) x1 = bx1; if (by1 < y1) y1 = by1; if (bx2 > x2) x2 = bx2; if (by2 > y2) y2 = by2;
+            if (b.text) texts.push(b.text.trim());
+        });
+        const note = {
+            id: 'note_' + Math.random().toString(36).slice(2),
+            pageIndex,
+            blockIds: selected,
+            bbox: [x1, y1, x2, y2] as [number, number, number, number],
+            text: texts.join('\n\n'),
+            createdAt: Date.now()
+        };
+        // Auto-accept blocks used
+        const pageMeta = state.ocrBlockState[pageIndex];
+        let updatedMeta = pageMeta;
+        if (pageMeta) {
+            updatedMeta = { ...pageMeta };
+            selected.forEach(i => { if (updatedMeta![i]) updatedMeta![i] = { status: 'accepted' }; });
+        }
+        return {
+            notes: [...state.notes, note],
+            ocrBlockState: { ...state.ocrBlockState, [pageIndex]: updatedMeta || pageMeta },
+            selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] },
+            rightPanelTab: 'entities'
+        };
+    }),
+    setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+    setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
+    clearScrollTarget: () => set({ scrollTarget: null }),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {
         const id = Math.random().toString(36).slice(2);
         const toast = { id, kind, message, createdAt: Date.now(), timeoutMs };

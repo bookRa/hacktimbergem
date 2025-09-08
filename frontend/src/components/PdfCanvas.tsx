@@ -3,6 +3,7 @@ import { useProjectStore, ProjectStore } from '../state/store';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
 import 'pdfjs-dist/web/pdf_viewer.css';
 import { OcrOverlay } from './OcrOverlay';
+import { DragSelectOverlay } from './DragSelectOverlay';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -15,7 +16,7 @@ export const PdfCanvas: React.FC = () => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
 
-    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr } = useProjectStore((s: ProjectStore) => ({
+    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget } = useProjectStore((s: ProjectStore & any) => ({
         pdfDoc: s.pdfDoc,
         currentPageIndex: s.currentPageIndex,
         pages: s.pages,
@@ -30,7 +31,10 @@ export const PdfCanvas: React.FC = () => {
         fetchPageImage: s.fetchPageImage,
         pageOcr: s.pageOcr,
         fetchPageOcr: s.fetchPageOcr,
-        showOcr: s.showOcr
+        showOcr: s.showOcr,
+        scrollTarget: s.scrollTarget,
+        setScrollTarget: s.setScrollTarget,
+        clearScrollTarget: s.clearScrollTarget
     }));
 
     // Render page and compute fit scale (only if backend image not yet present)
@@ -132,6 +136,29 @@ export const PdfCanvas: React.FC = () => {
     const scale = Math.max(0.01, rawScale);
     const displayWidth = meta ? meta.nativeWidth * scale : 0;
     const displayHeight = meta ? meta.nativeHeight * scale : 0;
+
+    // Scroll to target block center when requested
+    useEffect(() => {
+        if (!scrollTarget) return;
+        if (scrollTarget.pageIndex !== currentPageIndex) return;
+        const ocr = pageOcr[currentPageIndex];
+        if (!ocr) return;
+        const blocks = ocr.blocks || [];
+        const b = blocks[scrollTarget.blockIndex];
+        if (!b) { clearScrollTarget(); return; }
+        const [x1, y1, x2, y2] = b.bbox;
+        const centerX = (x1 + x2) / 2;
+        const centerY = (y1 + y2) / 2;
+        if (!containerRef.current || !meta) { clearScrollTarget(); return; }
+        const maxLeft = meta.nativeWidth * scale - containerRef.current.clientWidth;
+        const maxTop = meta.nativeHeight * scale - containerRef.current.clientHeight;
+        const targetScrollLeft = Math.max(0, Math.min(maxLeft, centerX * scale - containerRef.current.clientWidth / 2));
+        const targetScrollTop = Math.max(0, Math.min(maxTop, centerY * scale - containerRef.current.clientHeight / 2));
+        containerRef.current.scrollTo({ left: targetScrollLeft, top: targetScrollTop, behavior: 'smooth' });
+        // Clear entirely after first use
+        setTimeout(() => { clearScrollTarget(); }, 50);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scrollTarget, scale]);
 
     // Pointer-centered zoom utility
     const applyPointerZoom = (deltaFactor: number, clientX: number, clientY: number) => {
@@ -246,12 +273,18 @@ export const PdfCanvas: React.FC = () => {
                             style={{ width: displayWidth, height: displayHeight, display: 'block', background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }}
                             draggable={false}
                         />
-                        {showOcr && <OcrOverlay pageIndex={currentPageIndex} scale={scale} />}
+                        {showOcr && <>
+                            <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
+                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} />
+                        </>}
                     </>
                 ) : (
                     <>
                         <canvas ref={canvasRef} className="pdf-canvas" style={{ width: displayWidth, height: displayHeight, background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }} />
-                        {showOcr && <OcrOverlay pageIndex={currentPageIndex} scale={scale} />}
+                        {showOcr && <>
+                            <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
+                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} />
+                        </>}
                     </>
                 )}
             </div>

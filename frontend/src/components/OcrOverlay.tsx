@@ -8,11 +8,15 @@ interface Props {
 }
 
 export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
-    const { pageOcr, pagesMeta, showOcr, ocrBlockState } = useProjectStore(s => ({
+    const { pageOcr, pagesMeta, showOcr, ocrBlockState, hoveredBlock, selectedBlocks, setHoveredBlock, toggleSelectBlock } = useProjectStore(s => ({
         pageOcr: s.pageOcr,
         pagesMeta: s.pagesMeta,
         showOcr: s.showOcr,
-        ocrBlockState: (s as any).ocrBlockState || {}
+        ocrBlockState: (s as any).ocrBlockState || {},
+        hoveredBlock: (s as any).hoveredBlock || {},
+        selectedBlocks: (s as any).selectedBlocks || {},
+        setHoveredBlock: (s as any).setHoveredBlock,
+        toggleSelectBlock: (s as any).toggleSelectBlock
     }));
     const meta = pagesMeta[pageIndex];
     const ocr = pageOcr[pageIndex];
@@ -40,6 +44,8 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
                 // Convert PDF points -> raster canvas pixels (unscaled), then rely on outer SVG viewBox scaling
                 const [cx1, cy1, cx2, cy2] = pdfToCanvas([x1, y1, x2, y2], renderMeta as any);
                 const status = ocrBlockState?.[pageIndex]?.[i]?.status || 'unverified';
+                const isHovered = hoveredBlock?.[pageIndex] === i;
+                const isSelected = (selectedBlocks?.[pageIndex] || []).includes(i);
                 // Color mapping
                 const colorMap: Record<string, { fill: string; stroke: string; }> = {
                     unverified: { fill: 'rgba(255,165,0,0.15)', stroke: 'rgba(255,140,0,0.9)' },
@@ -48,8 +54,27 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
                     noise: { fill: 'rgba(107,114,128,0.12)', stroke: 'rgba(107,114,128,0.8)' }
                 };
                 const c = colorMap[status];
+                const strokeWidth = (isSelected ? 2.5 : isHovered ? 2 : 1) / scale;
+                const finalStroke = isSelected ? '#3b82f6' : isHovered ? c.stroke : c.stroke;
+                const finalFill = isSelected ? 'rgba(59,130,246,0.18)' : c.fill;
                 return (
-                    <rect key={i} x={cx1} y={cy1} width={cx2 - cx1} height={cy2 - cy1} fill={c.fill} stroke={c.stroke} strokeWidth={1 / scale} />
+                    <rect
+                        key={i}
+                        x={cx1}
+                        y={cy1}
+                        width={cx2 - cx1}
+                        height={cy2 - cy1}
+                        fill={finalFill}
+                        stroke={finalStroke}
+                        strokeWidth={strokeWidth}
+                        style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+                        onMouseEnter={() => setHoveredBlock(pageIndex, i)}
+                        onMouseLeave={() => setHoveredBlock(pageIndex, hoveredBlock?.[pageIndex] === i ? null : hoveredBlock?.[pageIndex] || null)}
+                        onClick={(e) => {
+                            const additive = e.metaKey || e.ctrlKey || e.shiftKey;
+                            toggleSelectBlock(pageIndex, i, additive);
+                        }}
+                    />
                 );
             })}
         </svg>
