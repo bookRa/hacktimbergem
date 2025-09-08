@@ -20,6 +20,10 @@ interface AppState {
     pages: number[];              // zero-based page indexes convenience
     currentPageIndex: number;     // zero-based
     pagesMeta: Record<number, PageRenderMeta>; // keyed by zero-based index
+    // Backend imagery & OCR
+    pageImages: Record<number, string>; // object URL of backend PNG per page index
+    pageOcr: Record<number, any>; // simplified OCR JSON per page index
+    showOcr: boolean; // overlay toggle
     zoom: ZoomState;
     // Backend ingestion state
     projectId: string | null;
@@ -27,6 +31,9 @@ interface AppState {
     manifestStatus: 'idle' | 'polling' | 'complete' | 'error';
     uploadAndStart: (file: File) => Promise<void>; // uploads to backend & loads local PDF
     pollManifest: () => Promise<void>;
+    fetchPageImage: (pageIndex: number) => Promise<void>;
+    fetchPageOcr: (pageIndex: number) => Promise<void>;
+    toggleOcr: () => void;
     loadPdf: (file: File) => Promise<void>;
     setCurrentPageIndex: (i: number) => void;
     setPageMeta: (meta: PageRenderMeta) => void;
@@ -43,6 +50,9 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     pages: [],
     currentPageIndex: 0,
     pagesMeta: {},
+    pageImages: {},
+    pageOcr: {},
+    showOcr: false,
     zoom: { mode: 'fit', manualScale: 1, lastManualScale: 1 },
     projectId: null,
     manifest: null,
@@ -89,6 +99,26 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             }
         }
     },
+    fetchPageImage: async (pageIndex: number) => {
+        const { projectId, pageImages } = get();
+        if (!projectId) return;
+        if (pageImages[pageIndex]) return; // cached
+        const resp = await fetch(`/api/projects/${projectId}/pages/${pageIndex + 1}.png`);
+        if (!resp.ok) return;
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        set(state => ({ pageImages: { ...state.pageImages, [pageIndex]: url } }));
+    },
+    fetchPageOcr: async (pageIndex: number) => {
+        const { projectId, pageOcr } = get();
+        if (!projectId) return;
+        if (pageOcr[pageIndex]) return; // cached
+        const resp = await fetch(`/api/projects/${projectId}/ocr/${pageIndex + 1}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        set(state => ({ pageOcr: { ...state.pageOcr, [pageIndex]: data } }));
+    },
+    toggleOcr: () => set(state => ({ showOcr: !state.showOcr })),
     loadPdf: async (file: File) => {
         const arrayBuf = await file.arrayBuffer();
         const loadingTask = getDocument({ data: arrayBuf });

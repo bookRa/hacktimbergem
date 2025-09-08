@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
 import 'pdfjs-dist/web/pdf_viewer.css';
+import { OcrOverlay } from './OcrOverlay';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -14,7 +15,7 @@ export const PdfCanvas: React.FC = () => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
 
-    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode } = useProjectStore((s: ProjectStore) => ({
+    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr } = useProjectStore((s: ProjectStore) => ({
         pdfDoc: s.pdfDoc,
         currentPageIndex: s.currentPageIndex,
         pages: s.pages,
@@ -24,10 +25,15 @@ export const PdfCanvas: React.FC = () => {
         updateFitScale: s.updateFitScale,
         zoom: s.zoom,
         setManualScale: s.setManualScale,
-        setZoomMode: s.setZoomMode
+        setZoomMode: s.setZoomMode,
+        pageImages: s.pageImages,
+        fetchPageImage: s.fetchPageImage,
+        pageOcr: s.pageOcr,
+        fetchPageOcr: s.fetchPageOcr,
+        showOcr: s.showOcr
     }));
 
-    // Render page and compute fit scale
+    // Render page and compute fit scale (only if backend image not yet present)
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -62,11 +68,21 @@ export const PdfCanvas: React.FC = () => {
                 fitPageScale: fitScale
             });
             if (zoom.mode === 'fit') updateFitScale(currentPageIndex, fitScale);
-            await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
+            // Only render via pdf.js if no backend raster yet
+            if (!pageImages[currentPageIndex]) {
+                await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
+            }
         })();
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pdfDoc, currentPageIndex, zoom.mode]);
+    }, [pdfDoc, currentPageIndex, zoom.mode, pageImages]);
+
+    // Fetch backend image lazily when we have a projectId
+    useEffect(() => {
+        fetchPageImage(currentPageIndex);
+        if (showOcr) fetchPageOcr(currentPageIndex);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPageIndex, showOcr]);
 
     // Recompute when switching into fit mode (ensures correct scale after manual panning/resize)
     useEffect(() => {
@@ -222,8 +238,22 @@ export const PdfCanvas: React.FC = () => {
     return (
         <div ref={containerRef} className="pdf-canvas-wrapper" style={{ padding: '8px' }}>
             <div style={{ margin: '0 auto', position: 'relative', width: displayWidth, height: displayHeight }}>
-                <canvas ref={canvasRef} className="pdf-canvas" style={{ width: displayWidth, height: displayHeight, background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }} />
-                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
+                {pageImages[currentPageIndex] ? (
+                    <>
+                        <img
+                            src={pageImages[currentPageIndex]}
+                            alt={`Page ${currentPageIndex + 1}`}
+                            style={{ width: displayWidth, height: displayHeight, display: 'block', background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }}
+                            draggable={false}
+                        />
+                        {showOcr && <OcrOverlay pageIndex={currentPageIndex} scale={scale} />}
+                    </>
+                ) : (
+                    <>
+                        <canvas ref={canvasRef} className="pdf-canvas" style={{ width: displayWidth, height: displayHeight, background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }} />
+                        {showOcr && <OcrOverlay pageIndex={currentPageIndex} scale={scale} />}
+                    </>
+                )}
             </div>
         </div>
     );

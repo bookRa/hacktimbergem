@@ -138,6 +138,8 @@ projects/{project_id}/
 ### Frontend Interaction
 - After successful upload, poll status every 1–2s until `complete` or `error`.
 - Use manifest progress counters to display per-stage progress bars (render vs ocr) once UI adds them.
+- When a page is viewed, fetch backend raster PNG (`/pages/{n}.png`) lazily; retain pdf.js rendering only as a temporary fallback until the PNG arrives (ensures identical coordinate basis with OCR).
+- OCR overlay: user-controlled toggle (store `showOcr`) rendering `<OcrOverlay />` which converts each block `bbox` (PDF pts) → canvas pixels via shared coord helpers, drawn as semi-transparent orange rectangles.
 
 ### Error Handling Conventions
 - Any exception sets `status = error` and writes `error` string in manifest.
