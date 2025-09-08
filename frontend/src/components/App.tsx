@@ -2,6 +2,7 @@ import React from 'react';
 import { UploadArea } from './UploadArea';
 import { LeftNavigator } from './LeftNavigator';
 import { PdfCanvas } from './PdfCanvas';
+import { ZoomControls } from './ZoomControls';
 import { RightPanel } from './RightPanel';
 import { useProjectStore, ProjectStore } from '../state/store';
 
@@ -13,7 +14,10 @@ export const App: React.FC = () => {
             {pdfDoc && (
                 <div className="three-pane">
                     <LeftNavigator />
-                    <PdfCanvas />
+                    <div className="center-pane">
+                        <ZoomControls />
+                        <PdfCanvas />
+                    </div>
                     <RightPanel />
                 </div>
             )}
