@@ -139,13 +139,13 @@ export const DragSelectOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRe
 
     // Cancel any in-progress drag when scale changes mid-drag
     useEffect(() => {
-    if (!draggingRef.current) return;
-    log('scale changed during drag -> cancel');
-    draggingRef.current = false;
-    setDragging(false);
+        if (!draggingRef.current) return;
+        log('scale changed during drag -> cancel');
+        draggingRef.current = false;
+        setDragging(false);
         if (rectRef.current) rectRef.current.style.display = 'none';
         startRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scale]);
 
     if (!showOcr || !meta) return null;

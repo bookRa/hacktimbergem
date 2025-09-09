@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -18,7 +18,8 @@ export const RightPanel: React.FC = () => {
         notes: s.notes,
         rightPanelTab: s.rightPanelTab,
         setRightPanelTab: s.setRightPanelTab,
-        setScrollTarget: s.setScrollTarget
+        setScrollTarget: s.setScrollTarget,
+        updateNoteType: s.updateNoteType
     }));
     const ocr = pageOcr[currentPageIndex];
     const blocks = ocr?.blocks || [];
@@ -108,12 +109,29 @@ export const RightPanel: React.FC = () => {
             {rightPanelTab === 'entities' && (
                 <section className="kp-section" style={{ maxHeight: 400, overflow: 'auto' }}>
                     <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Notes ({notes.filter((n: any) => n.pageIndex === currentPageIndex).length})</div>
-                    {notes.filter((n: any) => n.pageIndex === currentPageIndex).map((n: any) => (
-                        <div key={n.id} style={{ border: '1px solid #374151', borderRadius: 4, padding: '4px 6px', marginBottom: 6, background: '#111827' }}>
-                            <div style={{ fontSize: 11, opacity: .75, marginBottom: 4 }}>Blocks: {n.blockIds.join(', ')}</div>
-                            <div style={{ fontSize: 11, lineHeight: 1.3, whiteSpace: 'pre-wrap' }}>{n.text.length > 200 ? n.text.slice(0, 200) + '…' : n.text}</div>
-                        </div>
-                    ))}
+                    {notes.filter((n: any) => n.pageIndex === currentPageIndex).map((n: any) => {
+                        const truncated = n.text.length > 200 ? n.text.slice(0, 200) + '…' : n.text;
+                        return (
+                            <div key={n.id} style={{ border: '1px solid #374151', borderRadius: 4, padding: '6px 6px 8px', marginBottom: 6, background: '#111827', color: '#f1f5f9' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                    <div style={{ fontSize: 11, opacity: .8 }}>Blocks: {n.blockIds.join(', ')}</div>
+                                    <select
+                                        value={n.note_type || 'general'}
+                                        onChange={e => updateNoteType(n.id, e.target.value)}
+                                        style={{ background: '#1f2937', color: '#f1f5f9', border: '1px solid #374151', fontSize: 11, borderRadius: 4 }}
+                                    >
+                                        <option value="general">General</option>
+                                        <option value="definition">Definition</option>
+                                        <option value="citation">Citation</option>
+                                        <option value="data_point">Data Point</option>
+                                        <option value="question">Question</option>
+                                        <option value="todo">To-Do</option>
+                                    </select>
+                                </div>
+                                <div style={{ fontSize: 11, lineHeight: 1.35, whiteSpace: 'pre-wrap', color: '#f8fafc' }}>{truncated || <em style={{ opacity: .6 }}>(empty)</em>}</div>
+                            </div>
+                        );
+                    })}
                     {notes.filter((n: any) => n.pageIndex === currentPageIndex).length === 0 && <p style={{ fontSize: 12, opacity: .7, margin: 0 }}>(No notes yet)</p>}
                 </section>
             )}

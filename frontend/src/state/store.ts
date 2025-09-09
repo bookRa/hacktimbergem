@@ -55,8 +55,9 @@ interface AppState {
     bulkSetStatus: (pageIndex: number, status: 'unverified' | 'accepted' | 'flagged' | 'noise') => void;
     mergeSelectedBlocks: (pageIndex: number) => void; // create synthetic merged block
     // Notes entities (promoted selections)
-    notes: { id: string; pageIndex: number; blockIds: number[]; bbox: [number, number, number, number]; text: string; createdAt: number; }[];
+    notes: { id: string; pageIndex: number; blockIds: number[]; bbox: [number, number, number, number]; text: string; createdAt: number; note_type: string; }[];
     promoteSelectionToNote: (pageIndex: number) => void;
+    updateNoteType: (id: string, note_type: string) => void;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
@@ -302,7 +303,8 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             blockIds: selected,
             bbox: [x1, y1, x2, y2] as [number, number, number, number],
             text: texts.join('\n\n'),
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            note_type: 'general'
         };
         // Auto-accept blocks used
         const pageMeta = state.ocrBlockState[pageIndex];
@@ -318,6 +320,9 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             rightPanelTab: 'entities'
         };
     }),
+    updateNoteType: (id, note_type) => set(state => ({
+        notes: state.notes.map(n => n.id === id ? { ...n, note_type } : n)
+    })),
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
