@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -19,7 +19,10 @@ export const RightPanel: React.FC = () => {
         rightPanelTab: s.rightPanelTab,
         setRightPanelTab: s.setRightPanelTab,
         setScrollTarget: s.setScrollTarget,
-        updateNoteType: s.updateNoteType
+        updateNoteType: s.updateNoteType,
+        pageTitles: s.pageTitles,
+        setPageTitle: s.setPageTitle,
+        deriveTitleFromBlocks: s.deriveTitleFromBlocks
     }));
     const ocr = pageOcr[currentPageIndex];
     const blocks = ocr?.blocks || [];
@@ -31,6 +34,10 @@ export const RightPanel: React.FC = () => {
         { value: 'flagged', label: 'Flagged' },
         { value: 'noise', label: 'Noise' }
     ];
+    const titleEntry = pageTitles[currentPageIndex];
+    const [draftTitle, setDraftTitle] = React.useState(titleEntry?.text || '');
+    React.useEffect(() => { setDraftTitle(titleEntry?.text || ''); }, [titleEntry, currentPageIndex]);
+    const applyTitle = () => { if (draftTitle.trim()) setPageTitle(currentPageIndex, draftTitle); else setDraftTitle(titleEntry?.text || ''); };
     return (
         <aside className="right-panel">
             <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -46,6 +53,25 @@ export const RightPanel: React.FC = () => {
                     <label style={{ fontSize: 12, display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer' }}>
                         <input type="checkbox" checked={showOcr} onChange={toggleOcr} /> OCR
                     </label>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, opacity: .7, marginBottom: 4 }}>Sheet Title</div>
+                    <input
+                        value={draftTitle}
+                        onChange={e => setDraftTitle(e.target.value)}
+                        onBlur={applyTitle}
+                        onKeyDown={e => { if (e.key === 'Enter') { applyTitle(); (e.target as HTMLInputElement).blur(); } else if (e.key === 'Escape') { setDraftTitle(titleEntry?.text || ''); (e.target as HTMLInputElement).blur(); } }}
+                        placeholder="Enter title or use selection"
+                        style={{ width: '100%', background: '#1f2937', border: '1px solid #374151', color: '#f1f5f9', fontSize: 12, padding: '4px 6px', borderRadius: 4 }}
+                    />
+                    <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+                        <button
+                            disabled={!selected.length}
+                            onClick={() => deriveTitleFromBlocks(currentPageIndex, selected)}
+                            style={miniBtn(!selected.length)}
+                        >Set From Selection</button>
+                        {titleEntry?.fromBlocks && <div style={{ fontSize: 10, color: '#94a3b8', alignSelf: 'center' }}>from blocks: {titleEntry.fromBlocks.join(', ')}</div>}
+                    </div>
                 </div>
             </section>
             {rightPanelTab === 'blocks' && (
@@ -80,7 +106,13 @@ export const RightPanel: React.FC = () => {
                                     }}
                                 >
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                                        <div style={{ fontSize: 11, opacity: .85, color: '#e2e8f0' }}>#{i} {status}</div>
+                                        <div style={{ fontSize: 11, opacity: .85, color: '#e2e8f0', display: 'flex', gap: 6, alignItems: 'center' }}>#{i} {status}
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); deriveTitleFromBlocks(currentPageIndex, [i]); }}
+                                                style={{ fontSize: 10, padding: '2px 4px', borderRadius: 3, background: '#374151', color: '#f1f5f9', border: '1px solid #475569', cursor: 'pointer' }}
+                                                title="Set sheet title from this block"
+                                            >Title</button>
+                                        </div>
                                         <select
                                             value={status}
                                             onChange={e => setBlockStatus(currentPageIndex, i, e.target.value as any)}

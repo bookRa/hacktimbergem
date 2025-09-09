@@ -58,6 +58,10 @@ interface AppState {
     notes: { id: string; pageIndex: number; blockIds: number[]; bbox: [number, number, number, number]; text: string; createdAt: number; note_type: string; }[];
     promoteSelectionToNote: (pageIndex: number) => void;
     updateNoteType: (id: string, note_type: string) => void;
+    // Page titles
+    pageTitles: Record<number, { text: string; fromBlocks?: number[] }>;
+    setPageTitle: (pageIndex: number, text: string, fromBlocks?: number[]) => void;
+    deriveTitleFromBlocks: (pageIndex: number, blockIds: number[]) => void;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
@@ -90,6 +94,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     hoveredBlock: {},
     selectedBlocks: {},
     notes: [],
+    pageTitles: {},
     rightPanelTab: 'blocks',
     scrollTarget: null,
     uploadAndStart: async (file: File) => {
@@ -323,6 +328,20 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     updateNoteType: (id, note_type) => set(state => ({
         notes: state.notes.map(n => n.id === id ? { ...n, note_type } : n)
     })),
+    setPageTitle: (pageIndex, raw, fromBlocks) => set(state => {
+        let text = (raw || '').replace(/\s+/g, ' ').trim();
+        if (!text) return {};
+        if (text.length > 120) text = text.slice(0, 117).trimEnd() + '...';
+        return { pageTitles: { ...state.pageTitles, [pageIndex]: { text, fromBlocks: fromBlocks && fromBlocks.length ? fromBlocks : undefined } } };
+    }),
+    deriveTitleFromBlocks: (pageIndex, blockIds) => {
+        const { pageOcr, setPageTitle } = get();
+        const ocr = pageOcr[pageIndex];
+        if (!ocr) return;
+        const blocks = ocr.blocks || [];
+        const combined = blockIds.map(i => blocks[i]?.text || '').filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+        if (combined) setPageTitle(pageIndex, combined, blockIds);
+    },
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
