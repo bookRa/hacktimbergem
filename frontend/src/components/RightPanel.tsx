@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, creatingEntity, cancelEntityCreation, fetchEntities } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -28,7 +28,11 @@ export const RightPanel: React.FC = () => {
         startEntityCreation: s.startEntityCreation,
         creatingEntity: s.creatingEntity,
         cancelEntityCreation: s.cancelEntityCreation,
-        fetchEntities: s.fetchEntities
+        fetchEntities: s.fetchEntities,
+        selectedEntityId: s.selectedEntityId,
+        setSelectedEntityId: s.setSelectedEntityId,
+        updateEntityMeta: s.updateEntityMeta,
+        deleteEntity: s.deleteEntity
     }));
     const ocr = pageOcr[currentPageIndex];
     const blocks = ocr?.blocks || [];
@@ -146,7 +150,7 @@ export const RightPanel: React.FC = () => {
                 </>
             )}
             {rightPanelTab === 'entities' && (
-                <section className="kp-section" style={{ maxHeight: 420, overflow: 'auto' }}>
+                <section className="kp-section" style={{ maxHeight: 520, overflow: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>Entities (Page {currentPageIndex + 1})</div>
                         <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
@@ -158,10 +162,32 @@ export const RightPanel: React.FC = () => {
                         {creatingEntity && <button onClick={() => cancelEntityCreation()} style={miniBtn(false)}>Cancel</button>}
                     </div>
                     {creatingEntity && <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 6 }}>Drawing new {creatingEntity.type}: click-drag on sheet to place. Esc to cancel.</div>}
+                    {/* Selected Entity Editor */}
+                    {selectedEntityId && (() => {
+                        const ent = entities.find((e: any) => e.id === selectedEntityId);
+                        if (!ent || ent.source_sheet_number !== currentPageIndex + 1) return null;
+                        return (
+                            <EntityEditor key={ent.id} entity={ent} updateEntityMeta={updateEntityMeta} deleteEntity={deleteEntity} deselect={() => setSelectedEntityId(null)} />
+                        );
+                    })()}
                     <div style={{ fontSize: 11, opacity: .7, marginBottom: 4 }}>Backend Entities</div>
                     {entities.filter((e: any) => e.source_sheet_number === currentPageIndex + 1).map((e: any) => {
+                        const selected = e.id === selectedEntityId;
                         return (
-                            <div key={e.id} style={{ border: '1px solid #374151', borderRadius: 4, padding: '4px 6px', marginBottom: 6, background: '#111827', color: '#f1f5f9', fontSize: 11 }}>
+                            <div
+                                key={e.id}
+                                onClick={() => setSelectedEntityId(selected ? null : e.id)}
+                                style={{
+                                    border: '1px solid ' + (selected ? '#1e3a8a' : '#374151'),
+                                    boxShadow: selected ? '0 0 0 1px #1e3a8a' : 'none',
+                                    borderRadius: 4,
+                                    padding: '4px 6px',
+                                    marginBottom: 6,
+                                    background: selected ? '#1e3a8a' : '#111827',
+                                    color: '#f1f5f9',
+                                    fontSize: 11,
+                                    cursor: 'pointer'
+                                }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <strong style={{ textTransform: 'capitalize' }}>{e.entity_type}</strong>
                                     <span style={{ opacity: .7 }}>#{e.id.slice(0, 6)}</span>
@@ -169,6 +195,7 @@ export const RightPanel: React.FC = () => {
                                 <div style={{ marginTop: 2, opacity: .8 }}>Box: {e.bounding_box.x1.toFixed(1)}, {e.bounding_box.y1.toFixed(1)}, {e.bounding_box.x2.toFixed(1)}, {e.bounding_box.y2.toFixed(1)}</div>
                                 {e.title && <div style={{ marginTop: 2 }}>Title: {e.title}</div>}
                                 {e.text && <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{e.text.length > 120 ? e.text.slice(0, 120) + '…' : e.text}</div>}
+                                {selected && <div style={{ marginTop: 4, fontSize: 10, opacity: .8 }}>Click again to deselect • Edit form above</div>}
                             </div>
                         );
                     })}
@@ -232,3 +259,81 @@ function miniBtn(disabled: boolean): React.CSSProperties {
         opacity: disabled ? 0.55 : 1
     };
 }
+
+interface EntityEditorProps {
+    entity: any;
+    updateEntityMeta: (id: string, data: { title?: string | null; text?: string | null }) => Promise<void>;
+    deleteEntity: (id: string) => Promise<void>;
+    deselect: () => void;
+}
+
+const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, deleteEntity, deselect }) => {
+    const isNote = entity.entity_type === 'note';
+    const supportsTitle = ['drawing', 'legend', 'schedule'].includes(entity.entity_type);
+    const [title, setTitle] = React.useState(supportsTitle ? (entity.title || '') : '');
+    const [text, setText] = React.useState(isNote ? (entity.text || '') : '');
+    // Sync when entity object updates (same id but refreshed data) or id changes
+    React.useEffect(() => {
+        if (supportsTitle) setTitle(entity.title || ''); else setTitle('');
+        if (isNote) setText(entity.text || ''); else setText('');
+    }, [entity.id, entity.title, entity.text]);
+    const dirty = (
+        (supportsTitle && (title || '') !== (entity.title || '')) ||
+        (isNote && (text || '') !== (entity.text || ''))
+    );
+    const save = async () => {
+        if (!dirty) return;
+        const payload: any = {};
+        if (supportsTitle) payload.title = title.trim() || null;
+        if (isNote) payload.text = text.trim() || null;
+        await updateEntityMeta(entity.id, payload);
+    };
+    return (
+        <div style={{ border: '1px solid #1e3a8a', background: '#102a44', padding: 10, borderRadius: 6, marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'capitalize', color: '#f1f5f9' }}>{entity.entity_type} #{entity.id.slice(0, 6)}</div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={deselect} style={miniBtn(false)} title="Deselect">✕</button>
+                    <button onClick={() => { if (confirm('Delete entity?')) deleteEntity(entity.id); }} style={miniBtn(false)} title="Delete">🗑</button>
+                </div>
+            </div>
+            <div style={{ fontSize: 10, opacity: .7, marginBottom: 4, color: '#cbd5e1' }}>Bounding Box (PDF pts)</div>
+            <div style={{ fontSize: 11, background: '#1e293b', padding: '4px 6px', border: '1px solid #1e3a8a', borderRadius: 4, marginBottom: 10, color: '#e2e8f0' }}>
+                {entity.bounding_box.x1.toFixed(2)}, {entity.bounding_box.y1.toFixed(2)}, {entity.bounding_box.x2.toFixed(2)}, {entity.bounding_box.y2.toFixed(2)}
+            </div>
+            {supportsTitle && (
+                <>
+                    <label style={{ display: 'block', fontSize: 10, opacity: .7, marginBottom: 2, color: '#cbd5e1' }}>Title</label>
+                    <input
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { save(); (e.target as HTMLInputElement).blur(); } }}
+                        placeholder="Optional title"
+                        style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, marginBottom: isNote ? 10 : 0 }}
+                    />
+                </>
+            )}
+            {isNote && (
+                <>
+                    {supportsTitle && <div style={{ height: 10 }} />}
+                    <label style={{ display: 'block', fontSize: 10, opacity: .7, margin: '10px 0 2px', color: '#cbd5e1' }}>Text</label>
+                    <textarea
+                        value={text}
+                        onChange={e => setText(e.target.value)}
+                        rows={4}
+                        placeholder="Note text"
+                        style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical', marginBottom: 8 }}
+                    />
+                </>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                <button disabled={!dirty} onClick={save} style={miniBtn(!dirty)}>{dirty ? 'Save' : 'Saved'}</button>
+                <div style={{ fontSize: 10, opacity: .6, color: '#cbd5e1' }}>Cmd/Ctrl+Enter to save</div>
+            </div>
+            <div style={{ fontSize: 10, opacity: .55, marginTop: 6, color: '#94a3b8' }}>
+                {supportsTitle && !isNote && 'Only title is stored for this entity type.'}
+                {isNote && 'Only text is stored for notes.'}
+            </div>
+        </div>
+    );
+};

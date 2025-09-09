@@ -45,3 +45,26 @@ export async function createEntity(projectId: string, payload: CreateEntityInput
     }
     return r.json();
 }
+
+export async function patchEntity(projectId: string, id: string, data: Partial<{ bounding_box: number[]; title: string | null; text: string | null; }>): Promise<Entity> {
+    const r = await fetch(`/api/projects/${projectId}/entities/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    if (!r.ok) {
+        let msg = 'Failed to update entity';
+        try { const j = await r.json(); msg = j.detail || msg; } catch { }
+        throw new Error(msg);
+    }
+    return r.json();
+}
+
+export async function deleteEntity(projectId: string, id: string): Promise<void> {
+    const r = await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
+    if (!r.ok) {
+        let msg = 'Failed to delete entity';
+        try { const j = await r.json(); msg = j.detail || msg; } catch { }
+        throw new Error(msg);
+    }
+}

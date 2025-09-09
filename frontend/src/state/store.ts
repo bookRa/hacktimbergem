@@ -73,6 +73,9 @@ interface AppState {
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
     setSelectedEntityId: (id: string | null) => void;
+    updateEntityBBox: (id: string, bbox: [number, number, number, number]) => Promise<void>;
+    updateEntityMeta: (id: string, data: { title?: string | null; text?: string | null; }) => Promise<void>;
+    deleteEntity: (id: string) => Promise<void>;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
@@ -431,6 +434,39 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
+    updateEntityBBox: async (id, bbox) => {
+        const { projectId, addToast, fetchEntities } = get();
+        if (!projectId) return;
+        try {
+            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: bbox }) });
+            await fetchEntities();
+        } catch (e: any) {
+            console.error(e); addToast({ kind: 'error', message: e.message || 'Update failed' });
+        }
+    },
+    updateEntityMeta: async (id, data) => {
+        const { projectId, addToast, fetchEntities } = get();
+        if (!projectId) return;
+        try {
+            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            await fetchEntities();
+            addToast({ kind: 'success', message: 'Updated' });
+        } catch (e: any) {
+            console.error(e); addToast({ kind: 'error', message: e.message || 'Update failed' });
+        }
+    },
+    deleteEntity: async (id) => {
+        const { projectId, addToast, fetchEntities, selectedEntityId, setSelectedEntityId } = get();
+        if (!projectId) return;
+        try {
+            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
+            if (selectedEntityId === id) setSelectedEntityId(null);
+            await fetchEntities();
+            addToast({ kind: 'success', message: 'Entity deleted' });
+        } catch (e: any) {
+            console.error(e); addToast({ kind: 'error', message: e.message || 'Delete failed' });
+        }
+    },
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),

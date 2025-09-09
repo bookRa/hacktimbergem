@@ -4,7 +4,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from .ingest import init_manifest, ingest_pdf, read_manifest, project_dir
 from .entities_models import CreateEntityUnion, EntityUnion
-from .entities_store import load_entities, create_entity
+from .entities_store import load_entities, create_entity, update_entity, delete_entity
+from fastapi import Body
 
 app = FastAPI(title="Timbergem Backend", version="0.1.0")
 
@@ -92,3 +93,39 @@ async def create_entity_endpoint(project_id: str, body: CreateEntityUnion):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return ent
+
+
+@app.patch(
+    "/api/projects/{project_id}/entities/{entity_id}", response_model=EntityUnion
+)
+async def patch_entity_endpoint(
+    project_id: str,
+    entity_id: str,
+    body: dict = Body(...),
+):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    bbox = body.get("bounding_box")
+    title = body.get("title")
+    text = body.get("text")
+    try:
+        ent = update_entity(
+            project_id,
+            entity_id,
+            bounding_box=bbox,
+            title=title,
+            text=text,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ent
+
+
+@app.delete("/api/projects/{project_id}/entities/{entity_id}")
+async def delete_entity_endpoint(project_id: str, entity_id: str):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    ok = delete_entity(project_id, entity_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    return {"deleted": True}

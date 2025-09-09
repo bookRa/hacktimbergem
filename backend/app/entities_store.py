@@ -98,9 +98,62 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
     return ent
 
 
+def update_entity(
+    project_id: str,
+    entity_id: str,
+    *,
+    bounding_box: list[float] | None = None,
+    title: str | None = None,
+    text: str | None = None,
+) -> EntityUnion:
+    entities = load_entities(project_id)
+    found = None
+    for i, e in enumerate(entities):
+        if getattr(e, "id", None) == entity_id:
+            found = (i, e)
+            break
+    if not found:
+        raise ValueError("Entity not found")
+    idx, current = found
+    data = current.dict()
+    if bounding_box is not None:
+        if len(bounding_box) != 4:
+            raise ValueError("bounding_box must have 4 numbers")
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bounding_box]
+        except Exception:
+            raise ValueError("bounding_box values must be numeric")
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("bounding_box must have x2>x1 and y2>y1")
+        data["bounding_box"] = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    # Title for drawing/legend/schedule; text for note
+    if title is not None and data["entity_type"] in {"drawing", "legend", "schedule"}:
+        data["title"] = title
+    if text is not None and data["entity_type"] == "note":
+        data["text"] = text
+    # Reconstruct entity
+    cls_map = {"drawing": Drawing, "legend": Legend, "schedule": Schedule, "note": Note}
+    cls = cls_map[data["entity_type"]]
+    updated = cls(**data)
+    entities[idx] = updated
+    save_entities(project_id, entities)
+    return updated
+
+
+def delete_entity(project_id: str, entity_id: str) -> bool:
+    entities = load_entities(project_id)
+    new_entities = [e for e in entities if getattr(e, "id", None) != entity_id]
+    if len(new_entities) == len(entities):
+        return False
+    save_entities(project_id, new_entities)
+    return True
+
+
 __all__ = [
     "load_entities",
     "save_entities",
     "create_entity",
+    "update_entity",
+    "delete_entity",
     "entities_path",
 ]
