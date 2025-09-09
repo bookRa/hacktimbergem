@@ -3,6 +3,8 @@ from fastapi import FastAPI, UploadFile, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from .ingest import init_manifest, ingest_pdf, read_manifest, project_dir
+from .entities_models import CreateEntityUnion, EntityUnion
+from .entities_store import load_entities, create_entity
 
 app = FastAPI(title="Timbergem Backend", version="0.1.0")
 
@@ -57,3 +59,32 @@ async def get_ocr(project_id: str, page_num: int):
 
     with open(path) as f:
         return json.load(f)
+
+
+# --------- Entities Endpoints ---------
+
+
+@app.get("/api/projects/{project_id}/entities", response_model=list[EntityUnion])
+async def list_entities(project_id: str):
+    # Ensure project exists (manifest presence)
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return load_entities(project_id)
+
+
+@app.post("/api/projects/{project_id}/entities", response_model=EntityUnion, status_code=201)
+async def create_entity_endpoint(project_id: str, body: CreateEntityUnion):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    # Validate bounding_box basic structure before delegate (length numeric is revalidated there too)
+    if len(body.bounding_box) != 4:
+        raise HTTPException(status_code=422, detail="bounding_box must have 4 numbers")
+    try:
+        _ = [float(v) for v in body.bounding_box]
+    except Exception:
+        raise HTTPException(status_code=422, detail="bounding_box values must be numeric")
+    try:
+        ent = create_entity(project_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ent

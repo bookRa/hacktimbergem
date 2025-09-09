@@ -193,13 +193,24 @@ export const PdfCanvas: React.FC = () => {
         if (!holder) return;
 
         const handleWheel = (e: WheelEvent) => {
-            if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return; // only modify when modifier pressed
-            // Prevent page zoom (browser default for ctrl+wheel)
-            e.preventDefault();
-            const direction = e.deltaY > 0 ? -1 : 1;
-            // Use smooth exponential step
-            const factor = direction > 0 ? 1.1 : 1 / 1.1;
-            applyPointerZoom(factor, e.clientX, e.clientY);
+            // Zoom only if ctrl (Windows) or meta (macOS) pressed.
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const direction = e.deltaY > 0 ? -1 : 1;
+                const factor = direction > 0 ? 1.1 : 1 / 1.1;
+                applyPointerZoom(factor, e.clientX, e.clientY);
+                return;
+            }
+            // Shift+wheel should become horizontal scroll; let browser handle vertical->horizontal mapping except enforce horizontal manually if needed.
+            if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                // If browser already translates to horizontal (deltaX !=0) do nothing special; else manually scroll.
+                if (e.deltaX === 0 && e.deltaY !== 0 && containerRef.current) {
+                    containerRef.current.scrollLeft += e.deltaY;
+                    e.preventDefault();
+                }
+                return;
+            }
+            // Otherwise (no modifier) let normal vertical scroll pass through.
         };
 
         // Basic two-pointer pinch using pointer events

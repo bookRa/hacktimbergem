@@ -54,6 +54,7 @@ interface AppState {
     setSelectedBlocks: (pageIndex: number, indices: number[], additive?: boolean) => void;
     bulkSetStatus: (pageIndex: number, status: 'unverified' | 'accepted' | 'flagged' | 'noise') => void;
     mergeSelectedBlocks: (pageIndex: number) => void; // create synthetic merged block
+    deleteSelectedBlocks: (pageIndex: number) => void; // remove selected blocks (for accidental merged blocks)
     // Notes entities (promoted selections)
     notes: { id: string; pageIndex: number; blockIds: number[]; bbox: [number, number, number, number]; text: string; createdAt: number; note_type: string; }[];
     promoteSelectionToNote: (pageIndex: number) => void;
@@ -62,6 +63,14 @@ interface AppState {
     pageTitles: Record<number, { text: string; fromBlocks?: number[] }>;
     setPageTitle: (pageIndex: number, text: string, fromBlocks?: number[]) => void;
     deriveTitleFromBlocks: (pageIndex: number, blockIds: number[]) => void;
+    // Persisted visual entities from backend
+    entities: any[]; // typed later via api/entities
+    entitiesStatus: 'idle' | 'loading' | 'error';
+    fetchEntities: () => Promise<void>;
+    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note'; startX: number; startY: number; } | null;
+    startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'note') => void;
+    cancelEntityCreation: () => void;
+    finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
@@ -97,6 +106,9 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     pageTitles: {},
     rightPanelTab: 'blocks',
     scrollTarget: null,
+    entities: [],
+    entitiesStatus: 'idle',
+    creatingEntity: null,
     uploadAndStart: async (file: File) => {
         // parallel: upload to backend and local load for immediate viewing
         const form = new FormData();
@@ -287,6 +299,33 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [newIndex] }
         };
     }),
+    deleteSelectedBlocks: (pageIndex) => set((state): Partial<AppState> => {
+        const ocr = state.pageOcr[pageIndex];
+        if (!ocr) return {};
+        const selected = state.selectedBlocks[pageIndex] || [];
+        if (!selected.length) return {};
+        const blocks = ocr.blocks || [];
+        // Filter out selected blocks
+        const keepMap = new Set(selected);
+        const newBlocks = blocks.filter((_: any, idx: number) => !keepMap.has(idx));
+        // Re-map indices for ocrBlockState and selection
+        const indexMap: Record<number, number> = {};
+        let newIdx = 0;
+        blocks.forEach((_b: any, i: number) => { if (!keepMap.has(i)) { indexMap[i] = newIdx++; } });
+        const oldMeta = state.ocrBlockState[pageIndex] || {};
+        const newMeta: Record<number, { status: 'unverified' | 'accepted' | 'flagged' | 'noise' }> = {};
+        Object.entries(oldMeta).forEach(([k, v]) => {
+            const oi = parseInt(k, 10);
+            if (keepMap.has(oi)) return;
+            newMeta[indexMap[oi]] = v;
+        });
+        const newOcr = { ...ocr, blocks: newBlocks };
+        return {
+            pageOcr: { ...state.pageOcr, [pageIndex]: newOcr },
+            ocrBlockState: { ...state.ocrBlockState, [pageIndex]: newMeta },
+            selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] }
+        };
+    }),
     promoteSelectionToNote: (pageIndex) => set((state): Partial<AppState> => {
         const ocr = state.pageOcr[pageIndex];
         if (!ocr) return {};
@@ -341,6 +380,50 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         const blocks = ocr.blocks || [];
         const combined = blockIds.map(i => blocks[i]?.text || '').filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
         if (combined) setPageTitle(pageIndex, combined, blockIds);
+    },
+    fetchEntities: async () => {
+        const { projectId, addToast } = get();
+        if (!projectId) return;
+        set({ entitiesStatus: 'loading' });
+        try {
+            const r = await fetch(`/api/projects/${projectId}/entities`);
+            if (!r.ok) throw new Error('Failed');
+            const data = await r.json();
+            set({ entities: data, entitiesStatus: 'idle' });
+        } catch (e) {
+            console.error(e);
+            set({ entitiesStatus: 'error' });
+            addToast({ kind: 'error', message: 'Failed to load entities' });
+        }
+    },
+    startEntityCreation: (type) => set({ creatingEntity: { type, startX: -1, startY: -1 } }),
+    cancelEntityCreation: () => set({ creatingEntity: null }),
+    finalizeEntityCreation: async (x1, y1, x2, y2) => {
+        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities } = get();
+        if (!creatingEntity || !projectId) return;
+        const sheetNumber = currentPageIndex + 1; // 1-based
+        try {
+            const payload: any = {
+                entity_type: creatingEntity.type,
+                source_sheet_number: sheetNumber,
+                bounding_box: [x1, y1, x2, y2]
+            };
+            const resp = await fetch(`/api/projects/${projectId}/entities`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            if (!resp.ok) {
+                let msg = 'Create failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            await fetchEntities();
+            addToast({ kind: 'success', message: `${creatingEntity.type} created` });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e.message || 'Create failed' });
+        } finally {
+            set({ creatingEntity: null });
+        }
     },
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
