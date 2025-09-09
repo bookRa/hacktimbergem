@@ -70,7 +70,9 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             const { x1, y1, x2, y2 } = ent.bounding_box;
             if (x >= x1 && x <= x2 && y >= y1 && y <= y2) {
                 const handle = hitHandle(x, y, ent.bounding_box);
+                // If clicking inside entity (not on handle) and not currently a drag, select & open editor
                 setSelectedEntityId(ent.id);
+                setRightPanelTab('entities');
                 if (handle) {
                     editRef.current = { mode: 'resize', entityId: ent.id, origin: { ...ent.bounding_box }, start: { x, y }, handle } as any;
                 } else {
@@ -141,7 +143,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
 
     return (
         <div
-            style={{ position: 'absolute', inset: 0, pointerEvents: creatingEntity ? 'auto' : 'none' }}
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
