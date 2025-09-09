@@ -413,7 +413,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             });
             if (!resp.ok) {
                 let msg = 'Create failed';
-                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                try { const j = await resp.json(); msg = j.detail || msg; } catch { }
                 throw new Error(msg);
             }
             await fetchEntities();

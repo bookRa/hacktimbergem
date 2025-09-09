@@ -72,7 +72,9 @@ async def list_entities(project_id: str):
     return load_entities(project_id)
 
 
-@app.post("/api/projects/{project_id}/entities", response_model=EntityUnion, status_code=201)
+@app.post(
+    "/api/projects/{project_id}/entities", response_model=EntityUnion, status_code=201
+)
 async def create_entity_endpoint(project_id: str, body: CreateEntityUnion):
     if not read_manifest(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
@@ -82,7 +84,9 @@ async def create_entity_endpoint(project_id: str, body: CreateEntityUnion):
     try:
         _ = [float(v) for v in body.bounding_box]
     except Exception:
-        raise HTTPException(status_code=422, detail="bounding_box values must be numeric")
+        raise HTTPException(
+            status_code=422, detail="bounding_box values must be numeric"
+        )
     try:
         ent = create_entity(project_id, body)
     except ValueError as e:
