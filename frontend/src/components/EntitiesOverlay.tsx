@@ -26,6 +26,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const dragRef = useRef<{ sx: number; sy: number; } | null>(null);
     const editRef = useRef<{ mode: 'move' | 'resize'; entityId: string; origin: { x1: number; y1: number; x2: number; y2: number }; start: { x: number; y: number }; handle?: string } | null>(null);
+    const [hoverCursor, setHoverCursor] = useState<string | null>(null);
 
     useEffect(() => {
         const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && creatingEntity) { cancelEntityCreation(); setDraft(null); } };
@@ -53,6 +54,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         return null;
     };
 
+    const TOL_PX = 6; // screen pixels tolerance around bbox edges for easier grabbing
     const onPointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
         if (!wrapperRef.current) return;
         const rect = wrapperRef.current.getBoundingClientRect();
@@ -68,7 +70,9 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         for (let i = pageEntities.length - 1; i >= 0; i--) {
             const ent = pageEntities[i];
             const { x1, y1, x2, y2 } = ent.bounding_box;
-            if (x >= x1 && x <= x2 && y >= y1 && y <= y2) {
+            // Expand test by tolerance converted to PDF space
+            const tol = TOL_PX / scale;
+            if (x >= (x1 - tol) && x <= (x2 + tol) && y >= (y1 - tol) && y <= (y2 + tol)) {
                 const handle = hitHandle(x, y, ent.bounding_box);
                 // If clicking inside entity (not on handle) and not currently a drag, select & open editor
                 setSelectedEntityId(ent.id);
@@ -109,6 +113,27 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 setTempEdit(entityId, { x1, y1, x2, y2 });
             }
             e.preventDefault();
+            return;
+        }
+        // Hover cursor logic when not editing/creating
+        if (!creatingEntity && selectedEntityId) {
+            const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
+            if (ent) {
+                const { x1, y1, x2, y2 } = ent.bounding_box;
+                const tol = TOL_PX / scale;
+                if (x >= (x1 - tol) && x <= (x2 + tol) && y >= (y1 - tol) && y <= (y2 + tol)) {
+                    const h = hitHandle(x, y, ent.bounding_box);
+                    if (h) {
+                        setHoverCursor(handleToCursor(h));
+                    } else {
+                        setHoverCursor('move');
+                    }
+                } else {
+                    if (hoverCursor) setHoverCursor(null);
+                }
+            }
+        } else if (hoverCursor) {
+            setHoverCursor(null);
         }
     };
     const [editingBoxes, setEditingBoxes] = useState<Record<string, { x1: number; y1: number; x2: number; y2: number }>>({});
@@ -143,7 +168,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
 
     return (
         <div
-            style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'auto', cursor: hoverCursor || 'default' }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -157,8 +182,17 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                     const selected = selectedEntityId === e.id;
                     return (
                         <g key={e.id}>
-                            <rect x={x1 * scale} y={y1 * scale} width={w} height={h} stroke={selected ? '#f8fafc' : c.stroke} strokeWidth={selected ? 1.5 : 1} fill={c.fill} />
-                            {selected && !creatingEntity && renderHandles(x1, y1, x2, y2)}
+                            <rect
+                                x={x1 * scale}
+                                y={y1 * scale}
+                                width={w}
+                                height={h}
+                                stroke={selected ? c.stroke : 'rgba(148,163,184,0.6)'}
+                                strokeWidth={selected ? 2 : 0.75}
+                                fill={c.fill}
+                                style={{ cursor: selected ? 'move' : 'pointer' }}
+                            />
+                            {selected && !creatingEntity ? renderHandles(x1, y1, x2, y2, scale) : null}
                         </g>
                     );
                 })}
@@ -170,15 +204,50 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     );
 };
 
-function renderHandles(x1: number, y1: number, x2: number, y2: number) {
-    const points = [
-        [x1, y1], [(x1 + x2) / 2, y1], [x2, y1],
-        [x1, (y1 + y2) / 2], [(x1 + x2) / 2, (y1 + y2) / 2], [x2, (y1 + y2) / 2],
-        [x1, y2], [(x1 + x2) / 2, y2], [x2, y2]
+function renderHandles(x1: number, y1: number, x2: number, y2: number, scale: number) {
+    const size = 8; // px on screen
+    const half = size / 2;
+    const points: Array<[number, number, string]> = [
+        [x1, y1, 'nwse-resize'],
+        [(x1 + x2) / 2, y1, 'ns-resize'],
+        [x2, y1, 'nesw-resize'],
+        [x1, (y1 + y2) / 2, 'ew-resize'],
+        [(x1 + x2) / 2, (y1 + y2) / 2, 'move'],
+        [x2, (y1 + y2) / 2, 'ew-resize'],
+        [x1, y2, 'nesw-resize'],
+        [(x1 + x2) / 2, y2, 'ns-resize'],
+        [x2, y2, 'nwse-resize']
     ];
     return (
         <g>
-            {points.map(([px, py], i) => <rect key={i} x={px * 1 - 3} y={py * 1 - 3} width={6} height={6} fill="#f8fafc" stroke="#111827" strokeWidth={1} />)}
+            {points.map(([px, py, cursor], i) => (
+                <rect
+                    key={i}
+                    x={px * scale - half}
+                    y={py * scale - half}
+                    width={size}
+                    height={size}
+                    fill="#f8fafc"
+                    stroke="#111827"
+                    strokeWidth={1}
+                    style={{ cursor, pointerEvents: 'auto' }}
+                />
+            ))}
         </g>
     );
+}
+
+function handleToCursor(handle: string): string {
+    switch (handle) {
+        case 'tl': return 'nwse-resize';
+        case 'tr': return 'nesw-resize';
+        case 'bl': return 'nesw-resize';
+        case 'br': return 'nwse-resize';
+        case 'tm': return 'ns-resize';
+        case 'bm': return 'ns-resize';
+        case 'ml': return 'ew-resize';
+        case 'mr': return 'ew-resize';
+        case 'mm': return 'move';
+        default: return 'default';
+    }
 }
