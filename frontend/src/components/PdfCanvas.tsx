@@ -4,6 +4,7 @@ import { GlobalWorkerOptions } from 'pdfjs-dist';
 import 'pdfjs-dist/web/pdf_viewer.css';
 import { OcrOverlay } from './OcrOverlay';
 import { DragSelectOverlay } from './DragSelectOverlay';
+import { EntitiesOverlay } from './EntitiesOverlay';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -17,7 +18,7 @@ export const PdfCanvas: React.FC = () => {
     const pageWrapperRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
 
-    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget } = useProjectStore((s: ProjectStore & any) => ({
+    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity } = useProjectStore((s: ProjectStore & any) => ({
         pdfDoc: s.pdfDoc,
         currentPageIndex: s.currentPageIndex,
         pages: s.pages,
@@ -35,7 +36,8 @@ export const PdfCanvas: React.FC = () => {
         showOcr: s.showOcr,
         scrollTarget: s.scrollTarget,
         setScrollTarget: s.setScrollTarget,
-        clearScrollTarget: s.clearScrollTarget
+        clearScrollTarget: s.clearScrollTarget,
+        creatingEntity: s.creatingEntity
     }));
 
     // Render page and compute fit scale (only if backend image not yet present)
@@ -287,16 +289,18 @@ export const PdfCanvas: React.FC = () => {
                         />
                         {showOcr && <>
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
-                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
+                            {!creatingEntity && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
+                        <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 ) : (
                     <>
                         <canvas ref={canvasRef} className="pdf-canvas" style={{ width: displayWidth, height: displayHeight, background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }} />
                         {showOcr && <>
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
-                            <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
+                            {!creatingEntity && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
+                        <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 )}
             </div>

@@ -71,6 +71,8 @@ interface AppState {
     startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'note') => void;
     cancelEntityCreation: () => void;
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
+    selectedEntityId: string | null;
+    setSelectedEntityId: (id: string | null) => void;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
@@ -109,6 +111,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     entities: [],
     entitiesStatus: 'idle',
     creatingEntity: null,
+    selectedEntityId: null,
     uploadAndStart: async (file: File) => {
         // parallel: upload to backend and local load for immediate viewing
         const form = new FormData();
@@ -139,6 +142,8 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 if (data.status === 'complete') {
                     set({ manifestStatus: 'complete' });
                     get().addToast({ kind: 'success', message: 'Processing complete' });
+                    // Fetch entities once processing completes (initial load)
+                    get().fetchEntities();
                     done = true;
                 } else if (data.status === 'error') {
                     set({ manifestStatus: 'error' });
@@ -425,6 +430,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             set({ creatingEntity: null });
         }
     },
+    setSelectedEntityId: (id) => set({ selectedEntityId: id }),
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),

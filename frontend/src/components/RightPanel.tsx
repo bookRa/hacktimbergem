@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, creatingEntity, cancelEntityCreation, fetchEntities } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -23,7 +23,12 @@ export const RightPanel: React.FC = () => {
         updateNoteType: s.updateNoteType,
         pageTitles: s.pageTitles,
         setPageTitle: s.setPageTitle,
-        deriveTitleFromBlocks: s.deriveTitleFromBlocks
+        deriveTitleFromBlocks: s.deriveTitleFromBlocks,
+        entities: s.entities,
+        startEntityCreation: s.startEntityCreation,
+        creatingEntity: s.creatingEntity,
+        cancelEntityCreation: s.cancelEntityCreation,
+        fetchEntities: s.fetchEntities
     }));
     const ocr = pageOcr[currentPageIndex];
     const blocks = ocr?.blocks || [];
@@ -141,8 +146,35 @@ export const RightPanel: React.FC = () => {
                 </>
             )}
             {rightPanelTab === 'entities' && (
-                <section className="kp-section" style={{ maxHeight: 400, overflow: 'auto' }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Notes ({notes.filter((n: any) => n.pageIndex === currentPageIndex).length})</div>
+                <section className="kp-section" style={{ maxHeight: 420, overflow: 'auto' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                        <div style={{ fontWeight:600, fontSize:13 }}>Entities (Page {currentPageIndex+1})</div>
+                        <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+                        {(['drawing','legend','schedule','note'] as const).map(t => (
+                            <button key={t} disabled={!!creatingEntity} onClick={() => startEntityCreation(t)} style={miniBtn(!!creatingEntity)}>{t}</button>
+                        ))}
+                        {creatingEntity && <button onClick={() => cancelEntityCreation()} style={miniBtn(false)}>Cancel</button>}
+                    </div>
+                    {creatingEntity && <div style={{ fontSize:11, color:'#fbbf24', marginBottom:6 }}>Drawing new {creatingEntity.type}: click-drag on sheet to place. Esc to cancel.</div>}
+                    <div style={{ fontSize:11, opacity:.7, marginBottom:4 }}>Backend Entities</div>
+                    {entities.filter((e:any)=>e.source_sheet_number===currentPageIndex+1).map((e:any)=>{
+                        return (
+                            <div key={e.id} style={{ border:'1px solid #374151', borderRadius:4, padding:'4px 6px', marginBottom:6, background:'#111827', color:'#f1f5f9', fontSize:11 }}>
+                                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                    <strong style={{ textTransform:'capitalize' }}>{e.entity_type}</strong>
+                                    <span style={{ opacity:.7 }}>#{e.id.slice(0,6)}</span>
+                                </div>
+                                <div style={{ marginTop:2, opacity:.8 }}>Box: {e.bounding_box.x1.toFixed(1)}, {e.bounding_box.y1.toFixed(1)}, {e.bounding_box.x2.toFixed(1)}, {e.bounding_box.y2.toFixed(1)}</div>
+                                {e.title && <div style={{ marginTop:2 }}>Title: {e.title}</div>}
+                                {e.text && <div style={{ marginTop:2, whiteSpace:'pre-wrap' }}>{e.text.length>120? e.text.slice(0,120)+'…': e.text}</div>}
+                            </div>
+                        );
+                    })}
+                    {entities.filter((e:any)=>e.source_sheet_number===currentPageIndex+1).length===0 && <div style={{ fontSize:11, opacity:.6 }}>(None yet)</div>}
+                    <div style={{ marginTop:10, fontSize:10, lineHeight:1.4, opacity:.65 }}>Notes (promoted OCR selections) remain separate below:</div>
+                    <div style={{ fontWeight:600, fontSize:12, margin:'8px 0 4px' }}>Local Notes ({notes.filter((n: any) => n.pageIndex === currentPageIndex).length})</div>
                     {notes.filter((n: any) => n.pageIndex === currentPageIndex).map((n: any) => {
                         const truncated = n.text.length > 200 ? n.text.slice(0, 200) + '…' : n.text;
                         return (
