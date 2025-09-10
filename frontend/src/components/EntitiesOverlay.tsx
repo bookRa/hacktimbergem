@@ -24,6 +24,18 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         updateEntityBBox: s.updateEntityBBox
     }));
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
+    const overlayRef = useRef<HTMLDivElement | null>(null);
+    const passthroughRef = useRef(false);
+    useEffect(() => {
+        const handleWinPointerUp = () => {
+            if (passthroughRef.current && overlayRef.current) {
+                overlayRef.current.style.pointerEvents = 'auto';
+                passthroughRef.current = false;
+            }
+        };
+        window.addEventListener('pointerup', handleWinPointerUp, true);
+        return () => window.removeEventListener('pointerup', handleWinPointerUp, true);
+    }, []);
     const dragRef = useRef<{ sx: number; sy: number; } | null>(null);
     const editRef = useRef<{ mode: 'move' | 'resize'; entityId: string; origin: { x1: number; y1: number; x2: number; y2: number }; start: { x: number; y: number }; handle?: string } | null>(null);
     const [hoverCursor, setHoverCursor] = useState<string | null>(null);
@@ -86,8 +98,34 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 return;
             }
         }
-        // click empty clears selection
-        if (selectedEntityId) setSelectedEntityId(null);
+        // Missed all entities: forward pointer to underlying layer (OCR blocks) so their click logic still works.
+        if (overlayRef.current) {
+            // Disable pointer events until natural pointerup so underlying layer gets full click sequence.
+            overlayRef.current.style.pointerEvents = 'none';
+            passthroughRef.current = true;
+            // Manually trigger pointerdown on underlying element (some frameworks rely on it over mousedown)
+            const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+            if (el) {
+                try {
+                    const forwardedDown = new PointerEvent('pointerdown', {
+                        bubbles: true,
+                        cancelable: true,
+                        pointerId: (e as any).pointerId,
+                        clientX: e.clientX,
+                        clientY: e.clientY,
+                        screenX: e.screenX,
+                        screenY: e.screenY,
+                        buttons: e.buttons,
+                        ctrlKey: e.ctrlKey,
+                        metaKey: e.metaKey,
+                        shiftKey: e.shiftKey,
+                        altKey: e.altKey
+                    });
+                    el.dispatchEvent(forwardedDown);
+                } catch { /* ignore */ }
+            }
+        }
+        // Do not clear selection automatically; let underlying handlers decide.
     };
     const onPointerMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
         const rect = wrapperRef.current?.getBoundingClientRect();
@@ -168,6 +206,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
 
     return (
         <div
+            ref={overlayRef}
             style={{ position: 'absolute', inset: 0, pointerEvents: 'auto', cursor: hoverCursor || 'default' }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
