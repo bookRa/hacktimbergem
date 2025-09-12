@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../state/store';
+import { pdfToCanvas } from '../utils/coords';
+
+declare global { interface Window { __TG_DEBUG_OCR_CLICK?: boolean; } }
+const dbg = (...args: any[]) => { if (window.__TG_DEBUG_OCR_CLICK) console.log('[OCRClick]', ...args); };
 
 interface Props { pageIndex: number; scale: number; wrapperRef: React.RefObject<HTMLDivElement>; }
 
@@ -12,7 +16,7 @@ const TYPE_COLORS: Record<string, { stroke: string; fill: string; }> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -21,7 +25,10 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         setRightPanelTab: s.setRightPanelTab,
         selectedEntityId: s.selectedEntityId,
         setSelectedEntityId: s.setSelectedEntityId,
-        updateEntityBBox: s.updateEntityBBox
+        updateEntityBBox: s.updateEntityBBox,
+        pageOcr: (s as any).pageOcr,
+        pagesMeta: (s as any).pagesMeta,
+        toggleSelectBlock: (s as any).toggleSelectBlock
     }));
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -29,8 +36,15 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     useEffect(() => {
         const handleWinPointerUp = () => {
             if (passthroughRef.current && overlayRef.current) {
-                overlayRef.current.style.pointerEvents = 'auto';
-                passthroughRef.current = false;
+                const overlayEl = overlayRef.current;
+                // Defer re-enabling pointer events until after the native click has been dispatched
+                // to the underlying element. Using a timer avoids re-grabbing the pointerup/click.
+                setTimeout(() => {
+                    if (overlayRef.current === overlayEl) {
+                        overlayEl.style.pointerEvents = 'auto';
+                        passthroughRef.current = false;
+                    }
+                }, 0);
             }
         };
         window.addEventListener('pointerup', handleWinPointerUp, true);
@@ -39,6 +53,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     const dragRef = useRef<{ sx: number; sy: number; } | null>(null);
     const editRef = useRef<{ mode: 'move' | 'resize'; entityId: string; origin: { x1: number; y1: number; x2: number; y2: number }; start: { x: number; y: number }; handle?: string } | null>(null);
     const [hoverCursor, setHoverCursor] = useState<string | null>(null);
+    const pendingOcrClickRef = useRef<{ startX: number; startY: number; blockIndex: number; additive: boolean } | null>(null);
 
     useEffect(() => {
         const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && creatingEntity) { cancelEntityCreation(); setDraft(null); } };
@@ -72,6 +87,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         const rect = wrapperRef.current.getBoundingClientRect();
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
+        dbg('pointerdown raster coords', { x, y, scale, pageIndex });
         if (creatingEntity) {
             dragRef.current = { sx: x, sy: y };
             setDraft({ x1: x, y1: y, x2: x, y2: y });
@@ -89,6 +105,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 // If clicking inside entity (not on handle) and not currently a drag, select & open editor
                 setSelectedEntityId(ent.id);
                 setRightPanelTab('entities');
+                dbg('entity hit', { id: ent.id, handle: handle || 'move' });
                 if (handle) {
                     editRef.current = { mode: 'resize', entityId: ent.id, origin: { ...ent.bounding_box }, start: { x, y }, handle } as any;
                 } else {
@@ -98,12 +115,38 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 return;
             }
         }
-        // Missed all entities: forward pointer to underlying layer (OCR blocks) so their click logic still works.
+        // Missed all entities: attempt to detect OCR block under the pointer (convert bbox to raster)
+        const ocr = (pageOcr as any)?.[pageIndex];
+        const meta = (pagesMeta as any)?.[pageIndex];
+        if (ocr && meta) {
+            const renderMeta = {
+                pageWidthPts: ocr.width_pts,
+                pageHeightPts: ocr.height_pts,
+                rasterWidthPx: meta.nativeWidth,
+                rasterHeightPx: meta.nativeHeight,
+                rotation: 0 as 0
+            };
+            const blocks = ocr.blocks || [];
+            for (let i = blocks.length - 1; i >= 0; i--) {
+                const [bx1, by1, bx2, by2] = blocks[i].bbox;
+                const [cx1, cy1, cx2, cy2] = pdfToCanvas([bx1, by1, bx2, by2], renderMeta as any);
+                if (x >= cx1 && x <= cx2 && y >= cy1 && y <= cy2) {
+                    const additive = e.metaKey || e.ctrlKey || e.shiftKey;
+                    dbg('ocr mousedown hit (arming click)', { i, x, y, additive });
+                    pendingOcrClickRef.current = { startX: x, startY: y, blockIndex: i, additive };
+                    e.preventDefault();
+                    return;
+                }
+            }
+            dbg('no ocr hit', { x, y });
+        } else {
+            dbg('missing ocr/meta', { hasOcr: !!ocr, hasMeta: !!meta });
+        }
+        // If not clicking on OCR either, forward pointer to underlying layer for other interactions.
         if (overlayRef.current) {
-            // Disable pointer events until natural pointerup so underlying layer gets full click sequence.
+            dbg('forwarding pointerdown to underlying');
             overlayRef.current.style.pointerEvents = 'none';
             passthroughRef.current = true;
-            // Manually trigger pointerdown on underlying element (some frameworks rely on it over mousedown)
             const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
             if (el) {
                 try {
@@ -132,6 +175,16 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         if (!rect) return;
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
+        // Cancel pending OCR click if moving too far (treat as drag)
+        if (pendingOcrClickRef.current) {
+            const dx = Math.abs(x - pendingOcrClickRef.current.startX);
+            const dy = Math.abs(y - pendingOcrClickRef.current.startY);
+            const thresh = 3 / scale; // 3 screen px
+            if (dx > thresh || dy > thresh) {
+                dbg('cancel pending OCR click due to move', { dx, dy, thresh });
+                pendingOcrClickRef.current = null;
+            }
+        }
         if (creatingEntity && dragRef.current) {
             const { sx, sy } = dragRef.current;
             setDraft({ x1: Math.min(sx, x), y1: Math.min(sy, y), x2: Math.max(sx, x), y2: Math.max(sy, y) });
@@ -187,6 +240,15 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     };
 
     const onPointerUp: React.PointerEventHandler<HTMLDivElement> = (e) => {
+        // Handle armed OCR click first
+        if (pendingOcrClickRef.current) {
+            const { blockIndex, additive } = pendingOcrClickRef.current;
+            dbg('OCR click commit', { blockIndex, additive });
+            toggleSelectBlock(pageIndex, blockIndex, additive);
+            setRightPanelTab('blocks');
+            pendingOcrClickRef.current = null;
+            // Do not return; allow entity edit end if any (shouldn't be any in this path)
+        }
         if (creatingEntity && dragRef.current) {
             if (draft) {
                 const minSize = 4;
