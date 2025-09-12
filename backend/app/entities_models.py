@@ -7,7 +7,7 @@ The `entity_type` field is the discriminator enabling future extension.
 from __future__ import annotations
 
 from pydantic import BaseModel, Field, validator
-from typing import Literal, List, Union
+from typing import Literal, List, Union, Optional, Dict, Any
 import time
 
 
@@ -72,7 +72,25 @@ class Note(BaseVisualEntity):
     text: str | None = None
 
 
-EntityUnion = Union[Drawing, Legend, Schedule, Note]
+class SymbolDefinition(BaseVisualEntity):
+    entity_type: Literal["symbol_definition"] = "symbol_definition"
+    name: str
+    description: Optional[str] = None
+    visual_pattern_description: Optional[str] = None
+    scope: Literal["project", "sheet"] = "sheet"
+    defined_in_id: str
+
+
+class ComponentDefinition(BaseVisualEntity):
+    entity_type: Literal["component_definition"] = "component_definition"
+    name: str
+    description: Optional[str] = None
+    specifications: Optional[Dict[str, Any]] = None
+    scope: Literal["project", "sheet"] = "sheet"
+    defined_in_id: str
+
+
+EntityUnion = Union[Drawing, Legend, Schedule, Note, SymbolDefinition, ComponentDefinition]
 
 
 class CreateDrawing(BaseModel):
@@ -103,7 +121,36 @@ class CreateNote(BaseModel):
     text: str | None = None
 
 
-CreateEntityUnion = Union[CreateDrawing, CreateLegend, CreateSchedule, CreateNote]
+class CreateSymbolDefinition(BaseModel):
+    entity_type: Literal["symbol_definition"]
+    source_sheet_number: int
+    bounding_box: List[float]
+    name: str
+    description: Optional[str] = None
+    visual_pattern_description: Optional[str] = None
+    scope: Literal["project", "sheet"] = "sheet"
+    defined_in_id: str
+
+
+class CreateComponentDefinition(BaseModel):
+    entity_type: Literal["component_definition"]
+    source_sheet_number: int
+    bounding_box: List[float]
+    name: str
+    description: Optional[str] = None
+    specifications: Optional[Dict[str, Any]] = None
+    scope: Literal["project", "sheet"] = "sheet"
+    defined_in_id: str
+
+
+CreateEntityUnion = Union[
+    CreateDrawing,
+    CreateLegend,
+    CreateSchedule,
+    CreateNote,
+    CreateSymbolDefinition,
+    CreateComponentDefinition,
+]
 
 __all__ = [
     "BoundingBox",
@@ -112,10 +159,14 @@ __all__ = [
     "Legend",
     "Schedule",
     "Note",
+    "SymbolDefinition",
+    "ComponentDefinition",
     "EntityUnion",
     "CreateEntityUnion",
     "CreateDrawing",
     "CreateLegend",
     "CreateSchedule",
     "CreateNote",
+    "CreateSymbolDefinition",
+    "CreateComponentDefinition",
 ]

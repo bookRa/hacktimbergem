@@ -12,7 +12,9 @@ const TYPE_COLORS: Record<string, { stroke: string; fill: string; }> = {
     drawing: { stroke: '#2563eb', fill: 'rgba(37,99,235,0.15)' },
     legend: { stroke: '#10b981', fill: 'rgba(16,185,129,0.18)' },
     schedule: { stroke: '#f59e0b', fill: 'rgba(245,158,11,0.18)' },
-    note: { stroke: '#ec4899', fill: 'rgba(236,72,153,0.18)' }
+    note: { stroke: '#ec4899', fill: 'rgba(236,72,153,0.18)' },
+    symbol_definition: { stroke: '#06b6d4', fill: 'rgba(6,182,212,0.18)' },
+    component_definition: { stroke: '#a78bfa', fill: 'rgba(167,139,250,0.18)' }
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {

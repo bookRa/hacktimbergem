@@ -108,6 +108,12 @@ async def patch_entity_endpoint(
     bbox = body.get("bounding_box")
     title = body.get("title")
     text = body.get("text")
+    name = body.get("name")
+    description = body.get("description")
+    visual_pattern_description = body.get("visual_pattern_description")
+    scope = body.get("scope")
+    defined_in_id = body.get("defined_in_id")
+    specifications = body.get("specifications")
     try:
         ent = update_entity(
             project_id,
@@ -115,6 +121,12 @@ async def patch_entity_endpoint(
             bounding_box=bbox,
             title=title,
             text=text,
+            name=name,
+            description=description,
+            visual_pattern_description=visual_pattern_description,
+            scope=scope,
+            defined_in_id=defined_in_id,
+            specifications=specifications,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

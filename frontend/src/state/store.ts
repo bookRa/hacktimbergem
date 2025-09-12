@@ -67,14 +67,15 @@ interface AppState {
     entities: any[]; // typed later via api/entities
     entitiesStatus: 'idle' | 'loading' | 'error';
     fetchEntities: () => Promise<void>;
-    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note'; startX: number; startY: number; } | null;
+    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
     startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'note') => void;
+    startDefinitionCreation: (type: 'symbol_definition' | 'component_definition', parentId: string, meta: any) => void;
     cancelEntityCreation: () => void;
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
     setSelectedEntityId: (id: string | null) => void;
     updateEntityBBox: (id: string, bbox: [number, number, number, number]) => Promise<void>;
-    updateEntityMeta: (id: string, data: { title?: string | null; text?: string | null; }) => Promise<void>;
+    updateEntityMeta: (id: string, data: any) => Promise<void>;
     deleteEntity: (id: string) => Promise<void>;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
@@ -405,6 +406,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     startEntityCreation: (type) => set({ creatingEntity: { type, startX: -1, startY: -1 } }),
+    startDefinitionCreation: (type, parentId, meta) => set({ creatingEntity: { type, startX: -1, startY: -1, parentId, meta } }),
     cancelEntityCreation: () => set({ creatingEntity: null }),
     finalizeEntityCreation: async (x1, y1, x2, y2) => {
         const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities } = get();
@@ -416,6 +418,21 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 source_sheet_number: sheetNumber,
                 bounding_box: [x1, y1, x2, y2]
             };
+            if (creatingEntity.type === 'symbol_definition') {
+                const m = creatingEntity.meta || {};
+                payload.name = m.name || '';
+                payload.description = m.description || null;
+                payload.visual_pattern_description = m.visual_pattern_description || null;
+                payload.scope = m.scope === 'project' ? 'project' : 'sheet';
+                payload.defined_in_id = creatingEntity.parentId;
+            } else if (creatingEntity.type === 'component_definition') {
+                const m = creatingEntity.meta || {};
+                payload.name = m.name || '';
+                payload.description = m.description || null;
+                payload.specifications = m.specifications || null;
+                payload.scope = m.scope === 'project' ? 'project' : 'sheet';
+                payload.defined_in_id = creatingEntity.parentId;
+            }
             const resp = await fetch(`/api/projects/${projectId}/entities`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });

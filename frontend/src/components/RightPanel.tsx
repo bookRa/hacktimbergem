@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -26,13 +26,15 @@ export const RightPanel: React.FC = () => {
         deriveTitleFromBlocks: s.deriveTitleFromBlocks,
         entities: s.entities,
         startEntityCreation: s.startEntityCreation,
+        startDefinitionCreation: (s as any).startDefinitionCreation,
         creatingEntity: s.creatingEntity,
         cancelEntityCreation: s.cancelEntityCreation,
         fetchEntities: s.fetchEntities,
         selectedEntityId: s.selectedEntityId,
         setSelectedEntityId: s.setSelectedEntityId,
         updateEntityMeta: s.updateEntityMeta,
-        deleteEntity: s.deleteEntity
+        deleteEntity: s.deleteEntity,
+        addToast: s.addToast
     }));
     const ocr = pageOcr[currentPageIndex];
     const blocks = ocr?.blocks || [];
@@ -170,6 +172,57 @@ export const RightPanel: React.FC = () => {
                             <EntityEditor key={ent.id} entity={ent} updateEntityMeta={updateEntityMeta} deleteEntity={deleteEntity} deselect={() => setSelectedEntityId(null)} />
                         );
                     })()}
+                    {/* Nested Definitions for Legend/Schedule */}
+                    {selectedEntityId && (() => {
+                        const parent = entities.find((e: any) => e.id === selectedEntityId);
+                        if (!parent) return null;
+                        const isLegend = parent.entity_type === 'legend';
+                        const isSchedule = parent.entity_type === 'schedule';
+                        if (!isLegend && !isSchedule) return null;
+                        const defs = entities.filter((e: any) => (e.entity_type === 'symbol_definition' || e.entity_type === 'component_definition') && e.defined_in_id === parent.id);
+                        return (
+                            <div style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginBottom: 10 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12 }}>{isLegend ? 'Symbol Definitions' : 'Component Definitions'}</div>
+                                    <button
+                                        onClick={() => {
+                                            const name = prompt('Name (required):') || '';
+                                            if (!name.trim()) { addToast({ kind: 'error', message: 'Name is required' }); return; }
+                                            const scope = (prompt("Scope: type 'project' or 'sheet' (default: sheet)") || 'sheet').toLowerCase() === 'project' ? 'project' : 'sheet';
+                                            const description = prompt('Description (optional):') || '';
+                                            if (isLegend) {
+                                                const visual = prompt('Visual pattern description (optional):') || '';
+                                                startDefinitionCreation('symbol_definition', parent.id, { name, scope, description, visual_pattern_description: visual });
+                                                setRightPanelTab('entities');
+                                                addToast({ kind: 'info', message: 'Draw a tight box around the symbol within the legend' });
+                                            } else {
+                                                startDefinitionCreation('component_definition', parent.id, { name, scope, description, specifications: {} });
+                                                setRightPanelTab('entities');
+                                                addToast({ kind: 'info', message: 'Draw a tight box around the component key within the schedule' });
+                                            }
+                                        }}
+                                        style={miniBtn(false)}
+                                    >+ Add Definition</button>
+                                </div>
+                                {defs.length === 0 && <div style={{ fontSize: 11, opacity: .65 }}>(None yet)</div>}
+                                {defs.map((d: any) => {
+                                    const sel = d.id === selectedEntityId;
+                                    return (
+                                        <div key={d.id} onClick={() => setSelectedEntityId(d.id)} style={{ border: '1px solid ' + (sel ? '#1e3a8a' : '#374151'), borderRadius: 4, padding: '4px 6px', marginBottom: 6, background: sel ? '#0f172a' : '#111827', cursor: 'pointer' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <div>
+                                                    <strong style={{ fontSize: 12 }}>{d.name || '(unnamed)'}</strong>
+                                                    <span style={{ marginLeft: 6, fontSize: 10, opacity: .7 }}>[{d.scope}]</span>
+                                                </div>
+                                                <span style={{ opacity: .6, fontSize: 10 }}>{d.entity_type.replace('_', ' ')}</span>
+                                            </div>
+                                            {d.description && <div style={{ fontSize: 11, opacity: .85, marginTop: 4 }}>{d.description.length > 140 ? d.description.slice(0, 140) + '…' : d.description}</div>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })()}
                     <div style={{ fontSize: 11, opacity: .7, marginBottom: 4 }}>Backend Entities</div>
                     {entities.filter((e: any) => e.source_sheet_number === currentPageIndex + 1).map((e: any) => {
                         const selected = e.id === selectedEntityId;
@@ -189,11 +242,13 @@ export const RightPanel: React.FC = () => {
                                     cursor: 'pointer'
                                 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <strong style={{ textTransform: 'capitalize' }}>{e.entity_type}</strong>
+                                    <strong style={{ textTransform: 'capitalize' }}>{e.entity_type.replace('_', ' ')}</strong>
                                     <span style={{ opacity: .7 }}>#{e.id.slice(0, 6)}</span>
                                 </div>
                                 <div style={{ marginTop: 2, opacity: .8 }}>Box: {e.bounding_box.x1.toFixed(1)}, {e.bounding_box.y1.toFixed(1)}, {e.bounding_box.x2.toFixed(1)}, {e.bounding_box.y2.toFixed(1)}</div>
                                 {e.title && <div style={{ marginTop: 2 }}>Title: {e.title}</div>}
+                                {e.name && <div style={{ marginTop: 2 }}>Name: {e.name}</div>}
+                                {e.scope && <div style={{ marginTop: 2, fontSize: 10, opacity: .8 }}>Scope: {e.scope}</div>}
                                 {e.text && <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{e.text.length > 120 ? e.text.slice(0, 120) + '…' : e.text}</div>}
                                 {selected && <div style={{ marginTop: 4, fontSize: 10, opacity: .8 }}>Click again to deselect • Edit form above</div>}
                             </div>
