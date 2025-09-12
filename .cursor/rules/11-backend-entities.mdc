@@ -1,0 +1,34 @@
+---
+description: Backend entities models, validation, and file persistence. Auto-attach to entities files.
+globs:
+  - backend/app/entities_models.py
+  - backend/app/entities_store.py
+  - backend/app/main.py
+alwaysApply: false
+---
+
+- Data model source of truth: Pydantic models define schema and validations. Update UI/API/types in lockstep.
+
+- Bounding boxes:
+  - Store as `BoundingBox` in unrotated PDF point space with invariants x2>x1, y2>y1.
+  - For inputs that arrive as arrays, coerce to float and validate length=4 and monotonic edges.
+
+- Create/update/delete behavior (see @backend/app/entities_store.py):
+  - `create_entity` generates UUID id, validates bbox, dispatches by `entity_type` to concrete classes.
+  - `update_entity` supports updating `bounding_box` and `title`/`text` fields per entity kind.
+  - `delete_entity` removes by id. Treat unknown types gracefully on load.
+  - Persist via atomic file writes to `projects/{project_id}/entities.json`.
+
+- API endpoints (see @backend/app/main.py):
+  - `GET /api/projects/{project_id}/entities` returns list[EntityUnion]. 404 if project missing.
+  - `POST /api/projects/{project_id}/entities` accepts CreateEntityUnion. Validate bbox numeric length 4 early; return 422 on validation failures.
+  - `PATCH /api/projects/{project_id}/entities/{id}` accepts partial updates for bbox/title/text with validations; 404 if entity not found.
+  - `DELETE /api/projects/{project_id}/entities/{id}` returns `{ deleted: true }` or 404.
+
+- Extending entity types:
+  - Add Pydantic classes and `Create*` variants with literal discriminators.
+  - Update union types, store dispatch map, frontend API types, overlays, and store actions.
+
+@backend/app/entities_models.py
+@backend/app/entities_store.py
+@backend/app/main.py

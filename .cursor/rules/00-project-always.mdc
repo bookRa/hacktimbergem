@@ -1,0 +1,56 @@
+---
+description: Timbergem core invariants, architecture, and guardrails. Always apply.
+globs:
+alwaysApply: true
+---
+
+- Purpose: Provide non-negotiable principles so all changes preserve traceability, coordinate correctness, and manual-first UX.
+
+- Architecture overview (see @.github/copilot-instructions.md and @PRD.md):
+  - Three-pane UI: left sheet navigator, center raster canvas, right knowledge panel.
+  - Source of truth: per-project filesystem under `projects/{project_id}` with `manifest.json`, `pages/`, `ocr/`, and `entities.json`.
+  - Manual-first: All core workflows must work without AI; AI is an accelerator with explicit user verification.
+
+- Coordinate system invariants (canonical PDF/MuPDF space):
+  - Persist ALL `bounding_box` values in unrotated PDF point space (origin top-left, y increases downward).
+  - Frontend canvas space is a scaled raster (PNG) view. Always convert at boundaries using shared helpers.
+  - Use shared helpers only:
+    - Backend: @backend/app/coords.py
+    - Frontend: @frontend/src/utils/coords.ts
+  - Never duplicate transform math. If behavior changes, update both helpers and tests:
+    - Backend tests: @backend/tests/test_coords.py
+    - Frontend tests: @frontend/src/utils/__tests__/coords.test.ts
+  - Handle rotation with supported values {0, 90, 180, 270}. Persist unrotated boxes.
+  - Clamp PDF-space boxes to page rect with epsilon = 0.5 pt. Reject NaNs or unreasonable magnitudes.
+  - Do not store viewport/DOM-relative coords; convert pointer events → canvas → PDF space at creation/edit time.
+
+- Rendering and OCR contracts:
+  - Baseline raster: 300 DPI PNG, filenames `page_{n}.png`, 1-based page numbering.
+  - OCR via PyMuPDF `page.get_text('dict')`, include only text blocks (type 0), flatten spans, provide aggregated block text.
+  - OCR JSON bbox values are in PDF points. Treat them as canonical; convert on demand in client overlays.
+
+- Manifest is the single source of truth for pipeline progress:
+  - Status flow: queued → render → ocr → complete|error.
+  - Update progress counters monotonically; write via atomic replace to avoid partial writes.
+
+- Entities and traceability:
+  - Each visual entity requires `source_sheet_number` (1-based) and a PDF-space `bounding_box` with x2>x1 and y2>y1.
+  - Persist entities to `projects/{project_id}/entities.json`. Use stable IDs. Support list/create/patch/delete endpoints.
+
+- Testing & validation policy:
+  - Any change affecting transforms must update both backend and frontend tests, covering rotation, scaling, and clamping.
+  - Prefer roundtrip property tests (canvas→pdf→canvas ≈ identity within tolerance) and cross-impl equivalence.
+
+- Error handling and UX guarantees:
+  - Backend returns clear 4xx messages for validation issues and 404 for missing resources.
+  - Frontend shows resilient toasts for failures and never blocks manual workflows.
+
+- Extensibility guidelines:
+  - New entity types must be added in Pydantic models, file store, API contracts, frontend API types, store, and overlay rendering.
+
+@.github/copilot-instructions.md
+@PRD.md
+@backend/app/coords.py
+@frontend/src/utils/coords.ts
+@backend/tests/test_coords.py
+@frontend/src/utils/__tests__/coords.test.ts

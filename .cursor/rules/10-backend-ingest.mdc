@@ -1,0 +1,40 @@
+---
+description: Backend ingestion, manifest contract, raster/OCR generation. Auto-attach to backend ingest files.
+globs:
+  - backend/app/ingest.py
+  - backend/app/main.py
+alwaysApply: false
+---
+
+- Follow ingestion workflow:
+  1. `queued` → file persisted and manifest initialized via `init_manifest()`.
+  2. `render` → rasterize each page to 300 DPI PNG as `pages/page_{n}.png`.
+  3. `ocr` → write simplified `ocr/page_{n}.json` from `page.get_text('dict')` including only text blocks.
+  4. `complete` or `error` with `error` message.
+
+- Use atomic manifest writes only (temp file rename). Update progress counters after each page.
+
+- Rasterization:
+  - Matrix: `fitz.Matrix(dpi/72, dpi/72)` with `alpha=False`.
+  - Free or drop references to `pix` promptly in loops to limit memory.
+
+- OCR JSON shape (incremental, forward-compatible):
+  - `width_pts`, `height_pts`, `blocks[]` with `bbox`, `lines[].bbox`, `lines[].spans[]` (text/font/size), and flattened `text` per block.
+  - Do not project OCR coords into pixel space for storage.
+
+- Endpoints to keep stable (see @backend/app/main.py):
+  - `POST /api/projects` (multipart PDF) → `{ project_id, status }`, start background ingest.
+  - `GET /api/projects/{project_id}/status` → manifest JSON.
+  - `GET /api/projects/{project_id}/pages/{n}.png` → page image.
+  - `GET /api/projects/{project_id}/ocr/{n}` → OCR JSON.
+
+- Validation and errors:
+  - Reject non-PDF uploads with 400.
+  - Status 404 for missing project/page/ocr.
+  - On exceptions: set `status=error`, write `error`, log stack for debugging.
+
+- Future-proofing:
+  - Keep directory layout and filenames stable to enable S3 swap without changing client code.
+
+@backend/app/ingest.py
+@backend/app/main.py

@@ -1,0 +1,38 @@
+---
+description: Common contribution recipes for Timbergem. Include on demand.
+globs:
+alwaysApply: false
+---
+
+- Add a new entity type (backend+frontend):
+  1) Backend: Define Pydantic model and Create* input with literal discriminator in `backend/app/entities_models.py`. Extend unions and exports.
+  2) Backend store: Update dispatch maps in `backend/app/entities_store.py` for create/load/update.
+  3) API: Ensure `EntityUnion` and `CreateEntityUnion` are used in `backend/app/main.py` endpoints.
+  4) Frontend API types: Extend `frontend/src/api/entities.ts` unions.
+  5) Store & UI: Add overlay behavior, edit panel fields, and creation flow.
+  6) Tests: Add minimal unit tests for validation and overlay rendering paths.
+
+- Fix a coord mismatch between frontend and backend:
+  1) Reproduce with a failing roundtrip test in both `test_coords.py` and `coords.test.ts` using the same RenderMeta values and rotation.
+  2) Update only the shared helper functions to restore equivalence; do not fork transform code elsewhere.
+  3) Verify drag selection and entity edit interactions still behave with rotation.
+
+- Extend ingestion with additional stage later (e.g., symbol detection):
+  1) Keep manifest contract intact; add a new counter under `stages`.
+  2) Run stage after OCR; ensure failure sets `status=error` and `error` message.
+  3) Expose a `GET /api/projects/{id}/detect/symbols` if needed, returning idempotent results or writing to project dir.
+
+- Improve user feedback for failures:
+  1) Make backend errors explicit (422 with specific reason for invalid bbox, etc.).
+  2) Frontend catches -> `addToast({ kind: 'error', message })` and avoids blocking state.
+
+- Rendering consistency:
+  - Maintain `TARGET_DPI=300` in PdfCanvas and backend. If changing DPI, adjust scale math and tests accordingly.
+
+@backend/app/entities_models.py
+@backend/app/entities_store.py
+@backend/app/main.py
+@frontend/src/api/entities.ts
+@frontend/src/components/EntitiesOverlay.tsx
+@frontend/src/utils/coords.ts
+@backend/app/coords.py

@@ -1,0 +1,45 @@
+---
+description: Frontend coordinate transforms, OCR/Entities overlays, and rotation/scale handling. Auto-attach to overlay and coord files.
+globs:
+  - frontend/src/utils/coords.ts
+  - frontend/src/components/OcrOverlay.tsx
+  - frontend/src/components/EntitiesOverlay.tsx
+  - frontend/src/components/DragSelectOverlay.tsx
+  - frontend/src/components/PdfCanvas.tsx
+alwaysApply: false
+---
+
+- Coordinate transforms:
+  - Use only `canvasToPdf`, `pdfToCanvas`, and `roundtripCanvasPdfCanvas` from `frontend/src/utils/coords.ts`.
+  - Rotation must be in {0, 90, 180, 270}. Persist unrotated boxes; overlays convert on demand.
+  - Clamp PDF-space boxes to page rect with epsilon 0.5 pt in helpers.
+  - Device pixel ratio: pass CSS pixel coords into helpers (already divided by DPR). Scaling to screen happens via SVG viewBox or explicit `scale`.
+
+- PdfCanvas page meta:
+  - Compute `nativeWidth`/`nativeHeight` at 300 DPI baseline.
+  - Maintain a `fitPageScale` and `manualScale`; `effectiveScale(pageIndex)` selects based on zoom mode.
+  - Fetch backend raster and OCR lazily; continue to support pdf.js render only as fallback before backend image is ready.
+
+- OcrOverlay:
+  - Build `RenderMeta` from OCR `width_pts`/`height_pts` and `PdfCanvas` native raster size.
+  - Convert bbox PDF→canvas with helpers; draw via SVG using viewBox for scale independence.
+  - Keep interaction stateless except hovered/selected block indices stored in the Zustand store.
+
+- DragSelectOverlay:
+  - Rectangle selection operates in raster CSS pixel coordinates, then compares against OCR blocks converted PDF→canvas.
+  - Support additive selections with meta/ctrl/shift.
+  - Cancel in-progress drag if scale changes mid-drag.
+
+- EntitiesOverlay:
+  - Creation/editing of entities happens in PDF-space coordinates projected to raster for display; store edits via API with PDF-space bbox arrays.
+  - Provide grab handles; apply an edge tolerance in raster pixels for hit-testing.
+  - Prioritize entity interactions; forward pointer events to underlying layers when clicking outside known targets.
+
+- Testing:
+  - Any change to `coords.ts` must be reflected in `frontend/src/utils/__tests__/coords.test.ts` with roundtrip and rotation cases.
+
+@frontend/src/utils/coords.ts
+@frontend/src/components/OcrOverlay.tsx
+@frontend/src/components/EntitiesOverlay.tsx
+@frontend/src/components/DragSelectOverlay.tsx
+@frontend/src/components/PdfCanvas.tsx

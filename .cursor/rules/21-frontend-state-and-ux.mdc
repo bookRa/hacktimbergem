@@ -1,0 +1,33 @@
+---
+description: Frontend state (Zustand), UX guarantees, and API usage. Auto-attach to store and API files.
+globs:
+  - frontend/src/state/*.ts
+  - frontend/src/api/*.ts
+  - frontend/src/components/*.tsx
+alwaysApply: false
+---
+
+- State management (Zustand):
+  - Keep actions pure and small; avoid deep nesting beyond 2-3 levels.
+  - Persist project-level artifacts in memory keyed by zero-based page index; sheet numbers are 1-based when sent to backend.
+  - Use toasts for user-visible failures; never block interaction on errors.
+
+- Upload and ingestion polling:
+  - Start local PDF viewing immediately while uploading to backend.
+  - Poll manifest every ~1–2s until `complete` or `error`. On completion, preload entities.
+
+- Entities CRUD:
+  - Frontend API in `frontend/src/api/entities.ts` is the single contract for entity types and payloads.
+  - After mutations, refresh `entities` list and adjust selection appropriately.
+  - For bbox edits, send arrays `[x1,y1,x2,y2]` in PDF point space.
+
+- Panel and navigation UX:
+  - Toggling OCR should not affect entity interactions besides overlays.
+  - Scroll targeting should center an OCR block when requested and then clear the target.
+
+- Performance considerations:
+  - Cache backend `pages/{n}.png` object URLs per page; avoid re-fetching.
+  - Fetch OCR JSON lazily; initialize per-page block state to `unverified`.
+
+@frontend/src/state/store.ts
+@frontend/src/api/entities.ts

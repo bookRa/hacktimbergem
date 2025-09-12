@@ -1,0 +1,27 @@
+---
+description: Testing, validation, and quality checks for coords, ingestion, and API. Include on demand.
+globs:
+alwaysApply: false
+---
+
+- When editing coordinate helpers or overlays:
+  - Add/adjust tests in `backend/tests/test_coords.py` and `frontend/src/utils/__tests__/coords.test.ts`.
+  - Cover roundtrip equivalence, rotation {0,90,180,270}, clamping behavior, and NaN/invalid inputs.
+
+- When changing ingestion or OCR:
+  - Add a smoke test that ingests a small 2-page PDF in a temp dir and asserts files and manifest status flow.
+  - Validate OCR JSON shape and non-empty blocks for simple inputs.
+
+- API contract checks:
+  - Ensure response_model is specified where appropriate in FastAPI and types match frontend `entities.ts`.
+  - Verify 4xx messages are actionable and consistent.
+
+- CI guidance (lightweight):
+  - Run Python unit tests for backend and Vitest for frontend utils.
+  - Lint or type-check if configured; avoid introducing any TODO comments without implementation.
+
+- Property-based testing suggestion:
+  - For coords, consider generating random boxes within/near page rects and asserting roundtrip closeness.
+
+@backend/tests/test_coords.py
+@frontend/src/utils/__tests__/coords.test.ts
