@@ -89,6 +89,20 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         const rect = wrapperRef.current.getBoundingClientRect();
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
+        // Clicking empty space: deselect entity
+        if (!creatingEntity) {
+            // Check if hit any entity first; if not, clear selection
+            let hitAny = false;
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
+                const { x1, y1, x2, y2 } = ent.bounding_box;
+                const tol = TOL_PX / scale;
+                if (x >= (x1 - tol) && x <= (x2 + tol) && y >= (y1 - tol) && y <= (y2 + tol)) { hitAny = true; break; }
+            }
+            if (!hitAny) {
+                setSelectedEntityId(null);
+            }
+        }
         dbg('pointerdown raster coords', { x, y, scale, pageIndex });
         if (creatingEntity) {
             dragRef.current = { sx: x, sy: y };

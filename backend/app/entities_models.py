@@ -78,7 +78,7 @@ class SymbolDefinition(BaseVisualEntity):
     description: Optional[str] = None
     visual_pattern_description: Optional[str] = None
     scope: Literal["project", "sheet"] = "sheet"
-    defined_in_id: str
+    defined_in_id: Optional[str] = None
 
 
 class ComponentDefinition(BaseVisualEntity):
@@ -87,7 +87,7 @@ class ComponentDefinition(BaseVisualEntity):
     description: Optional[str] = None
     specifications: Optional[Dict[str, Any]] = None
     scope: Literal["project", "sheet"] = "sheet"
-    defined_in_id: str
+    defined_in_id: Optional[str] = None
 
 
 EntityUnion = Union[Drawing, Legend, Schedule, Note, SymbolDefinition, ComponentDefinition]
@@ -129,7 +129,7 @@ class CreateSymbolDefinition(BaseModel):
     description: Optional[str] = None
     visual_pattern_description: Optional[str] = None
     scope: Literal["project", "sheet"] = "sheet"
-    defined_in_id: str
+    defined_in_id: Optional[str] = None
 
 
 class CreateComponentDefinition(BaseModel):
@@ -140,7 +140,7 @@ class CreateComponentDefinition(BaseModel):
     description: Optional[str] = None
     specifications: Optional[Dict[str, Any]] = None
     scope: Literal["project", "sheet"] = "sheet"
-    defined_in_id: str
+    defined_in_id: Optional[str] = None
 
 
 CreateEntityUnion = Union[

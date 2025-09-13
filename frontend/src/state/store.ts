@@ -405,11 +405,14 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             addToast({ kind: 'error', message: 'Failed to load entities' });
         }
     },
-    startEntityCreation: (type) => set({ creatingEntity: { type, startX: -1, startY: -1 } }),
+    startEntityCreation: (type) => {
+        // Deselect any selected entity when starting a new drawing
+        set({ creatingEntity: { type, startX: -1, startY: -1 }, selectedEntityId: null });
+    },
     startDefinitionCreation: (type, parentId, meta) => set({ creatingEntity: { type, startX: -1, startY: -1, parentId, meta } }),
     cancelEntityCreation: () => set({ creatingEntity: null }),
     finalizeEntityCreation: async (x1, y1, x2, y2) => {
-        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities } = get();
+        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId } = get() as any;
         if (!creatingEntity || !projectId) return;
         const sheetNumber = currentPageIndex + 1; // 1-based
         try {
@@ -441,7 +444,9 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 try { const j = await resp.json(); msg = j.detail || msg; } catch { }
                 throw new Error(msg);
             }
+            const created = await resp.json();
             await fetchEntities();
+            setSelectedEntityId(created?.id || null);
             addToast({ kind: 'success', message: `${creatingEntity.type} created` });
         } catch (e: any) {
             console.error(e);

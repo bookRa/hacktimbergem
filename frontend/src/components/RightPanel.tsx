@@ -36,6 +36,15 @@ export const RightPanel: React.FC = () => {
         deleteEntity: s.deleteEntity,
         addToast: s.addToast
     }));
+    const [defDraft, setDefDraft] = React.useState<null | { type: 'symbol_definition' | 'component_definition'; name: string; scope: 'project' | 'sheet'; description: string; visual_pattern_description?: string; specifications?: string }>(null);
+    const defsSectionRef = React.useRef<HTMLDivElement | null>(null);
+    const [sectionsOpen, setSectionsOpen] = React.useState<{ details: boolean; definitions: boolean; backend: boolean; notes: boolean }>({ details: true, definitions: true, backend: true, notes: true });
+    const toggleSection = (k: 'details' | 'definitions' | 'backend' | 'notes') => setSectionsOpen(s => ({ ...s, [k]: !s[k] }));
+    React.useEffect(() => {
+        if (!selectedEntityId && sectionsOpen.details) {
+            setSectionsOpen(s => ({ ...s, details: false }));
+        }
+    }, [selectedEntityId]);
     const ocr = pageOcr[currentPageIndex];
     const blocks = ocr?.blocks || [];
     const meta = ocrBlockState[currentPageIndex] || {};
@@ -152,7 +161,7 @@ export const RightPanel: React.FC = () => {
                 </>
             )}
             {rightPanelTab === 'entities' && (
-                <section className="kp-section" style={{ maxHeight: 520, overflow: 'auto' }}>
+                <section className="kp-section" style={{ maxHeight: 'calc(100vh - 260px)', overflow: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>Entities (Page {currentPageIndex + 1})</div>
                         <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
@@ -161,15 +170,95 @@ export const RightPanel: React.FC = () => {
                         {(['drawing', 'legend', 'schedule', 'note'] as const).map(t => (
                             <button key={t} disabled={!!creatingEntity} onClick={() => startEntityCreation(t)} style={miniBtn(!!creatingEntity)}>{t}</button>
                         ))}
+                        {/* Global: add Symbol/Component Definition without requiring parent selection */}
+                        <button disabled={!!creatingEntity} onClick={() => { setDefDraft({ type: 'symbol_definition', name: '', scope: 'sheet', description: '', visual_pattern_description: '' }); setTimeout(() => defsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0); }} style={miniBtn(!!creatingEntity)}>symbol_definition</button>
+                        <button disabled={!!creatingEntity} onClick={() => { setDefDraft({ type: 'component_definition', name: '', scope: 'sheet', description: '', specifications: '' }); setTimeout(() => defsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0); }} style={miniBtn(!!creatingEntity)}>component_definition</button>
                         {creatingEntity && <button onClick={() => cancelEntityCreation()} style={miniBtn(false)}>Cancel</button>}
                     </div>
                     {creatingEntity && <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 6 }}>Drawing new {creatingEntity.type}: click-drag on sheet to place. Esc to cancel.</div>}
-                    {/* Selected Entity Editor */}
+                    {/* Selected Entity Editor (collapsible) */}
                     {selectedEntityId && (() => {
                         const ent = entities.find((e: any) => e.id === selectedEntityId);
                         if (!ent || ent.source_sheet_number !== currentPageIndex + 1) return null;
                         return (
-                            <EntityEditor key={ent.id} entity={ent} updateEntityMeta={updateEntityMeta} deleteEntity={deleteEntity} deselect={() => setSelectedEntityId(null)} />
+                            <div style={{ marginBottom: 8 }}>
+                                <div onClick={() => toggleSection('details')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 6px', background: '#0b1220', border: '1px solid #334155', borderRadius: 4, color: '#e2e8f0' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12 }}>Entity Details</div>
+                                    <span style={{ opacity: .8 }}>{sectionsOpen.details ? '▾' : '▸'}</span>
+                                </div>
+                                {sectionsOpen.details && (
+                                    <EntityEditor key={ent.id} entity={ent} updateEntityMeta={updateEntityMeta} deleteEntity={deleteEntity} deselect={() => setSelectedEntityId(null)} />
+                                )}
+                            </div>
+                        );
+                    })()}
+                    {/* Global Definition Creation (no parent required) */}
+                    {(() => {
+                        const parent = entities.find((e: any) => e.id === selectedEntityId && (e.entity_type === 'legend' || e.entity_type === 'schedule'));
+                        if (!defDraft || parent) return null;
+                        return (
+                            <div style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginBottom: 10, background: '#0b1220', color: '#e2e8f0' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12 }}>{defDraft.type === 'symbol_definition' ? 'New Symbol Definition' : 'New Component Definition'}</div>
+                                    <button onClick={() => setDefDraft(null)} style={miniBtn(false)}>×</button>
+                                </div>
+                                <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 8 }}>
+                                    <div style={{ display: 'grid', gap: 6 }}>
+                                        <div>
+                                            <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Name</label>
+                                            <input value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Scope</label>
+                                            <div style={{ display: 'flex', gap: 10, fontSize: 12 }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
+                                                    <input type="radio" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
+                                                </label>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
+                                                    <input type="radio" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Description</label>
+                                            <textarea value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                        </div>
+                                        {defDraft.type === 'symbol_definition' && (
+                                            <div>
+                                                <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Visual Pattern Description</label>
+                                                <textarea value={defDraft.visual_pattern_description || ''} onChange={e => setDefDraft({ ...defDraft, visual_pattern_description: e.target.value })} rows={2} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                            </div>
+                                        )}
+                                        {defDraft.type === 'component_definition' && (
+                                            <div>
+                                                <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Specifications (JSON)</label>
+                                                <textarea value={defDraft.specifications || ''} onChange={e => setDefDraft({ ...defDraft, specifications: e.target.value })} rows={3} placeholder='{"key":"value"}' style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                            </div>
+                                        )}
+                                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                            <button onClick={() => setDefDraft(null)} style={miniBtn(false)}>Cancel</button>
+                                            <button
+                                                disabled={!defDraft.name.trim()}
+                                                onClick={() => {
+                                                    if (!defDraft.name.trim()) { addToast({ kind: 'error', message: 'Name is required' }); return; }
+                                                    let specsObj: any = undefined;
+                                                    if (defDraft.type === 'component_definition' && defDraft.specifications && defDraft.specifications.trim()) {
+                                                        try { specsObj = JSON.parse(defDraft.specifications); } catch { addToast({ kind: 'error', message: 'Specifications must be valid JSON' }); return; }
+                                                    }
+                                                    const meta: any = defDraft.type === 'symbol_definition'
+                                                        ? { name: defDraft.name.trim(), scope: defDraft.scope, description: defDraft.description || '', visual_pattern_description: defDraft.visual_pattern_description || '' }
+                                                        : { name: defDraft.name.trim(), scope: defDraft.scope, description: defDraft.description || '', specifications: specsObj || {} };
+                                                    startDefinitionCreation(defDraft.type, null as any, meta);
+                                                    setDefDraft(null);
+                                                    setRightPanelTab('entities');
+                                                    addToast({ kind: 'info', message: 'Draw a tight box on the canvas to place the definition' });
+                                                }}
+                                                style={miniBtn(!defDraft.name.trim())}
+                                            >Select on Drawing</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         );
                     })()}
                     {/* Nested Definitions for Legend/Schedule */}
@@ -181,34 +270,84 @@ export const RightPanel: React.FC = () => {
                         if (!isLegend && !isSchedule) return null;
                         const defs = entities.filter((e: any) => (e.entity_type === 'symbol_definition' || e.entity_type === 'component_definition') && e.defined_in_id === parent.id);
                         return (
-                            <div style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginBottom: 10 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <div ref={defsSectionRef} style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginBottom: 10, background: '#0b1220' }}>
+                                <div onClick={() => toggleSection('definitions')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, cursor: 'pointer', color: '#e2e8f0' }}>
                                     <div style={{ fontWeight: 600, fontSize: 12 }}>{isLegend ? 'Symbol Definitions' : 'Component Definitions'}</div>
-                                    <button
-                                        onClick={() => {
-                                            const name = prompt('Name (required):') || '';
-                                            if (!name.trim()) { addToast({ kind: 'error', message: 'Name is required' }); return; }
-                                            const scope = (prompt("Scope: type 'project' or 'sheet' (default: sheet)") || 'sheet').toLowerCase() === 'project' ? 'project' : 'sheet';
-                                            const description = prompt('Description (optional):') || '';
-                                            if (isLegend) {
-                                                const visual = prompt('Visual pattern description (optional):') || '';
-                                                startDefinitionCreation('symbol_definition', parent.id, { name, scope, description, visual_pattern_description: visual });
-                                                setRightPanelTab('entities');
-                                                addToast({ kind: 'info', message: 'Draw a tight box around the symbol within the legend' });
-                                            } else {
-                                                startDefinitionCreation('component_definition', parent.id, { name, scope, description, specifications: {} });
-                                                setRightPanelTab('entities');
-                                                addToast({ kind: 'info', message: 'Draw a tight box around the component key within the schedule' });
-                                            }
-                                        }}
-                                        style={miniBtn(false)}
-                                    >+ Add Definition</button>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <span style={{ opacity: .8 }}>{sectionsOpen.definitions ? '▾' : '▸'}</span>
+                                        {!defDraft && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setDefDraft({ type: isLegend ? 'symbol_definition' : 'component_definition', name: '', scope: 'sheet', description: '', visual_pattern_description: '', specifications: '' }); }}
+                                                style={miniBtn(false)}
+                                            >+ Add Definition</button>
+                                        )}
+                                    </div>
                                 </div>
-                                {defs.length === 0 && <div style={{ fontSize: 11, opacity: .65 }}>(None yet)</div>}
-                                {defs.map((d: any) => {
+                                {sectionsOpen.definitions && defDraft && (
+                                    <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 8 }}>
+                                        <div style={{ display: 'grid', gap: 6 }}>
+                                            <div>
+                                                <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Name</label>
+                                                <input value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Scope</label>
+                                                <div style={{ display: 'flex', gap: 10, fontSize: 12 }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
+                                                        <input type="radio" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
+                                                    </label>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
+                                                        <input type="radio" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Description</label>
+                                                <textarea value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                            </div>
+                                            {defDraft.type === 'symbol_definition' && (
+                                                <div>
+                                                    <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Visual Pattern Description</label>
+                                                    <textarea value={defDraft.visual_pattern_description || ''} onChange={e => setDefDraft({ ...defDraft, visual_pattern_description: e.target.value })} rows={2} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                </div>
+                                            )}
+                                            {defDraft.type === 'component_definition' && (
+                                                <div>
+                                                    <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Specifications (JSON)</label>
+                                                    <textarea value={defDraft.specifications || ''} onChange={e => setDefDraft({ ...defDraft, specifications: e.target.value })} rows={3} placeholder='{"key":"value"}' style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                                <button onClick={() => setDefDraft(null)} style={miniBtn(false)}>Cancel</button>
+                                                <button
+                                                    disabled={!defDraft.name.trim()}
+                                                    onClick={() => {
+                                                        if (!defDraft.name.trim()) { addToast({ kind: 'error', message: 'Name is required' }); return; }
+                                                        let specsObj: any = undefined;
+                                                        if (defDraft.type === 'component_definition' && defDraft.specifications && defDraft.specifications.trim()) {
+                                                            try { specsObj = JSON.parse(defDraft.specifications); } catch { addToast({ kind: 'error', message: 'Specifications must be valid JSON' }); return; }
+                                                        }
+                                                        const meta: any = defDraft.type === 'symbol_definition'
+                                                            ? { name: defDraft.name.trim(), scope: defDraft.scope, description: defDraft.description || '', visual_pattern_description: defDraft.visual_pattern_description || '' }
+                                                            : { name: defDraft.name.trim(), scope: defDraft.scope, description: defDraft.description || '', specifications: specsObj || {} };
+                                                        // parent linking is optional; pass parent.id only if user started from a parent context
+                                                        startDefinitionCreation(defDraft.type, parent.id || null, meta);
+                                                        // Clear the form after arming selection so the next definition starts fresh
+                                                        setDefDraft(null);
+                                                        setRightPanelTab('entities');
+                                                        addToast({ kind: 'info', message: 'Draw a tight box on the canvas to place the definition' });
+                                                    }}
+                                                    style={miniBtn(!defDraft.name.trim())}
+                                                >Select on Drawing</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {sectionsOpen.definitions && defs.length === 0 && <div style={{ fontSize: 11, opacity: .8, color: '#e2e8f0' }}>(None yet)</div>}
+                                {sectionsOpen.definitions && defs.map((d: any) => {
                                     const sel = d.id === selectedEntityId;
                                     return (
-                                        <div key={d.id} onClick={() => setSelectedEntityId(d.id)} style={{ border: '1px solid ' + (sel ? '#1e3a8a' : '#374151'), borderRadius: 4, padding: '4px 6px', marginBottom: 6, background: sel ? '#0f172a' : '#111827', cursor: 'pointer' }}>
+                                        <div key={d.id} onClick={() => setSelectedEntityId(d.id)} style={{ border: '1px solid ' + (sel ? '#1e3a8a' : '#374151'), borderRadius: 4, padding: '4px 6px', marginBottom: 6, background: sel ? '#0f172a' : '#111827', cursor: 'pointer', color: '#f1f5f9' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <div>
                                                     <strong style={{ fontSize: 12 }}>{d.name || '(unnamed)'}</strong>
@@ -223,8 +362,11 @@ export const RightPanel: React.FC = () => {
                             </div>
                         );
                     })()}
-                    <div style={{ fontSize: 11, opacity: .7, marginBottom: 4 }}>Backend Entities</div>
-                    {entities.filter((e: any) => e.source_sheet_number === currentPageIndex + 1).map((e: any) => {
+                    <div onClick={() => toggleSection('backend')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 6px', background: '#0b1220', border: '1px solid #334155', borderRadius: 4, color: '#e2e8f0', marginTop: 6 }}>
+                        <div style={{ fontWeight: 600, fontSize: 12 }}>Backend Entities</div>
+                        <span style={{ opacity: .8 }}>{sectionsOpen.backend ? '▾' : '▸'}</span>
+                    </div>
+                    {sectionsOpen.backend && entities.filter((e: any) => e.source_sheet_number === currentPageIndex + 1).map((e: any) => {
                         const selected = e.id === selectedEntityId;
                         return (
                             <div
@@ -255,9 +397,11 @@ export const RightPanel: React.FC = () => {
                         );
                     })}
                     {entities.filter((e: any) => e.source_sheet_number === currentPageIndex + 1).length === 0 && <div style={{ fontSize: 11, opacity: .6 }}>(None yet)</div>}
-                    <div style={{ marginTop: 10, fontSize: 10, lineHeight: 1.4, opacity: .65 }}>Notes (promoted OCR selections) remain separate below:</div>
-                    <div style={{ fontWeight: 600, fontSize: 12, margin: '8px 0 4px' }}>Local Notes ({notes.filter((n: any) => n.pageIndex === currentPageIndex).length})</div>
-                    {notes.filter((n: any) => n.pageIndex === currentPageIndex).map((n: any) => {
+                    <div onClick={() => toggleSection('notes')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 6px', background: '#0b1220', border: '1px solid #334155', borderRadius: 4, color: '#e2e8f0', marginTop: 6 }}>
+                        <div style={{ fontWeight: 600, fontSize: 12 }}>Page Notes</div>
+                        <span style={{ opacity: .8 }}>{sectionsOpen.notes ? '▾' : '▸'}</span>
+                    </div>
+                    {sectionsOpen.notes && notes.filter((n: any) => n.pageIndex === currentPageIndex).map((n: any) => {
                         const truncated = n.text.length > 200 ? n.text.slice(0, 200) + '…' : n.text;
                         return (
                             <div key={n.id} style={{ border: '1px solid #374151', borderRadius: 4, padding: '6px 6px 8px', marginBottom: 6, background: '#111827', color: '#f1f5f9' }}>
@@ -317,7 +461,7 @@ function miniBtn(disabled: boolean): React.CSSProperties {
 
 interface EntityEditorProps {
     entity: any;
-    updateEntityMeta: (id: string, data: { title?: string | null; text?: string | null }) => Promise<void>;
+    updateEntityMeta: (id: string, data: any) => Promise<void>;
     deleteEntity: (id: string) => Promise<void>;
     deselect: () => void;
 }
@@ -325,22 +469,61 @@ interface EntityEditorProps {
 const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, deleteEntity, deselect }) => {
     const isNote = entity.entity_type === 'note';
     const supportsTitle = ['drawing', 'legend', 'schedule'].includes(entity.entity_type);
+    const isSymDef = entity.entity_type === 'symbol_definition';
+    const isCompDef = entity.entity_type === 'component_definition';
     const [title, setTitle] = React.useState(supportsTitle ? (entity.title || '') : '');
     const [text, setText] = React.useState(isNote ? (entity.text || '') : '');
+    const [name, setName] = React.useState(isSymDef || isCompDef ? (entity.name || '') : '');
+    const [scope, setScope] = React.useState<'project' | 'sheet'>(isSymDef || isCompDef ? (entity.scope || 'sheet') : 'sheet');
+    const [description, setDescription] = React.useState(isSymDef || isCompDef ? (entity.description || '') : '');
+    const [visual, setVisual] = React.useState(isSymDef ? (entity.visual_pattern_description || '') : '');
+    const [specs, setSpecs] = React.useState(isCompDef ? JSON.stringify(entity.specifications || {}, null, 2) : '');
     // Sync when entity object updates (same id but refreshed data) or id changes
     React.useEffect(() => {
         if (supportsTitle) setTitle(entity.title || ''); else setTitle('');
         if (isNote) setText(entity.text || ''); else setText('');
+        if (isSymDef || isCompDef) {
+            setName(entity.name || '');
+            setScope(entity.scope || 'sheet');
+            setDescription(entity.description || '');
+            if (isSymDef) setVisual(entity.visual_pattern_description || ''); else setVisual('');
+            if (isCompDef) setSpecs(JSON.stringify(entity.specifications || {}, null, 2)); else setSpecs('');
+        } else {
+            setName(''); setDescription(''); setVisual(''); setSpecs('');
+        }
     }, [entity.id, entity.title, entity.text]);
+    const dirtyDefinitions = (() => {
+        if (!(isSymDef || isCompDef)) return false;
+        const baseChanged = (name || '') !== (entity.name || '') || (scope || 'sheet') !== (entity.scope || 'sheet') || (description || '') !== (entity.description || '');
+        if (isSymDef) {
+            return baseChanged || (visual || '') !== (entity.visual_pattern_description || '');
+        }
+        if (isCompDef) {
+            const orig = JSON.stringify(entity.specifications || {}, null, 2);
+            return baseChanged || (specs || '') !== orig;
+        }
+        return false;
+    })();
     const dirty = (
         (supportsTitle && (title || '') !== (entity.title || '')) ||
-        (isNote && (text || '') !== (entity.text || ''))
+        (isNote && (text || '') !== (entity.text || '')) ||
+        dirtyDefinitions
     );
     const save = async () => {
         if (!dirty) return;
         const payload: any = {};
         if (supportsTitle) payload.title = title.trim() || null;
         if (isNote) payload.text = text.trim() || null;
+        if (isSymDef || isCompDef) {
+            payload.name = name.trim() || null;
+            payload.scope = scope;
+            payload.description = description.trim() || null;
+            if (isSymDef) payload.visual_pattern_description = visual.trim() || null;
+            if (isCompDef) {
+                try { payload.specifications = specs.trim() ? JSON.parse(specs) : {}; }
+                catch { alert('Specifications must be valid JSON'); return; }
+            }
+        }
         await updateEntityMeta(entity.id, payload);
     };
     return (
@@ -381,13 +564,43 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
                     />
                 </>
             )}
+            {(isSymDef || isCompDef) && (
+                <>
+                    <div style={{ height: 10 }} />
+                    <label style={{ display: 'block', fontSize: 10, opacity: .7, marginBottom: 2, color: '#cbd5e1' }}>Name</label>
+                    <input value={name} onChange={e => setName(e.target.value)} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                    <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 12 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
+                            <input type="radio" checked={scope === 'sheet'} onChange={() => setScope('sheet')} /> This Sheet Only
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
+                            <input type="radio" checked={scope === 'project'} onChange={() => setScope('project')} /> Project-Wide
+                        </label>
+                    </div>
+                    <label style={{ display: 'block', fontSize: 10, opacity: .7, margin: '10px 0 2px', color: '#cbd5e1' }}>Description</label>
+                    <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                    {isSymDef && (
+                        <>
+                            <label style={{ display: 'block', fontSize: 10, opacity: .7, margin: '10px 0 2px', color: '#cbd5e1' }}>Visual Pattern Description</label>
+                            <textarea value={visual} onChange={e => setVisual(e.target.value)} rows={2} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                        </>
+                    )}
+                    {isCompDef && (
+                        <>
+                            <label style={{ display: 'block', fontSize: 10, opacity: .7, margin: '10px 0 2px', color: '#cbd5e1' }}>Specifications (JSON)</label>
+                            <textarea value={specs} onChange={e => setSpecs(e.target.value)} rows={6} placeholder='{"key":"value"}' style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                        </>
+                    )}
+                </>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                 <button disabled={!dirty} onClick={save} style={miniBtn(!dirty)}>{dirty ? 'Save' : 'Saved'}</button>
                 <div style={{ fontSize: 10, opacity: .6, color: '#cbd5e1' }}>Cmd/Ctrl+Enter to save</div>
             </div>
             <div style={{ fontSize: 10, opacity: .55, marginTop: 6, color: '#94a3b8' }}>
-                {supportsTitle && !isNote && 'Only title is stored for this entity type.'}
+                {supportsTitle && !isNote && !isSymDef && !isCompDef && 'Only title is stored for this entity type.'}
                 {isNote && 'Only text is stored for notes.'}
+                {(isSymDef || isCompDef) && 'You can edit definition attributes here. BBoxes are still edited on the canvas.'}
             </div>
         </div>
     );

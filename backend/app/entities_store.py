@@ -102,7 +102,7 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
             description=getattr(payload, "description", None),
             visual_pattern_description=getattr(payload, "visual_pattern_description", None),
             scope=getattr(payload, "scope", "sheet"),
-            defined_in_id=getattr(payload, "defined_in_id"),
+            defined_in_id=getattr(payload, "defined_in_id", None),
         )
     elif payload.entity_type == "component_definition":
         ent = ComponentDefinition(
@@ -111,11 +111,20 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
             description=getattr(payload, "description", None),
             specifications=getattr(payload, "specifications", None),
             scope=getattr(payload, "scope", "sheet"),
-            defined_in_id=getattr(payload, "defined_in_id"),
+            defined_in_id=getattr(payload, "defined_in_id", None),
         )
     else:
         raise ValueError("Unsupported entity_type")
     entities.append(ent)
+    # Auto-link: if definition has no defined_in_id, and intersects a legend/schedule on same sheet, set defined_in_id
+    if getattr(ent, "entity_type") == "symbol_definition" and not getattr(ent, "defined_in_id", None):
+        parent = _find_intersecting_parent(entities, ent, parent_type="legend")
+        if parent:
+            ent.defined_in_id = parent.id  # type: ignore
+    if getattr(ent, "entity_type") == "component_definition" and not getattr(ent, "defined_in_id", None):
+        parent = _find_intersecting_parent(entities, ent, parent_type="schedule")
+        if parent:
+            ent.defined_in_id = parent.id  # type: ignore
     save_entities(project_id, entities)
     return ent
 
@@ -189,6 +198,20 @@ def update_entity(
     cls = cls_map[data["entity_type"]]
     updated = cls(**data)
     entities[idx] = updated
+    # Auto-link or unlink on move/resize or meta update
+    if updated.entity_type in {"symbol_definition", "component_definition"}:  # type: ignore
+        parent_type = "legend" if updated.entity_type == "symbol_definition" else "schedule"  # type: ignore
+        parent = _find_intersecting_parent(entities, updated, parent_type=parent_type)
+        if parent:
+            # If intersects, set defined_in_id if not set or differs
+            if getattr(updated, "defined_in_id", None) != parent.id:  # type: ignore
+                data2 = updated.dict()
+                data2["defined_in_id"] = parent.id
+                updated = cls_map[updated.entity_type](**data2)
+                entities[idx] = updated
+        else:
+            # No intersecting parent: keep user-set defined_in_id as-is; do not forcibly clear
+            pass
     save_entities(project_id, entities)
     return updated
 
@@ -200,6 +223,22 @@ def delete_entity(project_id: str, entity_id: str) -> bool:
         return False
     save_entities(project_id, new_entities)
     return True
+def _intersects(a: BoundingBox, b: BoundingBox) -> bool:
+    return not (a.x2 <= b.x1 or a.x1 >= b.x2 or a.y2 <= b.y1 or a.y1 >= b.y2)
+
+
+def _find_intersecting_parent(entities: list[EntityUnion], child: EntityUnion, *, parent_type: str) -> EntityUnion | None:
+    for e in entities:
+        if getattr(e, "entity_type", None) != parent_type:
+            continue
+        if getattr(e, "source_sheet_number", None) != getattr(child, "source_sheet_number", None):
+            continue
+        try:
+            if _intersects(e.bounding_box, child.bounding_box):  # type: ignore
+                return e
+        except Exception:
+            continue
+    return None
 
 
 __all__ = [
