@@ -17,6 +17,16 @@ const TYPE_COLORS: Record<string, { stroke: string; fill: string; }> = {
     component_definition: { stroke: '#a78bfa', fill: 'rgba(167,139,250,0.18)' }
 };
 
+// Z-order: ensure legends/schedules are beneath their definitions so overlapping remains interactable
+const TYPE_Z_ORDER: Record<string, number> = {
+    legend: 0,
+    schedule: 0,
+    drawing: 1,
+    note: 1,
+    symbol_definition: 2,
+    component_definition: 2
+};
+
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
     const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock } = useProjectStore(s => ({
         entities: s.entities,
@@ -65,7 +75,15 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
 
     if (pageIndex !== currentPageIndex) return null;
 
-    const pageEntities = entities.filter((e: any) => e.source_sheet_number === pageIndex + 1);
+    const pageEntities = entities
+        .filter((e: any) => e.source_sheet_number === pageIndex + 1)
+        .slice()
+        .sort((a: any, b: any) => {
+            const za = TYPE_Z_ORDER[a.entity_type] ?? 1;
+            const zb = TYPE_Z_ORDER[b.entity_type] ?? 1;
+            if (za !== zb) return za - zb; // lower z drawn first, higher z on top
+            return 0;
+        });
 
     const hitHandle = (ex: number, ey: number, box: { x1: number; y1: number; x2: number; y2: number }) => {
         const size = 6 / scale;
@@ -122,7 +140,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 setSelectedEntityId(ent.id);
                 setRightPanelTab('entities');
                 dbg('entity hit', { id: ent.id, handle: handle || 'move' });
-                if (handle) {
+                if (handle && handle !== 'mm') {
                     editRef.current = { mode: 'resize', entityId: ent.id, origin: { ...ent.bounding_box }, start: { x, y }, handle } as any;
                 } else {
                     editRef.current = { mode: 'move', entityId: ent.id, origin: { ...ent.bounding_box }, start: { x, y } } as any;
@@ -134,7 +152,9 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         // Missed all entities: attempt to detect OCR block under the pointer (convert bbox to raster)
         const ocr = (pageOcr as any)?.[pageIndex];
         const meta = (pagesMeta as any)?.[pageIndex];
-        if (ocr && meta) {
+        // Only allow OCR block hit-testing/selection when OCR overlay is visible for UX predictability
+        const showOcr = (useProjectStore.getState() as any).showOcr;
+        if (showOcr && ocr && meta) {
             const renderMeta = {
                 pageWidthPts: ocr.width_pts,
                 pageHeightPts: ocr.height_pts,

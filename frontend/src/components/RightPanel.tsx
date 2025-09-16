@@ -45,6 +45,11 @@ export const RightPanel: React.FC = () => {
             setSectionsOpen(s => ({ ...s, details: false }));
         }
     }, [selectedEntityId]);
+    React.useEffect(() => {
+        if (selectedEntityId && !sectionsOpen.details) {
+            setSectionsOpen(s => ({ ...s, details: true }));
+        }
+    }, [selectedEntityId, sectionsOpen.details]);
     const ocr = pageOcr[currentPageIndex];
     const blocks = ocr?.blocks || [];
     const meta = ocrBlockState[currentPageIndex] || {};

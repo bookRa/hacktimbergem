@@ -185,7 +185,17 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         const blocks = data?.blocks || [];
         initBlocksForPage(pageIndex, blocks.length);
     },
-    toggleOcr: () => set(state => ({ showOcr: !state.showOcr })),
+    toggleOcr: () => set((state) => {
+        const turningOff = state.showOcr === true;
+        if (turningOff) {
+            const pageIndex = state.currentPageIndex;
+            return {
+                showOcr: false,
+                selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] }
+            } as Partial<AppState> as any;
+        }
+        return { showOcr: true } as Partial<AppState> as any;
+    }),
     loadPdf: async (file: File) => {
         const arrayBuf = await file.arrayBuffer();
         const loadingTask = getDocument({ data: arrayBuf });
