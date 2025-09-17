@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -35,12 +35,27 @@ export const RightPanel: React.FC = () => {
         updateEntityMeta: s.updateEntityMeta,
         deleteEntity: s.deleteEntity,
         startInstanceStamp: (s as any).startInstanceStamp,
-        addToast: s.addToast
+        addToast: s.addToast,
+        concepts: (s as any).concepts,
+        links: (s as any).links,
+        conceptsStatus: (s as any).conceptsStatus,
+        linksStatus: (s as any).linksStatus,
+        fetchConcepts: (s as any).fetchConcepts,
+        fetchLinks: (s as any).fetchLinks,
+        createConcept: (s as any).createConcept,
+        updateConcept: (s as any).updateConcept,
+        deleteConceptById: (s as any).deleteConceptById,
+        startLinking: (s as any).startLinking,
+        toggleLinkTarget: (s as any).toggleLinkTarget,
+        finishLinking: (s as any).finishLinking,
+        cancelLinking: (s as any).cancelLinking,
+        linking: (s as any).linking,
+        deleteLinkById: (s as any).deleteLinkById,
     }));
     const [defDraft, setDefDraft] = React.useState<null | { type: 'symbol_definition' | 'component_definition'; name: string; scope: 'project' | 'sheet'; description: string; visual_pattern_description?: string; specifications?: string }>(null);
     const defsSectionRef = React.useRef<HTMLDivElement | null>(null);
-    const [sectionsOpen, setSectionsOpen] = React.useState<{ details: boolean; definitions: boolean; backend: boolean; notes: boolean }>({ details: true, definitions: true, backend: true, notes: true });
-    const toggleSection = (k: 'details' | 'definitions' | 'backend' | 'notes') => setSectionsOpen(s => ({ ...s, [k]: !s[k] }));
+    const [sectionsOpen, setSectionsOpen] = React.useState<{ details: boolean; definitions: boolean; spaces: boolean; scopes: boolean; backend: boolean; notes: boolean }>({ details: true, definitions: true, spaces: true, scopes: true, backend: true, notes: true });
+    const toggleSection = (k: 'details' | 'definitions' | 'spaces' | 'scopes' | 'backend' | 'notes') => setSectionsOpen(s => ({ ...s, [k]: !s[k] }));
     React.useEffect(() => {
         if (!selectedEntityId && sectionsOpen.details) {
             setSectionsOpen(s => ({ ...s, details: false }));
@@ -171,6 +186,63 @@ export const RightPanel: React.FC = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>Entities (Page {currentPageIndex + 1})</div>
                         <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
+                    </div>
+                    {/* Linking mode banner */}
+                    {linking && (
+                        <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 10, color: '#e2e8f0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ fontWeight: 600, fontSize: 12 }}>Linking Mode: {linking.relType} • Anchor {linking.anchor.kind} #{linking.anchor.id.slice(0,6)}</div>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button onClick={() => finishLinking()} style={miniBtn(false)}>Finish ({linking.selectedTargetIds.length})</button>
+                                    <button onClick={() => cancelLinking()} style={miniBtn(false)}>Cancel</button>
+                                </div>
+                            </div>
+                            <div style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>Select targets from the list or canvas. Finish to commit links.</div>
+                        </div>
+                    )}
+                    {/* Conceptual Entities: Spaces */}
+                    <div style={{ marginBottom: 10 }}>
+                        <div onClick={() => toggleSection('spaces')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 6px', background: '#0b1220', border: '1px solid #334155', borderRadius: 4, color: '#e2e8f0' }}>
+                            <div style={{ fontWeight: 600, fontSize: 12 }}>Spaces</div>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <button onClick={(e) => { e.stopPropagation(); fetchConcepts(); fetchLinks(); }} style={miniBtn(false)}>↻</button>
+                                <span style={{ opacity: .8 }}>{sectionsOpen.spaces ? '▾' : '▸'}</span>
+                            </div>
+                        </div>
+                        {sectionsOpen.spaces && (
+                            <ConceptSpacesSection
+                                concepts={concepts}
+                                entities={entities}
+                                links={links}
+                                createConcept={createConcept}
+                                updateConcept={updateConcept}
+                                deleteConcept={deleteConceptById}
+                                deleteLink={deleteLinkById}
+                                startLinking={startLinking}
+                            />
+                        )}
+                    </div>
+                    {/* Conceptual Entities: Scopes */}
+                    <div style={{ marginBottom: 10 }}>
+                        <div onClick={() => toggleSection('scopes')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 6px', background: '#0b1220', border: '1px solid #334155', borderRadius: 4, color: '#e2e8f0' }}>
+                            <div style={{ fontWeight: 600, fontSize: 12 }}>Scopes</div>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <button onClick={(e) => { e.stopPropagation(); fetchConcepts(); fetchLinks(); }} style={miniBtn(false)}>↻</button>
+                                <span style={{ opacity: .8 }}>{sectionsOpen.scopes ? '▾' : '▸'}</span>
+                            </div>
+                        </div>
+                        {sectionsOpen.scopes && (
+                            <ConceptScopesSection
+                                concepts={concepts}
+                                entities={entities}
+                                links={links}
+                                createConcept={createConcept}
+                                updateConcept={updateConcept}
+                                deleteConcept={deleteConceptById}
+                                deleteLink={deleteLinkById}
+                                startLinking={startLinking}
+                            />
+                        )}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                         {(['drawing', 'legend', 'schedule', 'note'] as const).map(t => (
@@ -414,6 +486,15 @@ export const RightPanel: React.FC = () => {
                     </div>
                     {sectionsOpen.backend && entities.filter((e: any) => e.source_sheet_number === currentPageIndex + 1).map((e: any) => {
                         const selected = e.id === selectedEntityId;
+                        const linkingActive = !!linking;
+                        const isLinkTargetSelected = linkingActive && (linking!.selectedTargetIds.includes(e.id));
+                        const allowedByLinking = (() => {
+                            if (!linkingActive) return true;
+                            if (linking!.relType === 'JUSTIFIED_BY') return ['note', 'symbol_instance', 'component_instance'].includes(e.entity_type);
+                            if (linking!.relType === 'DEPICTS') return e.entity_type === 'drawing';
+                            if (linking!.relType === 'LOCATED_IN') return ['symbol_instance', 'component_instance'].includes(e.entity_type);
+                            return false;
+                        })();
                         // Linkage pills
                         const linkage = (() => {
                             if (e.entity_type === 'symbol_instance') {
@@ -433,17 +514,24 @@ export const RightPanel: React.FC = () => {
                         return (
                             <div
                                 key={e.id}
-                                onClick={() => setSelectedEntityId(selected ? null : e.id)}
+                                onClick={() => {
+                                    if (linkingActive) {
+                                        if (!allowedByLinking) return;
+                                        toggleLinkTarget(e.id);
+                                    } else {
+                                        setSelectedEntityId(selected ? null : e.id);
+                                    }
+                                }}
                                 style={{
-                                    border: '1px solid ' + (selected ? '#1e3a8a' : '#374151'),
-                                    boxShadow: selected ? '0 0 0 1px #1e3a8a' : 'none',
+                                    border: '1px solid ' + (linkingActive ? (isLinkTargetSelected ? '#16a34a' : allowedByLinking ? '#64748b' : '#374151') : (selected ? '#1e3a8a' : '#374151')),
+                                    boxShadow: linkingActive ? (isLinkTargetSelected ? '0 0 0 1px #16a34a' : 'none') : (selected ? '0 0 0 1px #1e3a8a' : 'none'),
                                     borderRadius: 4,
                                     padding: '4px 6px',
                                     marginBottom: 6,
-                                    background: selected ? '#1e3a8a' : '#111827',
+                                    background: linkingActive ? (isLinkTargetSelected ? '#064e3b' : allowedByLinking ? '#0b1220' : '#111827') : (selected ? '#1e3a8a' : '#111827'),
                                     color: '#f1f5f9',
                                     fontSize: 11,
-                                    cursor: 'pointer'
+                                    cursor: linkingActive ? (allowedByLinking ? 'pointer' : 'not-allowed') : 'pointer'
                                 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <strong style={{ textTransform: 'capitalize' }}>{e.entity_type.replace('_', ' ')}</strong>
@@ -686,6 +774,118 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
                 {isNote && 'Only text is stored for notes.'}
                 {(isSymDef || isCompDef) && 'You can edit definition attributes here. BBoxes are still edited on the canvas.'}
             </div>
+        </div>
+    );
+};
+
+interface ConceptSpacesProps {
+    concepts: any[];
+    entities: any[];
+    links: any[];
+    createConcept: (data: { kind: 'space'; name: string }) => Promise<void>;
+    updateConcept: (id: string, data: Partial<{ name: string }>) => Promise<void>;
+    deleteConcept: (id: string) => Promise<void>;
+    deleteLink: (id: string) => Promise<void>;
+    startLinking: (relType: 'DEPICTS' | 'LOCATED_IN', anchor: { kind: 'space'; id: string }) => void;
+}
+
+const ConceptSpacesSection: React.FC<ConceptSpacesProps> = ({ concepts, entities, links, createConcept, updateConcept, deleteConcept, deleteLink, startLinking }) => {
+    const spaces = concepts.filter(c => c.kind === 'space');
+    const [draftName, setDraftName] = React.useState('');
+    return (
+        <div style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginTop: 6, background: '#0b1220', color: '#e2e8f0' }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <input value={draftName} onChange={e => setDraftName(e.target.value)} placeholder="New space name" style={{ flex: 1, background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                <button disabled={!draftName.trim()} onClick={() => { if (!draftName.trim()) return; createConcept({ kind: 'space', name: draftName.trim() }); setDraftName(''); }} style={miniBtn(!draftName.trim())}>+ Add</button>
+            </div>
+            {spaces.length === 0 && <div style={{ fontSize: 11, opacity: .8 }}>(No spaces yet)</div>}
+            {spaces.map((s) => {
+                const depicting = links.filter((l: any) => l.rel_type === 'DEPICTS' && l.target_id === s.id);
+                const located = links.filter((l: any) => l.rel_type === 'LOCATED_IN' && l.target_id === s.id);
+                return (
+                    <div key={s.id} style={{ border: '1px solid #334155', borderRadius: 4, padding: '6px 6px 8px', marginBottom: 6, background: '#111827' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <input defaultValue={s.name} onBlur={(e) => { const v = (e.target as HTMLInputElement).value; if (v && v !== s.name) updateConcept(s.id, { name: v }); }} style={{ background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '2px 6px', borderRadius: 4 }} />
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => startLinking('DEPICTS', { kind: 'space', id: s.id })} style={miniBtn(false)} title="Add depicting drawings">Link Drawings</button>
+                                <button onClick={() => startLinking('LOCATED_IN', { kind: 'space', id: s.id })} style={miniBtn(false)} title="Add instances located in this space">Link Instances</button>
+                                <button onClick={() => deleteConcept(s.id)} style={miniBtn(false)} title="Delete space">🗑</button>
+                            </div>
+                        </div>
+                        {/* Linked pills */}
+                        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {depicting.map((l: any) => {
+                                const dr = entities.find((e: any) => e.id === l.source_id);
+                                const label = dr ? (dr.title || 'Drawing') : l.source_id.slice(0, 6);
+                                return (
+                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>DEPICTS: {label} <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button></span>
+                                );
+                            })}
+                            {located.map((l: any) => {
+                                const inst = entities.find((e: any) => e.id === l.source_id);
+                                const label = inst ? inst.entity_type.replace('_', ' ') : l.source_id.slice(0, 6);
+                                return (
+                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>LOCATED_IN: {label} <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button></span>
+                                );
+                            })}
+                            {depicting.length + located.length === 0 && <span style={{ fontSize: 10, opacity: .7 }}>(No links yet)</span>}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+interface ConceptScopesProps {
+    concepts: any[];
+    entities: any[];
+    links: any[];
+    createConcept: (data: { kind: 'scope'; description: string; category?: string | null }) => Promise<void>;
+    updateConcept: (id: string, data: Partial<{ description: string; category?: string | null }>) => Promise<void>;
+    deleteConcept: (id: string) => Promise<void>;
+    deleteLink: (id: string) => Promise<void>;
+    startLinking: (relType: 'JUSTIFIED_BY', anchor: { kind: 'scope'; id: string }) => void;
+}
+
+const ConceptScopesSection: React.FC<ConceptScopesProps> = ({ concepts, entities, links, createConcept, updateConcept, deleteConcept, deleteLink, startLinking }) => {
+    const scopes = concepts.filter(c => c.kind === 'scope');
+    const [desc, setDesc] = React.useState('');
+    const [cat, setCat] = React.useState('');
+    return (
+        <div style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginTop: 6, background: '#0b1220', color: '#e2e8f0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px auto', gap: 6, marginBottom: 8 }}>
+                <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="New scope description" style={{ background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                <input value={cat} onChange={e => setCat(e.target.value)} placeholder="Category (optional)" style={{ background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                <button disabled={!desc.trim()} onClick={() => { if (!desc.trim()) return; createConcept({ kind: 'scope', description: desc.trim(), category: cat.trim() || undefined }); setDesc(''); setCat(''); }} style={miniBtn(!desc.trim())}>+ Add</button>
+            </div>
+            {scopes.length === 0 && <div style={{ fontSize: 11, opacity: .8 }}>(No scopes yet)</div>}
+            {scopes.map((s) => {
+                const evidence = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id);
+                return (
+                    <div key={s.id} style={{ border: '1px solid #334155', borderRadius: 4, padding: '6px 6px 8px', marginBottom: 6, background: '#111827' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px auto', gap: 6, alignItems: 'center' }}>
+                            <input defaultValue={s.description} onBlur={(e) => { const v = (e.target as HTMLInputElement).value; if (v && v !== s.description) updateConcept(s.id, { description: v }); }} style={{ background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '2px 6px', borderRadius: 4 }} />
+                            <input defaultValue={s.category || ''} onBlur={(e) => { const v = (e.target as HTMLInputElement).value; if (v !== (s.category || '')) updateConcept(s.id, { category: v || null }); }} placeholder="Category" style={{ background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '2px 6px', borderRadius: 4 }} />
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                <button onClick={() => startLinking('JUSTIFIED_BY', { kind: 'scope', id: s.id })} style={miniBtn(false)} title="Add evidence links">Link Evidence</button>
+                                <button onClick={() => deleteConcept(s.id)} style={miniBtn(false)} title="Delete scope">🗑</button>
+                            </div>
+                        </div>
+                        {/* Evidence pills */}
+                        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {evidence.map((l: any) => {
+                                const ev = entities.find((e: any) => e.id === l.target_id);
+                                const label = ev ? (ev.title || ev.name || ev.entity_type) : l.target_id.slice(0, 6);
+                                return (
+                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>JUSTIFIED_BY: {label} <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button></span>
+                                );
+                            })}
+                            {evidence.length === 0 && <span style={{ fontSize: 10, opacity: .7 }}>(No evidence yet)</span>}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 };
