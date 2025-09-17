@@ -5,6 +5,23 @@ from pydantic import BaseModel
 from .ingest import init_manifest, ingest_pdf, read_manifest, project_dir
 from .entities_models import CreateEntityUnion, EntityUnion
 from .entities_store import load_entities, create_entity, update_entity, delete_entity
+from .concepts_models import (
+    CreateConceptUnion,
+    ConceptUnion,
+    CreateRelationship,
+    Relationship,
+)
+from .concepts_store import (
+    load_concepts,
+    create_concept,
+    update_concept,
+    delete_concept,
+)
+from .links_store import (
+    load_links,
+    create_link,
+    delete_link,
+)
 from fastapi import Body
 
 app = FastAPI(title="Timbergem Backend", version="0.1.0")
@@ -149,4 +166,97 @@ async def delete_entity_endpoint(project_id: str, entity_id: str):
         raise HTTPException(status_code=422, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail="Entity not found")
+    return {"deleted": True}
+
+
+# --------- Concepts Endpoints ---------
+
+
+@app.get("/api/projects/{project_id}/concepts", response_model=list[ConceptUnion])
+async def list_concepts(project_id: str):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return load_concepts(project_id)
+
+
+@app.post(
+    "/api/projects/{project_id}/concepts", response_model=ConceptUnion, status_code=201
+)
+async def create_concept_endpoint(project_id: str, body: CreateConceptUnion):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        c = create_concept(project_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return c
+
+
+@app.patch("/api/projects/{project_id}/concepts/{concept_id}", response_model=ConceptUnion)
+async def patch_concept_endpoint(project_id: str, concept_id: str, body: dict = Body(...)):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    name = body.get("name")
+    description = body.get("description")
+    category = body.get("category")
+    try:
+        c = update_concept(project_id, concept_id, name=name, description=description, category=category)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return c
+
+
+@app.delete("/api/projects/{project_id}/concepts/{concept_id}")
+async def delete_concept_endpoint(project_id: str, concept_id: str):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        ok = delete_concept(project_id, concept_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Concept not found")
+    return {"deleted": True}
+
+
+# --------- Links Endpoints ---------
+
+
+@app.get("/api/projects/{project_id}/links", response_model=list[Relationship])
+async def list_links(project_id: str, source_id: str | None = None, target_id: str | None = None, rel_type: str | None = None):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    all_links = load_links(project_id)
+    result = []
+    for l in all_links:
+        if source_id and l.source_id != source_id:
+            continue
+        if target_id and l.target_id != target_id:
+            continue
+        if rel_type and l.rel_type != rel_type:
+            continue
+        result.append(l)
+    return result
+
+
+@app.post(
+    "/api/projects/{project_id}/links", response_model=Relationship, status_code=201
+)
+async def create_link_endpoint(project_id: str, body: CreateRelationship):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        link = create_link(project_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return link
+
+
+@app.delete("/api/projects/{project_id}/links/{link_id}")
+async def delete_link_endpoint(project_id: str, link_id: str):
+    if not read_manifest(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    ok = delete_link(project_id, link_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Link not found")
     return {"deleted": True}
