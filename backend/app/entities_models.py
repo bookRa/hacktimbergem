@@ -90,7 +90,29 @@ class ComponentDefinition(BaseVisualEntity):
     defined_in_id: Optional[str] = None
 
 
-EntityUnion = Union[Drawing, Legend, Schedule, Note, SymbolDefinition, ComponentDefinition]
+class SymbolInstance(BaseVisualEntity):
+    entity_type: Literal["symbol_instance"] = "symbol_instance"
+    symbol_definition_id: str
+    recognized_text: Optional[str] = None
+    instantiated_in_id: Optional[str] = None
+
+
+class ComponentInstance(BaseVisualEntity):
+    entity_type: Literal["component_instance"] = "component_instance"
+    component_definition_id: str
+    instantiated_in_id: Optional[str] = None
+
+
+EntityUnion = Union[
+    Drawing,
+    Legend,
+    Schedule,
+    Note,
+    SymbolDefinition,
+    ComponentDefinition,
+    SymbolInstance,
+    ComponentInstance,
+]
 
 
 class CreateDrawing(BaseModel):
@@ -143,6 +165,21 @@ class CreateComponentDefinition(BaseModel):
     defined_in_id: Optional[str] = None
 
 
+class CreateSymbolInstance(BaseModel):
+    entity_type: Literal["symbol_instance"]
+    source_sheet_number: int
+    bounding_box: List[float]
+    symbol_definition_id: str
+    recognized_text: Optional[str] = None
+
+
+class CreateComponentInstance(BaseModel):
+    entity_type: Literal["component_instance"]
+    source_sheet_number: int
+    bounding_box: List[float]
+    component_definition_id: str
+
+
 CreateEntityUnion = Union[
     CreateDrawing,
     CreateLegend,
@@ -150,6 +187,8 @@ CreateEntityUnion = Union[
     CreateNote,
     CreateSymbolDefinition,
     CreateComponentDefinition,
+    CreateSymbolInstance,
+    CreateComponentInstance,
 ]
 
 __all__ = [
@@ -161,6 +200,8 @@ __all__ = [
     "Note",
     "SymbolDefinition",
     "ComponentDefinition",
+    "SymbolInstance",
+    "ComponentInstance",
     "EntityUnion",
     "CreateEntityUnion",
     "CreateDrawing",
@@ -169,4 +210,6 @@ __all__ = [
     "CreateNote",
     "CreateSymbolDefinition",
     "CreateComponentDefinition",
+    "CreateSymbolInstance",
+    "CreateComponentInstance",
 ]

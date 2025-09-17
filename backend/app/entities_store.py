@@ -19,6 +19,8 @@ from .entities_models import (
     Note,
     SymbolDefinition,
     ComponentDefinition,
+    SymbolInstance,
+    ComponentInstance,
 )
 
 ENTITIES_FILENAME = "entities.json"
@@ -44,6 +46,8 @@ def load_entities(project_id: str) -> List[EntityUnion]:
             "note": Note,
             "symbol_definition": SymbolDefinition,
             "component_definition": ComponentDefinition,
+            "symbol_instance": SymbolInstance,
+            "component_instance": ComponentInstance,
         }.get(et)
         if not cls:
             continue  # skip unknown types gracefully
@@ -113,6 +117,31 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
             scope=getattr(payload, "scope", "sheet"),
             defined_in_id=getattr(payload, "defined_in_id", None),
         )
+    elif payload.entity_type == "symbol_instance":
+        # Validate referenced symbol definition exists and scope allows placement
+        sym_def = _get_entity_by_id(entities, getattr(payload, "symbol_definition_id", ""))
+        if not sym_def or getattr(sym_def, "entity_type", None) != "symbol_definition":
+            raise ValueError("symbol_definition_id not found")
+        # Scope check
+        if getattr(sym_def, "scope", "sheet") == "sheet" and getattr(sym_def, "source_sheet_number", None) != payload.source_sheet_number:
+            raise ValueError("SymbolDefinition scope is 'sheet' and must be used on the same sheet")
+        ent = SymbolInstance(
+            **base_kwargs,
+            symbol_definition_id=getattr(payload, "symbol_definition_id"),
+            recognized_text=getattr(payload, "recognized_text", None),
+            instantiated_in_id=None,
+        )
+    elif payload.entity_type == "component_instance":
+        comp_def = _get_entity_by_id(entities, getattr(payload, "component_definition_id", ""))
+        if not comp_def or getattr(comp_def, "entity_type", None) != "component_definition":
+            raise ValueError("component_definition_id not found")
+        if getattr(comp_def, "scope", "sheet") == "sheet" and getattr(comp_def, "source_sheet_number", None) != payload.source_sheet_number:
+            raise ValueError("ComponentDefinition scope is 'sheet' and must be used on the same sheet")
+        ent = ComponentInstance(
+            **base_kwargs,
+            component_definition_id=getattr(payload, "component_definition_id"),
+            instantiated_in_id=None,
+        )
     else:
         raise ValueError("Unsupported entity_type")
     entities.append(ent)
@@ -125,6 +154,17 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
         parent = _find_intersecting_parent(entities, ent, parent_type="schedule")
         if parent:
             ent.defined_in_id = parent.id  # type: ignore
+    # For instances, auto-set instantiated_in_id by locating containing drawing
+    if getattr(ent, "entity_type", None) in {"symbol_instance", "component_instance"}:  # type: ignore
+        drawing = _find_containing_drawing(entities, ent)
+        if not drawing:
+            raise ValueError("Instance must be placed within a drawing on the same sheet")
+        data = ent.dict()
+        data["instantiated_in_id"] = drawing.id  # type: ignore
+        ent_cls = SymbolInstance if ent.entity_type == "symbol_instance" else ComponentInstance  # type: ignore
+        ent = ent_cls(**data)
+        entities[-1] = ent
+
     save_entities(project_id, entities)
     return ent
 
@@ -142,6 +182,9 @@ def update_entity(
     scope: str | None = None,
     defined_in_id: str | None = None,
     specifications: dict | None = None,
+    symbol_definition_id: str | None = None,
+    component_definition_id: str | None = None,
+    recognized_text: str | None = None,
 ) -> EntityUnion:
     entities = load_entities(project_id)
     found = None
@@ -194,11 +237,46 @@ def update_entity(
         "note": Note,
         "symbol_definition": SymbolDefinition,
         "component_definition": ComponentDefinition,
+        "symbol_instance": SymbolInstance,
+        "component_instance": ComponentInstance,
     }
     cls = cls_map[data["entity_type"]]
     updated = cls(**data)
     entities[idx] = updated
-    # Auto-link or unlink on move/resize or meta update
+    # Instances: allow meta updates and ensure they remain inside a drawing
+    if data["entity_type"] in {"symbol_instance", "component_instance"}:
+        # Update linked fields if provided
+        if data["entity_type"] == "symbol_instance":
+            if symbol_definition_id is not None:
+                sym_def = _get_entity_by_id(entities, symbol_definition_id)
+                if not sym_def or getattr(sym_def, "entity_type", None) != "symbol_definition":
+                    raise ValueError("symbol_definition_id not found")
+                if getattr(sym_def, "scope", "sheet") == "sheet" and getattr(sym_def, "source_sheet_number", None) != data["source_sheet_number"]:
+                    raise ValueError("SymbolDefinition scope is 'sheet' and must be used on the same sheet")
+                data["symbol_definition_id"] = symbol_definition_id
+            if recognized_text is not None:
+                data["recognized_text"] = recognized_text
+        if data["entity_type"] == "component_instance":
+            if component_definition_id is not None:
+                comp_def = _get_entity_by_id(entities, component_definition_id)
+                if not comp_def or getattr(comp_def, "entity_type", None) != "component_definition":
+                    raise ValueError("component_definition_id not found")
+                    
+                if getattr(comp_def, "scope", "sheet") == "sheet" and getattr(comp_def, "source_sheet_number", None) != data["source_sheet_number"]:
+                    raise ValueError("ComponentDefinition scope is 'sheet' and must be used on the same sheet")
+                data["component_definition_id"] = component_definition_id
+        # Recompute instantiated_in_id from (possibly new) bbox
+        temp_cls = cls_map[data["entity_type"]]
+        temp_ent = temp_cls(**data)
+        drawing = _find_containing_drawing(entities, temp_ent)
+        if not drawing:
+            raise ValueError("Instance must be placed within a drawing on the same sheet")
+        data["instantiated_in_id"] = drawing.id
+        # Rebuild updated entity and persist
+        updated = cls_map[data["entity_type"]](**data)
+        entities[idx] = updated
+
+    # Auto-link or unlink on move/resize or meta update for definitions
     if updated.entity_type in {"symbol_definition", "component_definition"}:  # type: ignore
         parent_type = "legend" if updated.entity_type == "symbol_definition" else "schedule"  # type: ignore
         parent = _find_intersecting_parent(entities, updated, parent_type=parent_type)
@@ -218,6 +296,14 @@ def update_entity(
 
 def delete_entity(project_id: str, entity_id: str) -> bool:
     entities = load_entities(project_id)
+    # Guard: prevent deleting definitions if instances reference them
+    target = _get_entity_by_id(entities, entity_id)
+    if target and getattr(target, "entity_type", None) in {"symbol_definition", "component_definition"}:
+        for e in entities:
+            if getattr(e, "entity_type", None) == "symbol_instance" and getattr(e, "symbol_definition_id", None) == entity_id:
+                raise ValueError("Cannot delete definition with existing instances")
+            if getattr(e, "entity_type", None) == "component_instance" and getattr(e, "component_definition_id", None) == entity_id:
+                raise ValueError("Cannot delete definition with existing instances")
     new_entities = [e for e in entities if getattr(e, "id", None) != entity_id]
     if len(new_entities) == len(entities):
         return False
@@ -236,6 +322,31 @@ def _find_intersecting_parent(entities: list[EntityUnion], child: EntityUnion, *
         try:
             if _intersects(e.bounding_box, child.bounding_box):  # type: ignore
                 return e
+        except Exception:
+            continue
+    return None
+
+
+def _get_entity_by_id(entities: list[EntityUnion], entity_id: str) -> EntityUnion | None:
+    for e in entities:
+        if getattr(e, "id", None) == entity_id:
+            return e
+    return None
+
+
+def _contains(a: BoundingBox, b: BoundingBox) -> bool:
+    return (a.x1 <= b.x1) and (a.y1 <= b.y1) and (a.x2 >= b.x2) and (a.y2 >= b.y2)
+
+
+def _find_containing_drawing(entities: list[EntityUnion], inst: EntityUnion) -> Drawing | None:
+    for e in entities:
+        if getattr(e, "entity_type", None) != "drawing":
+            continue
+        if getattr(e, "source_sheet_number", None) != getattr(inst, "source_sheet_number", None):
+            continue
+        try:
+            if _contains(e.bounding_box, getattr(inst, "bounding_box")):  # type: ignore
+                return e  # type: ignore
         except Exception:
             continue
     return None

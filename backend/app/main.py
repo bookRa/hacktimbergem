@@ -114,6 +114,9 @@ async def patch_entity_endpoint(
     scope = body.get("scope")
     defined_in_id = body.get("defined_in_id")
     specifications = body.get("specifications")
+    symbol_definition_id = body.get("symbol_definition_id")
+    component_definition_id = body.get("component_definition_id")
+    recognized_text = body.get("recognized_text")
     try:
         ent = update_entity(
             project_id,
@@ -127,6 +130,9 @@ async def patch_entity_endpoint(
             scope=scope,
             defined_in_id=defined_in_id,
             specifications=specifications,
+            symbol_definition_id=symbol_definition_id,
+            component_definition_id=component_definition_id,
+            recognized_text=recognized_text,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -137,7 +143,10 @@ async def patch_entity_endpoint(
 async def delete_entity_endpoint(project_id: str, entity_id: str):
     if not read_manifest(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
-    ok = delete_entity(project_id, entity_id)
+    try:
+        ok = delete_entity(project_id, entity_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail="Entity not found")
     return {"deleted": True}
