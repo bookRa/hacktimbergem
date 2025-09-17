@@ -121,6 +121,13 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         const rect = wrapperRef.current.getBoundingClientRect();
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
+        // Instance stamping: click-to-place with default size
+        if (creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance')) {
+            const size = Math.max(8, 16 / (scale || 1));
+            const half = size / 2;
+            setDraft({ x1: x - half, y1: y - half, x2: x + half, y2: y + half });
+            return;
+        }
         // Clicking empty space: deselect entity
         if (!creatingEntity) {
             // Check if hit any entity first; if not, clear selection
@@ -308,6 +315,13 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 }
             }
             dragRef.current = null; setDraft(null); return;
+        }
+        // Instance stamping click (no dragRef) — commit if draft exists
+        if (creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance') && draft) {
+            finalizeEntityCreation(draft.x1, draft.y1, draft.x2, draft.y2);
+            setRightPanelTab('entities');
+            setDraft(null);
+            return;
         }
         if (editRef.current) {
             const id = editRef.current.entityId;

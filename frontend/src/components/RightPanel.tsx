@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -34,6 +34,7 @@ export const RightPanel: React.FC = () => {
         setSelectedEntityId: s.setSelectedEntityId,
         updateEntityMeta: s.updateEntityMeta,
         deleteEntity: s.deleteEntity,
+        startInstanceStamp: (s as any).startInstanceStamp,
         addToast: s.addToast
     }));
     const [defDraft, setDefDraft] = React.useState<null | { type: 'symbol_definition' | 'component_definition'; name: string; scope: 'project' | 'sheet'; description: string; visual_pattern_description?: string; specifications?: string }>(null);
@@ -263,6 +264,40 @@ export const RightPanel: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        );
+                    })()}
+                    {/* Instances Palette */}
+                    {(() => {
+                        // All definitions available for this page respecting scope
+                        const defs = entities.filter((e: any) => e.entity_type === 'symbol_definition' || e.entity_type === 'component_definition');
+                        const pageDefs = defs.filter((d: any) => d.scope === 'project' || d.source_sheet_number === currentPageIndex + 1);
+                        if (pageDefs.length === 0) return null;
+                        return (
+                            <div style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginBottom: 10, background: '#0b1220' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, color: '#e2e8f0' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12 }}>Instances</div>
+                                    {creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance') && (
+                                        <button onClick={() => cancelEntityCreation()} style={miniBtn(false)}>Cancel Stamping</button>
+                                    )}
+                                </div>
+                                <div style={{ display: 'grid', gap: 6 }}>
+                                    {pageDefs.map((d: any) => (
+                                        <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #334155', borderRadius: 4, padding: '4px 6px', background: '#111827', color: '#f1f5f9' }}>
+                                            <div>
+                                                <strong style={{ fontSize: 12 }}>{d.name || '(unnamed)'}</strong>
+                                                <span style={{ marginLeft: 6, fontSize: 10, opacity: .7 }}>[{d.entity_type.replace('_', ' ')} — {d.scope}]</span>
+                                            </div>
+                                            <button
+                                                onClick={() => startInstanceStamp(d.entity_type === 'symbol_definition' ? 'symbol' : 'component', d.id)}
+                                                style={miniBtn(false)}
+                                            >Stamp</button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {(creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance')) && (
+                                    <div style={{ marginTop: 6, fontSize: 11, color: '#fbbf24' }}>Stamping: click within a Drawing to place. Esc to cancel.</div>
+                                )}
                             </div>
                         );
                     })()}

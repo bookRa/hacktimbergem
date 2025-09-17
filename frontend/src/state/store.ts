@@ -68,9 +68,10 @@ interface AppState {
     entities: any[]; // typed later via api/entities
     entitiesStatus: 'idle' | 'loading' | 'error';
     fetchEntities: () => Promise<void>;
-    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
+    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
     startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'note') => void;
-    startDefinitionCreation: (type: 'symbol_definition' | 'component_definition', parentId: string, meta: any) => void;
+    startDefinitionCreation: (type: 'symbol_definition' | 'component_definition', parentId: string | null, meta: any) => void;
+    startInstanceStamp: (kind: 'symbol' | 'component', definitionId: string, opts?: { sizePts?: number; recognized_text?: string }) => void;
     cancelEntityCreation: () => void;
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
@@ -421,6 +422,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         set({ creatingEntity: { type, startX: -1, startY: -1 }, selectedEntityId: null });
     },
     startDefinitionCreation: (type, parentId, meta) => set({ creatingEntity: { type, startX: -1, startY: -1, parentId, meta } }),
+    startInstanceStamp: (kind, definitionId, opts) => set({ creatingEntity: { type: kind === 'symbol' ? 'symbol_instance' : 'component_instance', startX: -1, startY: -1, meta: { definitionId, ...opts } } }),
     cancelEntityCreation: () => set({ creatingEntity: null }),
     finalizeEntityCreation: async (x1, y1, x2, y2) => {
         const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId, fetchPageOcr } = get() as any;
@@ -459,6 +461,11 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 payload.specifications = m.specifications || null;
                 payload.scope = m.scope === 'project' ? 'project' : 'sheet';
                 payload.defined_in_id = creatingEntity.parentId;
+            } else if (creatingEntity.type === 'symbol_instance') {
+                payload.symbol_definition_id = creatingEntity.meta?.definitionId;
+                if (creatingEntity.meta?.recognized_text) payload.recognized_text = creatingEntity.meta.recognized_text;
+            } else if (creatingEntity.type === 'component_instance') {
+                payload.component_definition_id = creatingEntity.meta?.definitionId;
             }
             const resp = await fetch(`/api/projects/${projectId}/entities`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
