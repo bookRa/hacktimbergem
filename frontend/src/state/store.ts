@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getDocument, PDFDocumentProxy } from 'pdfjs-dist';
+import { canvasToPdf } from '../utils/coords';
 
 // Page raster meta at 300 DPI baseline
 export interface PageRenderMeta {
@@ -422,14 +423,27 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     startDefinitionCreation: (type, parentId, meta) => set({ creatingEntity: { type, startX: -1, startY: -1, parentId, meta } }),
     cancelEntityCreation: () => set({ creatingEntity: null }),
     finalizeEntityCreation: async (x1, y1, x2, y2) => {
-        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId } = get() as any;
+        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId, fetchPageOcr } = get() as any;
         if (!creatingEntity || !projectId) return;
         const sheetNumber = currentPageIndex + 1; // 1-based
         try {
+            // Ensure we have OCR/meta available to convert canvas -> PDF
+            let ocr = (get() as any).pageOcr[currentPageIndex];
+            if (!ocr) { await fetchPageOcr(currentPageIndex); ocr = (get() as any).pageOcr[currentPageIndex]; }
+            const pageMeta = (get() as any).pagesMeta[currentPageIndex];
+            if (!ocr || !pageMeta) { throw new Error('Missing page meta for coordinate conversion'); }
+            const renderMeta = {
+                pageWidthPts: ocr.width_pts,
+                pageHeightPts: ocr.height_pts,
+                rasterWidthPx: pageMeta.nativeWidth,
+                rasterHeightPx: pageMeta.nativeHeight,
+                rotation: 0 as 0,
+            };
+            const [px1, py1, px2, py2] = canvasToPdf([x1, y1, x2, y2], renderMeta as any);
             const payload: any = {
                 entity_type: creatingEntity.type,
                 source_sheet_number: sheetNumber,
-                bounding_box: [x1, y1, x2, y2]
+                bounding_box: [px1, py1, px2, py2]
             };
             if (creatingEntity.type === 'symbol_definition') {
                 const m = creatingEntity.meta || {};
@@ -467,10 +481,24 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
     updateEntityBBox: async (id, bbox) => {
-        const { projectId, addToast, fetchEntities } = get();
+        const { projectId, addToast, fetchEntities, fetchPageOcr } = get() as any;
         if (!projectId) return;
         try {
-            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: bbox }) });
+            // Convert canvas -> PDF using current page meta
+            const currentPageIndex = (get() as any).currentPageIndex;
+            let ocr = (get() as any).pageOcr[currentPageIndex];
+            if (!ocr) { await fetchPageOcr(currentPageIndex); ocr = (get() as any).pageOcr[currentPageIndex]; }
+            const pageMeta = (get() as any).pagesMeta[currentPageIndex];
+            if (!ocr || !pageMeta) throw new Error('Missing page meta for coordinate conversion');
+            const renderMeta = {
+                pageWidthPts: ocr.width_pts,
+                pageHeightPts: ocr.height_pts,
+                rasterWidthPx: pageMeta.nativeWidth,
+                rasterHeightPx: pageMeta.nativeHeight,
+                rotation: 0 as 0,
+            };
+            const [px1, py1, px2, py2] = canvasToPdf(bbox as any, renderMeta as any);
+            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: [px1, py1, px2, py2] }) });
             await fetchEntities();
         } catch (e: any) {
             console.error(e); addToast({ kind: 'error', message: e.message || 'Update failed' });

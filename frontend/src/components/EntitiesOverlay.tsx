@@ -75,7 +75,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
 
     if (pageIndex !== currentPageIndex) return null;
 
-    const pageEntities = entities
+    const pageEntitiesRaw = entities
         .filter((e: any) => e.source_sheet_number === pageIndex + 1)
         .slice()
         .sort((a: any, b: any) => {
@@ -84,6 +84,20 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             if (za !== zb) return za - zb; // lower z drawn first, higher z on top
             return 0;
         });
+    // Convert all entity PDF-space boxes to canvas space for rendering and hit-testing
+    const ocr = (pageOcr as any)?.[pageIndex];
+    const meta = (pagesMeta as any)?.[pageIndex];
+    const renderMeta = ocr && meta ? {
+        pageWidthPts: ocr.width_pts,
+        pageHeightPts: ocr.height_pts,
+        rasterWidthPx: meta.nativeWidth,
+        rasterHeightPx: meta.nativeHeight,
+        rotation: 0 as 0
+    } : null;
+    const pageEntities = (renderMeta ? pageEntitiesRaw.map((e: any) => ({
+        ...e,
+        _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
+    })) : pageEntitiesRaw.map((e: any) => ({ ...e, _canvas_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] }))) as any[];
 
     const hitHandle = (ex: number, ey: number, box: { x1: number; y1: number; x2: number; y2: number }) => {
         const size = 6 / scale;
@@ -113,9 +127,9 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             let hitAny = false;
             for (let i = pageEntities.length - 1; i >= 0; i--) {
                 const ent = pageEntities[i];
-                const { x1, y1, x2, y2 } = ent.bounding_box;
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
                 const tol = TOL_PX / scale;
-                if (x >= (x1 - tol) && x <= (x2 + tol) && y >= (y1 - tol) && y <= (y2 + tol)) { hitAny = true; break; }
+                if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) { hitAny = true; break; }
             }
             if (!hitAny) {
                 setSelectedEntityId(null);
@@ -131,19 +145,19 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         // iterate topmost first (last draw) so reverse order
         for (let i = pageEntities.length - 1; i >= 0; i--) {
             const ent = pageEntities[i];
-            const { x1, y1, x2, y2 } = ent.bounding_box;
+            const [bx1, by1, bx2, by2] = ent._canvas_box;
             // Expand test by tolerance converted to PDF space
             const tol = TOL_PX / scale;
-            if (x >= (x1 - tol) && x <= (x2 + tol) && y >= (y1 - tol) && y <= (y2 + tol)) {
-                const handle = hitHandle(x, y, ent.bounding_box);
+            if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
+                const handle = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
                 // If clicking inside entity (not on handle) and not currently a drag, select & open editor
                 setSelectedEntityId(ent.id);
                 setRightPanelTab('entities');
                 dbg('entity hit', { id: ent.id, handle: handle || 'move' });
                 if (handle && handle !== 'mm') {
-                    editRef.current = { mode: 'resize', entityId: ent.id, origin: { ...ent.bounding_box }, start: { x, y }, handle } as any;
+                    editRef.current = { mode: 'resize', entityId: ent.id, origin: { x1: bx1, y1: by1, x2: bx2, y2: by2 }, start: { x, y }, handle } as any;
                 } else {
-                    editRef.current = { mode: 'move', entityId: ent.id, origin: { ...ent.bounding_box }, start: { x, y } } as any;
+                    editRef.current = { mode: 'move', entityId: ent.id, origin: { x1: bx1, y1: by1, x2: bx2, y2: by2 }, start: { x, y } } as any;
                 }
                 e.preventDefault();
                 return;
@@ -246,10 +260,10 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         if (!creatingEntity && selectedEntityId) {
             const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
             if (ent) {
-                const { x1, y1, x2, y2 } = ent.bounding_box;
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
                 const tol = TOL_PX / scale;
-                if (x >= (x1 - tol) && x <= (x2 + tol) && y >= (y1 - tol) && y <= (y2 + tol)) {
-                    const h = hitHandle(x, y, ent.bounding_box);
+                if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
+                    const h = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
                     if (h) {
                         setHoverCursor(handleToCursor(h));
                     } else {
@@ -313,7 +327,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
                 {pageEntities.map((e: any) => {
                     const c = TYPE_COLORS[e.entity_type] || { stroke: '#64748b', fill: 'rgba(100,116,139,0.15)' };
-                    const live = editingBoxes[e.id] || e.bounding_box;
+                    const live = editingBoxes[e.id] || { x1: e._canvas_box[0], y1: e._canvas_box[1], x2: e._canvas_box[2], y2: e._canvas_box[3] };
                     const { x1, y1, x2, y2 } = live;
                     const w = (x2 - x1) * scale; const h = (y2 - y1) * scale;
                     const selected = selectedEntityId === e.id;
