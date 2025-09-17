@@ -282,18 +282,24 @@ export const RightPanel: React.FC = () => {
                                     )}
                                 </div>
                                 <div style={{ display: 'grid', gap: 6 }}>
-                                    {pageDefs.map((d: any) => (
-                                        <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #334155', borderRadius: 4, padding: '4px 6px', background: '#111827', color: '#f1f5f9' }}>
-                                            <div>
-                                                <strong style={{ fontSize: 12 }}>{d.name || '(unnamed)'}</strong>
-                                                <span style={{ marginLeft: 6, fontSize: 10, opacity: .7 }}>[{d.entity_type.replace('_', ' ')} — {d.scope}]</span>
+                                    {pageDefs.map((d: any) => {
+                                        const active = creatingEntity && ((creatingEntity.type === 'symbol_instance' && d.entity_type === 'symbol_definition') || (creatingEntity.type === 'component_instance' && d.entity_type === 'component_definition')) && creatingEntity.meta?.definitionId === d.id;
+                                        return (
+                                            <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #334155', borderRadius: 4, padding: '4px 6px', background: active ? '#1e3a8a' : '#111827', color: '#f1f5f9' }}>
+                                                <div>
+                                                    <strong style={{ fontSize: 12 }}>{d.name || '(unnamed)'}</strong>
+                                                    <span style={{ marginLeft: 6, fontSize: 10, opacity: .7 }}>[{d.entity_type.replace('_', ' ')} — {d.scope}]</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        if (active) { cancelEntityCreation(); return; }
+                                                        startInstanceStamp(d.entity_type === 'symbol_definition' ? 'symbol' : 'component', d.id);
+                                                    }}
+                                                    style={miniBtn(false)}
+                                                >{active ? 'Stop Stamping' : 'Stamp'}</button>
                                             </div>
-                                            <button
-                                                onClick={() => startInstanceStamp(d.entity_type === 'symbol_definition' ? 'symbol' : 'component', d.id)}
-                                                style={miniBtn(false)}
-                                            >Stamp</button>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                                 {(creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance')) && (
                                     <div style={{ marginTop: 6, fontSize: 11, color: '#fbbf24' }}>Stamping: click within a Drawing to place. Esc to cancel.</div>
@@ -408,6 +414,22 @@ export const RightPanel: React.FC = () => {
                     </div>
                     {sectionsOpen.backend && entities.filter((e: any) => e.source_sheet_number === currentPageIndex + 1).map((e: any) => {
                         const selected = e.id === selectedEntityId;
+                        // Linkage pills
+                        const linkage = (() => {
+                            if (e.entity_type === 'symbol_instance') {
+                                const d = entities.find((x: any) => x.id === e.symbol_definition_id);
+                                return d ? `→ ${d.name || d.id.slice(0,6)} (symbol def)` : `→ def ${e.symbol_definition_id?.slice?.(0,6)}`;
+                            }
+                            if (e.entity_type === 'component_instance') {
+                                const d = entities.find((x: any) => x.id === e.component_definition_id);
+                                return d ? `→ ${d.name || d.id.slice(0,6)} (component def)` : `→ def ${e.component_definition_id?.slice?.(0,6)}`;
+                            }
+                            if (e.entity_type === 'symbol_definition' || e.entity_type === 'component_definition') {
+                                const container = entities.find((x: any) => x.id === e.defined_in_id);
+                                return container ? `in ${container.entity_type} ${container.title || container.id.slice(0,6)}` : undefined;
+                            }
+                            return undefined;
+                        })();
                         return (
                             <div
                                 key={e.id}
@@ -432,6 +454,7 @@ export const RightPanel: React.FC = () => {
                                 {e.name && <div style={{ marginTop: 2 }}>Name: {e.name}</div>}
                                 {e.scope && <div style={{ marginTop: 2, fontSize: 10, opacity: .8 }}>Scope: {e.scope}</div>}
                                 {e.text && <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{e.text.length > 120 ? e.text.slice(0, 120) + '…' : e.text}</div>}
+                                {linkage && <div style={{ marginTop: 2, fontSize: 10, opacity: .9, color: '#fde68a' }}>{linkage}</div>}
                                 {selected && <div style={{ marginTop: 4, fontSize: 10, opacity: .8 }}>Click again to deselect • Edit form above</div>}
                             </div>
                         );
@@ -511,6 +534,8 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
     const supportsTitle = ['drawing', 'legend', 'schedule'].includes(entity.entity_type);
     const isSymDef = entity.entity_type === 'symbol_definition';
     const isCompDef = entity.entity_type === 'component_definition';
+    const isSymInst = entity.entity_type === 'symbol_instance';
+    const isCompInst = entity.entity_type === 'component_instance';
     const [title, setTitle] = React.useState(supportsTitle ? (entity.title || '') : '');
     const [text, setText] = React.useState(isNote ? (entity.text || '') : '');
     const [name, setName] = React.useState(isSymDef || isCompDef ? (entity.name || '') : '');
@@ -575,10 +600,29 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
                     <button onClick={() => { if (confirm('Delete entity?')) deleteEntity(entity.id); }} style={miniBtn(false)} title="Delete">🗑</button>
                 </div>
             </div>
+            {/* Linkage summary for instances */}
+            {(isSymInst || isCompInst) && (() => {
+                let label = '';
+                if (isSymInst) {
+                    const def = (useProjectStore.getState() as any).entities.find((e: any) => e.id === entity.symbol_definition_id);
+                    label = def ? `Instance of: ${def.name || def.id.slice(0,6)}` : `Instance of: ${entity.symbol_definition_id?.slice?.(0,6)}`;
+                } else if (isCompInst) {
+                    const def = (useProjectStore.getState() as any).entities.find((e: any) => e.id === entity.component_definition_id);
+                    label = def ? `Instance of: ${def.name || def.id.slice(0,6)}` : `Instance of: ${entity.component_definition_id?.slice?.(0,6)}`;
+                }
+                return <div style={{ fontSize: 11, marginBottom: 6, color: '#fde68a' }}>{label}</div>;
+            })()}
             <div style={{ fontSize: 10, opacity: .7, marginBottom: 4, color: '#cbd5e1' }}>Bounding Box (PDF pts)</div>
             <div style={{ fontSize: 11, background: '#1e293b', padding: '4px 6px', border: '1px solid #1e3a8a', borderRadius: 4, marginBottom: 10, color: '#e2e8f0' }}>
                 {entity.bounding_box.x1.toFixed(2)}, {entity.bounding_box.y1.toFixed(2)}, {entity.bounding_box.x2.toFixed(2)}, {entity.bounding_box.y2.toFixed(2)}
             </div>
+            {/* Instance-specific fields */}
+            {isSymInst && (
+                <div style={{ marginBottom: 8 }}>
+                    <label style={{ display: 'block', fontSize: 10, opacity: .7, marginBottom: 2, color: '#cbd5e1' }}>Recognized Text</label>
+                    <input defaultValue={entity.recognized_text || ''} onBlur={(e) => (e.target as HTMLInputElement).value !== (entity.recognized_text || '') && updateEntityMeta(entity.id, { recognized_text: (e.target as HTMLInputElement).value })} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                </div>
+            )}
             {supportsTitle && (
                 <>
                     <label style={{ display: 'block', fontSize: 10, opacity: .7, marginBottom: 2, color: '#cbd5e1' }}>Title</label>

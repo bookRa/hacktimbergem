@@ -14,7 +14,9 @@ const TYPE_COLORS: Record<string, { stroke: string; fill: string; }> = {
     schedule: { stroke: '#f59e0b', fill: 'rgba(245,158,11,0.18)' },
     note: { stroke: '#ec4899', fill: 'rgba(236,72,153,0.18)' },
     symbol_definition: { stroke: '#06b6d4', fill: 'rgba(6,182,212,0.18)' },
-    component_definition: { stroke: '#a78bfa', fill: 'rgba(167,139,250,0.18)' }
+    component_definition: { stroke: '#a78bfa', fill: 'rgba(167,139,250,0.18)' },
+    symbol_instance: { stroke: '#f59e0b', fill: 'rgba(242, 242, 6, 0.22)' },
+    component_instance: { stroke: '#fb923c', fill: 'rgba(245, 172, 0, 0.31)' }
 };
 
 // Z-order: ensure legends/schedules are beneath their definitions so overlapping remains interactable
@@ -24,7 +26,9 @@ const TYPE_Z_ORDER: Record<string, number> = {
     drawing: 1,
     note: 1,
     symbol_definition: 2,
-    component_definition: 2
+    component_definition: 2,
+    symbol_instance: 3,
+    component_instance: 3
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
@@ -123,11 +127,46 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         const rect = wrapperRef.current.getBoundingClientRect();
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
-        // Instance stamping: click-to-place with default size
+        // Instance stamping: click-to-place with definition-sized bbox (in PDF -> canvas)
         if (creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance')) {
-            const size = Math.max(8, 16 / (scale || 1));
-            const half = size / 2;
-            setDraft({ x1: x - half, y1: y - half, x2: x + half, y2: y + half });
+            const defId = creatingEntity.meta?.definitionId as string | undefined;
+            const ocr = (pageOcr as any)?.[pageIndex];
+            const meta = (pagesMeta as any)?.[pageIndex];
+            const scaleX = ocr && meta ? (meta.nativeWidth / ocr.width_pts) : 1;
+            const scaleY = ocr && meta ? (meta.nativeHeight / ocr.height_pts) : 1;
+            let w = Math.max(8, 16 / (scale || 1));
+            let h = Math.max(8, 16 / (scale || 1));
+            if (defId) {
+                const def = (useProjectStore.getState() as any).entities.find((e: any) => e.id === defId);
+                if (def && def.bounding_box) {
+                    const dx = Math.max(1, def.bounding_box.x2 - def.bounding_box.x1);
+                    const dy = Math.max(1, def.bounding_box.y2 - def.bounding_box.y1);
+                    w = dx * scaleX;
+                    h = dy * scaleY;
+                }
+            }
+            // Prefer placing inside the drawing under pointer, clamp to fit if possible
+            let target: any = null;
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
+                if (ent.entity_type !== 'drawing') continue;
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
+                if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) { target = { bx1, by1, bx2, by2 }; break; }
+            }
+            let x1 = x - w / 2, y1 = y - h / 2, x2 = x + w / 2, y2 = y + h / 2;
+            if (target) {
+                const maxW = target.bx2 - target.bx1;
+                const maxH = target.by2 - target.by1;
+                if (w > maxW || h > maxH) {
+                    addToast({ kind: 'error', message: 'Definition size exceeds Drawing bounds; adjust definition or use a larger drawing.' });
+                    return; // refuse to arm draft; user must adjust
+                }
+                // Clamp to fit fully inside
+                x1 = Math.min(Math.max(x - w / 2, target.bx1), target.bx2 - w);
+                y1 = Math.min(Math.max(y - h / 2, target.by1), target.by2 - h);
+                x2 = x1 + w; y2 = y1 + h;
+            }
+            setDraft({ x1, y1, x2, y2 });
             return;
         }
         // Clicking empty space: deselect entity

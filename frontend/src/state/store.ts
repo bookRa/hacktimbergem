@@ -483,7 +483,12 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             console.error(e);
             addToast({ kind: 'error', message: e.message || 'Create failed' });
         } finally {
-            set({ creatingEntity: null });
+            // Keep stamping mode active for instances; only clear for other entity types
+            const ce = (get() as any).creatingEntity;
+            const isStamping = ce && (ce.type === 'symbol_instance' || ce.type === 'component_instance');
+            if (!isStamping) {
+                set({ creatingEntity: null });
+            }
         }
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
