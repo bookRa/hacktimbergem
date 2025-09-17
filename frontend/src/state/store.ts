@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { getDocument, PDFDocumentProxy } from 'pdfjs-dist';
 import { canvasToPdf } from '../utils/coords';
+import type { Concept } from '../api/concepts';
+import { fetchConcepts as apiFetchConcepts, createConcept as apiCreateConcept, patchConcept as apiPatchConcept, deleteConcept as apiDeleteConcept } from '../api/concepts';
+import type { Relationship, RelationshipType } from '../api/links';
+import { fetchLinks as apiFetchLinks, createLink as apiCreateLink, deleteLink as apiDeleteLink } from '../api/links';
 
 // Page raster meta at 300 DPI baseline
 export interface PageRenderMeta {
@@ -68,6 +72,24 @@ interface AppState {
     entities: any[]; // typed later via api/entities
     entitiesStatus: 'idle' | 'loading' | 'error';
     fetchEntities: () => Promise<void>;
+    // Conceptual nodes
+    concepts: Concept[];
+    conceptsStatus: 'idle' | 'loading' | 'error';
+    fetchConcepts: () => Promise<void>;
+    createConcept: (data: { kind: 'space'; name: string } | { kind: 'scope'; description: string; category?: string | null }) => Promise<void>;
+    updateConcept: (id: string, data: Partial<{ name: string; description: string; category?: string | null }>) => Promise<void>;
+    deleteConceptById: (id: string) => Promise<void>;
+    // Relationships (links)
+    links: Relationship[];
+    linksStatus: 'idle' | 'loading' | 'error';
+    fetchLinks: (filters?: { source_id?: string; target_id?: string; rel_type?: RelationshipType }) => Promise<void>;
+    deleteLinkById: (id: string) => Promise<void>;
+    // Linking mode
+    linking: { relType: RelationshipType; anchor: { kind: 'space' | 'scope'; id: string }; selectedTargetIds: string[] } | null;
+    startLinking: (relType: RelationshipType, anchor: { kind: 'space' | 'scope'; id: string }) => void;
+    toggleLinkTarget: (targetId: string) => void;
+    finishLinking: () => Promise<void>;
+    cancelLinking: () => void;
     creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
     startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'note') => void;
     startDefinitionCreation: (type: 'symbol_definition' | 'component_definition', parentId: string | null, meta: any) => void;
@@ -116,6 +138,10 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     scrollTarget: null,
     entities: [],
     entitiesStatus: 'idle',
+    concepts: [],
+    conceptsStatus: 'idle',
+    links: [],
+    linksStatus: 'idle',
     creatingEntity: null,
     selectedEntityId: null,
     uploadAndStart: async (file: File) => {
@@ -149,7 +175,10 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                     set({ manifestStatus: 'complete' });
                     get().addToast({ kind: 'success', message: 'Processing complete' });
                     // Fetch entities once processing completes (initial load)
+                    // Load entities, concepts, and links
                     get().fetchEntities();
+                    get().fetchConcepts();
+                    get().fetchLinks();
                     done = true;
                 } else if (data.status === 'error') {
                     set({ manifestStatus: 'error' });
@@ -417,6 +446,138 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             addToast({ kind: 'error', message: 'Failed to load entities' });
         }
     },
+    fetchConcepts: async () => {
+        const { projectId, addToast } = get();
+        if (!projectId) return;
+        set({ conceptsStatus: 'loading' });
+        try {
+            const data = await apiFetchConcepts(projectId);
+            set({ concepts: data, conceptsStatus: 'idle' });
+        } catch (e) {
+            console.error(e);
+            set({ conceptsStatus: 'error' });
+            addToast({ kind: 'error', message: 'Failed to load concepts' });
+        }
+    },
+    createConcept: async (data) => {
+        const { projectId, addToast, fetchConcepts } = get();
+        if (!projectId) return;
+        try {
+            await apiCreateConcept(projectId, data as any);
+            await fetchConcepts();
+            addToast({ kind: 'success', message: 'Concept created' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to create concept' });
+        }
+    },
+    updateConcept: async (id, data) => {
+        const { projectId, addToast, fetchConcepts } = get();
+        if (!projectId) return;
+        try {
+            await apiPatchConcept(projectId, id, data);
+            await fetchConcepts();
+            addToast({ kind: 'success', message: 'Concept updated' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to update concept' });
+        }
+    },
+    deleteConceptById: async (id) => {
+        const { projectId, addToast, fetchConcepts } = get();
+        if (!projectId) return;
+        try {
+            await apiDeleteConcept(projectId, id);
+            await fetchConcepts();
+            addToast({ kind: 'success', message: 'Concept deleted' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to delete concept' });
+        }
+    },
+    fetchLinks: async (filters) => {
+        const { projectId, addToast } = get();
+        if (!projectId) return;
+        set({ linksStatus: 'loading' });
+        try {
+            const data = await apiFetchLinks(projectId, filters as any);
+            set({ links: data, linksStatus: 'idle' });
+        } catch (e) {
+            console.error(e);
+            set({ linksStatus: 'error' });
+            addToast({ kind: 'error', message: 'Failed to load links' });
+        }
+    },
+    deleteLinkById: async (id) => {
+        const { projectId, addToast, fetchLinks } = get();
+        if (!projectId) return;
+        try {
+            await apiDeleteLink(projectId, id);
+            await fetchLinks();
+            addToast({ kind: 'success', message: 'Link deleted' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to delete link' });
+        }
+    },
+    linking: null,
+    startLinking: (relType, anchor) => set({ linking: { relType, anchor, selectedTargetIds: [] } }),
+    toggleLinkTarget: (targetId) => set(state => {
+        const linking = state.linking;
+        if (!linking) return {} as any;
+        const setIds = new Set(linking.selectedTargetIds);
+        if (setIds.has(targetId)) setIds.delete(targetId); else setIds.add(targetId);
+        return { linking: { ...linking, selectedTargetIds: Array.from(setIds) } } as Partial<AppState> as any;
+    }),
+    finishLinking: async () => {
+        const { projectId, linking, addToast, fetchLinks, entities, concepts } = get() as any;
+        if (!projectId || !linking) return;
+        if (!linking.selectedTargetIds.length) { addToast({ kind: 'error', message: 'No targets selected' }); return; }
+        // Helper: find kind of an id from entities/concepts
+        const idKind = (id: string): string | null => {
+            const ent = entities.find((e: any) => e.id === id);
+            if (ent) return ent.entity_type;
+            const con = concepts.find((c: any) => c.id === id);
+            if (con) return con.kind;
+            return null;
+        };
+        // Validate pairs lightly on client to reduce errors, backend remains source of truth.
+        const { relType, anchor } = linking as { relType: RelationshipType, anchor: { kind: 'space' | 'scope', id: string } };
+        const payloads: Array<{ rel_type: RelationshipType; source_id: string; target_id: string }> = [];
+        for (const tid of linking.selectedTargetIds) {
+            if (relType === 'JUSTIFIED_BY') {
+                // scope -> evidence entity
+                if (anchor.kind !== 'scope') { addToast({ kind: 'error', message: 'JUSTIFIED_BY requires a Scope as anchor' }); return; }
+                const tk = idKind(tid);
+                if (!tk || !['note', 'symbol_instance', 'component_instance'].includes(tk)) { addToast({ kind: 'error', message: 'Target is not a valid evidence item' }); return; }
+                payloads.push({ rel_type: 'JUSTIFIED_BY', source_id: anchor.id, target_id: tid });
+            } else if (relType === 'DEPICTS') {
+                // drawing -> space
+                if (anchor.kind !== 'space') { addToast({ kind: 'error', message: 'DEPICTS requires a Space as anchor' }); return; }
+                const sk = idKind(tid);
+                if (sk !== 'drawing') { addToast({ kind: 'error', message: 'Only Drawings can depict a Space' }); return; }
+                payloads.push({ rel_type: 'DEPICTS', source_id: tid, target_id: anchor.id });
+            } else if (relType === 'LOCATED_IN') {
+                // instance -> space
+                if (anchor.kind !== 'space') { addToast({ kind: 'error', message: 'LOCATED_IN requires a Space as anchor' }); return; }
+                const sk = idKind(tid);
+                if (!sk || !['symbol_instance', 'component_instance'].includes(sk)) { addToast({ kind: 'error', message: 'Only instances can be located in a Space' }); return; }
+                payloads.push({ rel_type: 'LOCATED_IN', source_id: tid, target_id: anchor.id });
+            }
+        }
+        try {
+            for (const p of payloads) {
+                await apiCreateLink(projectId, p as any);
+            }
+            await fetchLinks();
+            set({ linking: null });
+            addToast({ kind: 'success', message: 'Links created' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to create links' });
+        }
+    },
+    cancelLinking: () => set({ linking: null }),
     startEntityCreation: (type) => {
         // Deselect any selected entity when starting a new drawing
         set({ creatingEntity: { type, startX: -1, startY: -1 }, selectedEntityId: null });
