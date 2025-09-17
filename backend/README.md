@@ -55,3 +55,4 @@ curl http://localhost:8000/api/projects/<project_id>/ocr/1 | jq
 - All coordinates in OCR JSON are PDF point space (unrotated, origin top-left).
 - Rendering & OCR are sequential to keep memory low.
 - Future: replace BackgroundTasks with a queue + workers without changing API contracts.
+ - Entities persistence: All `bounding_box` values are stored in unrotated PDF point space. Frontend converts canvas→PDF on create/update and PDF→canvas on render. Instance entities (`symbol_instance`, `component_instance`) must be placed within a `drawing` on the same sheet; the backend enforces this and sets `instantiated_in_id`. Definitions with dependent instances cannot be deleted.

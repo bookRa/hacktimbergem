@@ -28,7 +28,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -40,7 +40,8 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         updateEntityBBox: s.updateEntityBBox,
         pageOcr: (s as any).pageOcr,
         pagesMeta: (s as any).pagesMeta,
-        toggleSelectBlock: (s as any).toggleSelectBlock
+        toggleSelectBlock: (s as any).toggleSelectBlock,
+        addToast: (s as any).addToast
     }));
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -65,6 +66,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     const dragRef = useRef<{ sx: number; sy: number; } | null>(null);
     const editRef = useRef<{ mode: 'move' | 'resize'; entityId: string; origin: { x1: number; y1: number; x2: number; y2: number }; start: { x: number; y: number }; handle?: string } | null>(null);
     const [hoverCursor, setHoverCursor] = useState<string | null>(null);
+    const [hoverDrawingId, setHoverDrawingId] = useState<string | null>(null);
     const pendingOcrClickRef = useRef<{ startX: number; startY: number; blockIndex: number; additive: boolean } | null>(null);
 
     useEffect(() => {
@@ -247,6 +249,19 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             setDraft({ x1: Math.min(sx, x), y1: Math.min(sy, y), x2: Math.max(sx, x), y2: Math.max(sy, y) });
             return;
         }
+        // Stamping hover highlight: track drawing under pointer
+        if (creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance')) {
+            let insideId: string | null = null;
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
+                if (ent.entity_type !== 'drawing') continue;
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
+                if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) { insideId = ent.id; break; }
+            }
+            if (insideId !== hoverDrawingId) setHoverDrawingId(insideId);
+        } else if (hoverDrawingId) {
+            setHoverDrawingId(null);
+        }
         if (editRef.current) {
             const { mode, origin, start, handle, entityId } = editRef.current as any;
             if (mode === 'move') {
@@ -318,6 +333,21 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         }
         // Instance stamping click (no dragRef) — commit if draft exists
         if (creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance') && draft) {
+            // Guard: must be inside a drawing
+            let inside = false;
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
+                if (ent.entity_type !== 'drawing') continue;
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
+                const cx = (draft.x1 + draft.x2) / 2;
+                const cy = (draft.y1 + draft.y2) / 2;
+                if (cx >= bx1 && cx <= bx2 && cy >= by1 && cy <= by2) { inside = true; break; }
+            }
+            if (!inside) {
+                addToast({ kind: 'error', message: 'Place instances inside a Drawing' });
+                setDraft(null);
+                return;
+            }
             finalizeEntityCreation(draft.x1, draft.y1, draft.x2, draft.y2);
             setRightPanelTab('entities');
             setDraft(null);
@@ -339,6 +369,14 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             onPointerUp={onPointerUp}
         >
             <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
+                {/* Stamping mode: show drawings as guides and highlight hovered */}
+                {(creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance')) && pageEntities.filter((e: any) => e.entity_type === 'drawing').map((d: any) => {
+                    const [x1, y1, x2, y2] = d._canvas_box;
+                    const isHover = hoverDrawingId === d.id;
+                    return (
+                        <rect key={`guide-${d.id}`} x={x1 * scale} y={y1 * scale} width={(x2 - x1) * scale} height={(y2 - y1) * scale} fill={isHover ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.05)'} stroke={isHover ? '#3b82f6' : '#93c5fd'} strokeDasharray="6 4" strokeWidth={isHover ? 2 : 1} />
+                    );
+                })}
                 {pageEntities.map((e: any) => {
                     const c = TYPE_COLORS[e.entity_type] || { stroke: '#64748b', fill: 'rgba(100,116,139,0.15)' };
                     const live = editingBoxes[e.id] || { x1: e._canvas_box[0], y1: e._canvas_box[1], x2: e._canvas_box[2], y2: e._canvas_box[3] };
