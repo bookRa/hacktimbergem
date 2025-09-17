@@ -32,7 +32,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -45,7 +45,10 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         pageOcr: (s as any).pageOcr,
         pagesMeta: (s as any).pagesMeta,
         toggleSelectBlock: (s as any).toggleSelectBlock,
-        addToast: (s as any).addToast
+        addToast: (s as any).addToast,
+        linking: (s as any).linking,
+        toggleLinkTarget: (s as any).toggleLinkTarget,
+        cancelLinking: (s as any).cancelLinking,
     }));
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -74,10 +77,15 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     const pendingOcrClickRef = useRef<{ startX: number; startY: number; blockIndex: number; additive: boolean } | null>(null);
 
     useEffect(() => {
-        const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && creatingEntity) { cancelEntityCreation(); setDraft(null); } };
+        const esc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (creatingEntity) { cancelEntityCreation(); setDraft(null); }
+                else if (linking) { cancelLinking(); }
+            }
+        };
         window.addEventListener('keydown', esc);
         return () => window.removeEventListener('keydown', esc);
-    }, [creatingEntity, cancelEntityCreation]);
+    }, [creatingEntity, cancelEntityCreation, linking, cancelLinking]);
 
     if (pageIndex !== currentPageIndex) return null;
 
@@ -105,6 +113,15 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
     })) : pageEntitiesRaw.map((e: any) => ({ ...e, _canvas_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] }))) as any[];
 
+    const linkingActive = !!linking;
+    const isAllowedByLinking = (ent: any): boolean => {
+        if (!linkingActive) return true;
+        if (linking!.relType === 'JUSTIFIED_BY') return ['note', 'symbol_instance', 'component_instance'].includes(ent.entity_type);
+        if (linking!.relType === 'DEPICTS') return ent.entity_type === 'drawing';
+        if (linking!.relType === 'LOCATED_IN') return ['symbol_instance', 'component_instance'].includes(ent.entity_type);
+        return false;
+    };
+
     const hitHandle = (ex: number, ey: number, box: { x1: number; y1: number; x2: number; y2: number }) => {
         const size = 6 / scale;
         const hx = [box.x1, (box.x1 + box.x2) / 2, box.x2];
@@ -127,6 +144,23 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         const rect = wrapperRef.current.getBoundingClientRect();
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
+        // Linking mode: toggle link targets on click, disable editing/selection
+        if (linkingActive && !creatingEntity) {
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
+                if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) {
+                    if (!isAllowedByLinking(ent)) {
+                        e.preventDefault();
+                        return;
+                    }
+                    toggleLinkTarget(ent.id);
+                    e.preventDefault();
+                    return;
+                }
+            }
+            // If no entity under pointer, ignore
+        }
         // Instance stamping: click-to-place with definition-sized bbox (in PDF -> canvas)
         if (creatingEntity && (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance')) {
             const defId = creatingEntity.meta?.definitionId as string | undefined;
@@ -170,7 +204,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             return;
         }
         // Clicking empty space: deselect entity
-        if (!creatingEntity) {
+        if (!creatingEntity && !linkingActive) {
             // Check if hit any entity first; if not, clear selection
             let hitAny = false;
             for (let i = pageEntities.length - 1; i >= 0; i--) {
@@ -189,26 +223,28 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             setDraft({ x1: x, y1: y, x2: x, y2: y });
             return;
         }
-        // selection / edit
-        // iterate topmost first (last draw) so reverse order
-        for (let i = pageEntities.length - 1; i >= 0; i--) {
-            const ent = pageEntities[i];
-            const [bx1, by1, bx2, by2] = ent._canvas_box;
-            // Expand test by tolerance converted to PDF space
-            const tol = TOL_PX / scale;
-            if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
-                const handle = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
-                // If clicking inside entity (not on handle) and not currently a drag, select & open editor
-                setSelectedEntityId(ent.id);
-                setRightPanelTab('entities');
-                dbg('entity hit', { id: ent.id, handle: handle || 'move' });
-                if (handle && handle !== 'mm') {
-                    editRef.current = { mode: 'resize', entityId: ent.id, origin: { x1: bx1, y1: by1, x2: bx2, y2: by2 }, start: { x, y }, handle } as any;
-                } else {
-                    editRef.current = { mode: 'move', entityId: ent.id, origin: { x1: bx1, y1: by1, x2: bx2, y2: by2 }, start: { x, y } } as any;
+        // selection / edit (disabled in linking mode)
+        if (!linkingActive) {
+            // iterate topmost first (last draw) so reverse order
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
+                // Expand test by tolerance converted to PDF space
+                const tol = TOL_PX / scale;
+                if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
+                    const handle = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
+                    // If clicking inside entity (not on handle) and not currently a drag, select & open editor
+                    setSelectedEntityId(ent.id);
+                    setRightPanelTab('entities');
+                    dbg('entity hit', { id: ent.id, handle: handle || 'move' });
+                    if (handle && handle !== 'mm') {
+                        editRef.current = { mode: 'resize', entityId: ent.id, origin: { x1: bx1, y1: by1, x2: bx2, y2: by2 }, start: { x, y }, handle } as any;
+                    } else {
+                        editRef.current = { mode: 'move', entityId: ent.id, origin: { x1: bx1, y1: by1, x2: bx2, y2: by2 }, start: { x, y } } as any;
+                    }
+                    e.preventDefault();
+                    return;
                 }
-                e.preventDefault();
-                return;
             }
         }
         // Missed all entities: attempt to detect OCR block under the pointer (convert bbox to raster)
@@ -301,7 +337,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         } else if (hoverDrawingId) {
             setHoverDrawingId(null);
         }
-        if (editRef.current) {
+        if (!linkingActive && editRef.current) {
             const { mode, origin, start, handle, entityId } = editRef.current as any;
             if (mode === 'move') {
                 const dx = x - start.x; const dy = y - start.y;
@@ -318,7 +354,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             return;
         }
         // Hover cursor logic when not editing/creating
-        if (!creatingEntity && selectedEntityId) {
+        if (!creatingEntity && !linkingActive && selectedEntityId) {
             const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
             if (ent) {
                 const [bx1, by1, bx2, by2] = ent._canvas_box;
@@ -392,7 +428,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             setDraft(null);
             return;
         }
-        if (editRef.current) {
+        if (!linkingActive && editRef.current) {
             const id = editRef.current.entityId;
             commitEdit(id);
             editRef.current = null;
@@ -422,6 +458,10 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                     const { x1, y1, x2, y2 } = live;
                     const w = (x2 - x1) * scale; const h = (y2 - y1) * scale;
                     const selected = selectedEntityId === e.id;
+                    const allowed = isAllowedByLinking(e);
+                    const linkSelected = linkingActive && linking!.selectedTargetIds.includes(e.id);
+                    const stroke = linkingActive ? (linkSelected ? '#16a34a' : allowed ? '#64748b' : 'rgba(148,163,184,0.3)') : (selected ? c.stroke : 'rgba(148,163,184,0.6)');
+                    const fill = linkingActive ? (linkSelected ? 'rgba(22,163,74,0.18)' : allowed ? 'rgba(100,116,139,0.10)' : 'rgba(30,41,59,0.10)') : c.fill;
                     return (
                         <g key={e.id}>
                             <rect
@@ -429,12 +469,12 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                                 y={y1 * scale}
                                 width={w}
                                 height={h}
-                                stroke={selected ? c.stroke : 'rgba(148,163,184,0.6)'}
+                                stroke={stroke}
                                 strokeWidth={selected ? 2 : 0.75}
-                                fill={c.fill}
-                                style={{ cursor: selected ? 'move' : 'pointer' }}
+                                fill={fill}
+                                style={{ cursor: linkingActive ? (allowed ? 'pointer' : 'not-allowed') : (selected ? 'move' : 'pointer') }}
                             />
-                            {selected && !creatingEntity ? renderHandles(x1, y1, x2, y2, scale) : null}
+                            {selected && !creatingEntity && !linkingActive ? renderHandles(x1, y1, x2, y2, scale) : null}
                         </g>
                     );
                 })}
