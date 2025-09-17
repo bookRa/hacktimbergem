@@ -618,6 +618,12 @@ interface EntityEditorProps {
 }
 
 const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, deleteEntity, deselect }) => {
+    const { links, concepts, deleteLinkById, addToast } = useProjectStore((s: any) => ({
+        links: s.links,
+        concepts: s.concepts,
+        deleteLinkById: s.deleteLinkById,
+        addToast: s.addToast,
+    }));
     const isNote = entity.entity_type === 'note';
     const supportsTitle = ['drawing', 'legend', 'schedule'].includes(entity.entity_type);
     const isSymDef = entity.entity_type === 'symbol_definition';
@@ -774,6 +780,77 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
                 {isNote && 'Only text is stored for notes.'}
                 {(isSymDef || isCompDef) && 'You can edit definition attributes here. BBoxes are still edited on the canvas.'}
             </div>
+            {/* Linked concepts (parents) */}
+            {(() => {
+                // Parent Spaces: drawing via DEPICTS (source = drawing), instances via LOCATED_IN (source = instance)
+                const parentSpaces = (() => {
+                    if (entity.entity_type === 'drawing') {
+                        return links.filter((l: any) => l.rel_type === 'DEPICTS' && l.source_id === entity.id)
+                            .map((l: any) => concepts.find((c: any) => c.id === l.target_id))
+                            .filter(Boolean);
+                    }
+                    if (entity.entity_type === 'symbol_instance' || entity.entity_type === 'component_instance') {
+                        return links.filter((l: any) => l.rel_type === 'LOCATED_IN' && l.source_id === entity.id)
+                            .map((l: any) => concepts.find((c: any) => c.id === l.target_id))
+                            .filter(Boolean);
+                    }
+                    return [] as any[];
+                })();
+                // Parent Scopes: this entity is evidence via JUSTIFIED_BY (target = entity)
+                const parentScopes = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.target_id === entity.id)
+                    .map((l: any) => concepts.find((c: any) => c.id === l.source_id))
+                    .filter((c: any) => c && c.kind === 'scope');
+                if ((parentSpaces.length === 0) && (parentScopes.length === 0)) return null;
+                const unlink = async (conceptId: string) => {
+                    // Find the specific link(s) and delete them
+                    const toDelete = links.filter((l: any) =>
+                        (l.rel_type === 'DEPICTS' && entity.entity_type === 'drawing' && l.source_id === entity.id && l.target_id === conceptId) ||
+                        (l.rel_type === 'LOCATED_IN' && (entity.entity_type === 'symbol_instance' || entity.entity_type === 'component_instance') && l.source_id === entity.id && l.target_id === conceptId) ||
+                        (l.rel_type === 'JUSTIFIED_BY' && l.target_id === entity.id && l.source_id === conceptId)
+                    );
+                    if (!toDelete.length) return;
+                    try {
+                        for (const lnk of toDelete) { await deleteLinkById(lnk.id); }
+                        addToast({ kind: 'success', message: 'Link removed' });
+                    } catch (e: any) {
+                        console.error(e);
+                        addToast({ kind: 'error', message: e?.message || 'Failed to remove link' });
+                    }
+                };
+                return (
+                    <div style={{ marginTop: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>Linked Concepts</div>
+                        </div>
+                        {parentSpaces.length > 0 && (
+                            <div style={{ marginTop: 6, fontSize: 11, color: '#e2e8f0' }}>
+                                <div style={{ opacity: .8, marginBottom: 4 }}>Spaces:</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {parentSpaces.map((sp: any) => (
+                                        <span key={sp.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>
+                                            {sp.name || sp.id.slice(0,6)}
+                                            <button onClick={() => unlink(sp.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {parentScopes.length > 0 && (
+                            <div style={{ marginTop: 6, fontSize: 11, color: '#e2e8f0' }}>
+                                <div style={{ opacity: .8, marginBottom: 4 }}>Scopes:</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {parentScopes.map((sc: any) => (
+                                        <span key={sc.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>
+                                            {sc.description?.slice(0, 50) || sc.id.slice(0,6)}
+                                            <button onClick={() => unlink(sc.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
         </div>
     );
 };
@@ -818,14 +895,20 @@ const ConceptSpacesSection: React.FC<ConceptSpacesProps> = ({ concepts, entities
                                 const dr = entities.find((e: any) => e.id === l.source_id);
                                 const label = dr ? (dr.title || 'Drawing') : l.source_id.slice(0, 6);
                                 return (
-                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>DEPICTS: {label} <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button></span>
+                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>
+                                        <span onClick={() => { if (dr) { (useProjectStore.getState() as any).setCurrentPageIndex(dr.source_sheet_number - 1); (useProjectStore.getState() as any).setRightPanelTab('entities'); (useProjectStore.getState() as any).setSelectedEntityId(dr.id); } }} style={{ cursor: dr ? 'pointer' : 'default' }}>DEPICTS: {label}</span>
+                                        <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button>
+                                    </span>
                                 );
                             })}
                             {located.map((l: any) => {
                                 const inst = entities.find((e: any) => e.id === l.source_id);
                                 const label = inst ? inst.entity_type.replace('_', ' ') : l.source_id.slice(0, 6);
                                 return (
-                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>LOCATED_IN: {label} <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button></span>
+                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>
+                                        <span onClick={() => { if (inst) { (useProjectStore.getState() as any).setCurrentPageIndex(inst.source_sheet_number - 1); (useProjectStore.getState() as any).setRightPanelTab('entities'); (useProjectStore.getState() as any).setSelectedEntityId(inst.id); } }} style={{ cursor: inst ? 'pointer' : 'default' }}>LOCATED_IN: {label}</span>
+                                        <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button>
+                                    </span>
                                 );
                             })}
                             {depicting.length + located.length === 0 && <span style={{ fontSize: 10, opacity: .7 }}>(No links yet)</span>}
@@ -854,9 +937,9 @@ const ConceptScopesSection: React.FC<ConceptScopesProps> = ({ concepts, entities
     const [cat, setCat] = React.useState('');
     return (
         <div style={{ border: '1px dashed #334155', padding: 8, borderRadius: 6, marginTop: 6, background: '#0b1220', color: '#e2e8f0' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px auto', gap: 6, marginBottom: 8 }}>
-                <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="New scope description" style={{ background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
-                <input value={cat} onChange={e => setCat(e.target.value)} placeholder="Category (optional)" style={{ background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+                <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="New scope description" style={{ flex: 1, background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                <input value={cat} onChange={e => setCat(e.target.value)} placeholder="Category (optional)" style={{ width: 160, background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
                 <button disabled={!desc.trim()} onClick={() => { if (!desc.trim()) return; createConcept({ kind: 'scope', description: desc.trim(), category: cat.trim() || undefined }); setDesc(''); setCat(''); }} style={miniBtn(!desc.trim())}>+ Add</button>
             </div>
             {scopes.length === 0 && <div style={{ fontSize: 11, opacity: .8 }}>(No scopes yet)</div>}
@@ -878,7 +961,10 @@ const ConceptScopesSection: React.FC<ConceptScopesProps> = ({ concepts, entities
                                 const ev = entities.find((e: any) => e.id === l.target_id);
                                 const label = ev ? (ev.title || ev.name || ev.entity_type) : l.target_id.slice(0, 6);
                                 return (
-                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>JUSTIFIED_BY: {label} <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button></span>
+                                    <span key={l.id} style={{ fontSize: 10, border: '1px solid #334155', padding: '2px 6px', borderRadius: 10, background: '#0b1220' }}>
+                                        <span onClick={() => { if (ev) { (useProjectStore.getState() as any).setCurrentPageIndex(ev.source_sheet_number - 1); (useProjectStore.getState() as any).setRightPanelTab('entities'); (useProjectStore.getState() as any).setSelectedEntityId(ev.id); } }} style={{ cursor: ev ? 'pointer' : 'default' }}>JUSTIFIED_BY: {label}</span>
+                                        <button onClick={() => deleteLink(l.id)} style={{ marginLeft: 6, fontSize: 10, background: 'transparent', color: '#fca5a5', border: 'none', cursor: 'pointer' }}>×</button>
+                                    </span>
                                 );
                             })}
                             {evidence.length === 0 && <span style={{ fontSize: 10, opacity: .7 }}>(No evidence yet)</span>}
