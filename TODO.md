@@ -1,7 +1,7 @@
 ## UI/UX Overhaul — Engineering TODO (Living Doc)
 
 Owner: Eng + Design
-Updated: 2025‑09‑19
+Updated: 2025‑09‑21
 
 Conventions
 - [ ] unchecked, [x] done, [~] in progress, [!] blocker, [qa] needs QA, [doc] docs update.
@@ -30,12 +30,31 @@ Acceptance (S1)
 
 ### Sprint 2 — Explorer/Inspector Foundation + Scopes & Symbol Instances
 - [~] Zustand: unified UI state (tabs, selection, hover, linking, filters, panel sizes).
+  - [x] `rightPanelTab` includes `explorer`.
+  - [x] `rightInspectorHeightPx` persisted.
+  - [x] `selectedScopeId` state for Explorer.
+  - [ ] Consolidate canvas/list hover/selection into a shared selection model.
 - [~] Explorer tabs scaffold; initial `Scopes` and `Symbols ▸ Instances` tabs.
+  - [x] Scopes list shows descriptions and evidence counts.
+  - [x] Symbols ▸ Instances list renders instances.
+  - [ ] Scopes: click selects and opens Inspector; double-click jumps to first evidence on sheet.
+  - [ ] Scopes: Link Evidence button enters Linking Mode (v1).
+  - [ ] Instances: group by Drawing with expandable headers.
+  - [ ] Instances: add Stamp Palette with number-key shortcuts 1–9.
 - [ ] Inspector dock at bottom: Properties, Links, Evidence sections (collapsible).
+  - [ ] Split right side into Explorer (top) + Inspector (bottom) containers.
+  - [ ] Inspector shows selected entity or scope; Evidence tray appears for scopes.
+  - [ ] Collapse state remembered per section.
 - [ ] Cross-highlighting: hover list → canvas; hover canvas → list row.
+  - [x] Hovering a Scope in Explorer highlights its evidence on the canvas.
 - [ ] Linking Mode v1: start from Scope; click items to add evidence chips; finish to commit.
 - [ ] Stamp Palette for Symbols (Instances) with number-key shortcuts.
 - [ ] Undo/Redo wiring for create/link/delete actions.
+
+Milestone Demo Targets (S2)
+- [ ] From Scopes tab, hover highlights related bboxes on the canvas within 100ms.
+- [ ] Click a Scope → Inspector opens with Evidence tray; Link Evidence creates `JUSTIFIED_BY` links.
+- [ ] Stamp two symbol instances quickly using number keys without lag.
 
 Acceptance (S2)
 - [ ] Hover from any Explorer row highlights overlay within 100ms.

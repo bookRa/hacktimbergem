@@ -92,6 +92,7 @@ No other backend changes are required.
 ### 11. Frontend Architecture
 - Centralized Zustand UI state:
   - Panel sizes/collapsed, active tabs, hover/selection, Linking Mode, filters.
+  - Explorer state: selected scope id, hover ids for scope/entity for cross-highlighting.
   - Derived selectors compute active sheet, selected entity payloads, and cross filters.
 - Virtualized lists (`@tanstack/react-virtual`).
 - Spatial index for overlay hit‑testing when entities are large in number (RBush or simple grid buckets).

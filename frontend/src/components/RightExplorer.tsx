@@ -2,11 +2,12 @@ import React from 'react';
 import { useProjectStore } from '../state/store';
 
 export const RightExplorer: React.FC = () => {
-    const { concepts, entities, selectedScopeId, setSelectedScopeId } = useProjectStore((s: any) => ({
+    const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId } = useProjectStore((s: any) => ({
         concepts: s.concepts,
         entities: s.entities,
         selectedScopeId: s.selectedScopeId,
         setSelectedScopeId: s.setSelectedScopeId,
+        setHoverScopeId: s.setHoverScopeId,
     }));
     const [tab, setTab] = React.useState<'scopes'|'symbolsInst'>('scopes');
     return (
@@ -15,13 +16,13 @@ export const RightExplorer: React.FC = () => {
                 <button onClick={() => setTab('scopes')} style={btn(tab==='scopes')}>Scopes</button>
                 <button onClick={() => setTab('symbolsInst')} style={btn(tab==='symbolsInst')}>Symbols ▸ Instances</button>
             </div>
-            {tab === 'scopes' && <ScopesList concepts={concepts} selectedScopeId={selectedScopeId} setSelectedScopeId={setSelectedScopeId} entities={entities} />}
+            {tab === 'scopes' && <ScopesList concepts={concepts} selectedScopeId={selectedScopeId} setSelectedScopeId={setSelectedScopeId} entities={entities} setHover={(id)=>setHoverScopeId(id)} />}
             {tab === 'symbolsInst' && <SymbolsInstances entities={entities} />}
         </div>
     );
 };
 
-const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; setSelectedScopeId: (id: string | null) => void; entities: any[] }> = ({ concepts, selectedScopeId, setSelectedScopeId, entities }) => {
+const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; setSelectedScopeId: (id: string | null) => void; entities: any[]; setHover: (id: string | null) => void; }> = ({ concepts, selectedScopeId, setSelectedScopeId, entities, setHover }) => {
     const scopes = concepts.filter(c => c.kind === 'scope');
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
@@ -29,7 +30,7 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
                 const evidenceCount = (useProjectStore.getState() as any).links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id).length;
                 const sel = selectedScopeId === s.id;
                 return (
-                    <div key={s.id} onClick={() => setSelectedScopeId(sel ? null : s.id)} style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', cursor: 'pointer', marginBottom: 6 }}>
+                    <div key={s.id} onClick={() => setSelectedScopeId(sel ? null : s.id)} onMouseEnter={() => setHover(s.id)} onMouseLeave={() => setHover(null)} style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', cursor: 'pointer', marginBottom: 6 }}>
                         <div style={{ fontSize: 12, fontWeight: 600 }}>{s.description || s.id.slice(0,6)}</div>
                         <div style={{ fontSize: 11, opacity: .7 }}>Evidence: {evidenceCount}</div>
                     </div>

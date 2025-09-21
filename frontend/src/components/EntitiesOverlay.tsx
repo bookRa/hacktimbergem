@@ -32,7 +32,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -49,6 +49,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         linking: (s as any).linking,
         toggleLinkTarget: (s as any).toggleLinkTarget,
         cancelLinking: (s as any).cancelLinking,
+        hoverScopeId: (s as any).hoverScopeId,
     }));
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -460,8 +461,9 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                     const selected = selectedEntityId === e.id;
                     const allowed = isAllowedByLinking(e);
                     const linkSelected = linkingActive && linking!.selectedTargetIds.includes(e.id);
-                    const stroke = linkingActive ? (linkSelected ? '#16a34a' : allowed ? '#64748b' : 'rgba(148,163,184,0.3)') : (selected ? c.stroke : 'rgba(148,163,184,0.6)');
-                    const fill = linkingActive ? (linkSelected ? 'rgba(22,163,74,0.18)' : allowed ? 'rgba(100,116,139,0.10)' : 'rgba(30,41,59,0.10)') : c.fill;
+                    const isScopeEvidence = hoverScopeId && (useProjectStore.getState() as any).links.some((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === hoverScopeId && l.target_id === e.id);
+                    const stroke = linkingActive ? (linkSelected ? '#16a34a' : allowed ? '#64748b' : 'rgba(148,163,184,0.3)') : (selected ? c.stroke : isScopeEvidence ? '#06b6d4' : 'rgba(148,163,184,0.6)');
+                    const fill = linkingActive ? (linkSelected ? 'rgba(22,163,74,0.18)' : allowed ? 'rgba(100,116,139,0.10)' : 'rgba(30,41,59,0.10)') : (isScopeEvidence ? 'rgba(6,182,212,0.18)' : c.fill);
                     return (
                         <g key={e.id}>
                             <rect

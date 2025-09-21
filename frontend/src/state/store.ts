@@ -121,6 +121,10 @@ interface AppState {
     // Explorer selections
     selectedScopeId: string | null;
     setSelectedScopeId: (id: string | null) => void;
+    hoverEntityId: string | null;
+    hoverScopeId: string | null;
+    setHoverEntityId: (id: string | null) => void;
+    setHoverScopeId: (id: string | null) => void;
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
     // Scroll targeting for PdfCanvas
     scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
@@ -758,6 +762,10 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     }),
     selectedScopeId: null,
     setSelectedScopeId: (id) => set({ selectedScopeId: id } as any),
+    hoverEntityId: null,
+    hoverScopeId: null,
+    setHoverEntityId: (id) => set({ hoverEntityId: id } as any),
+    setHoverScopeId: (id) => set({ hoverScopeId: id } as any),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {
