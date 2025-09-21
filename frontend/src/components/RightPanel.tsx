@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
+import { RightExplorer } from './RightExplorer';
 
 export const RightPanel: React.FC = () => {
     const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById, rightInspectorHeightPx, setRightInspectorHeight } = useProjectStore((s: ProjectStore & any) => ({
@@ -89,6 +90,7 @@ export const RightPanel: React.FC = () => {
                 <div style={{ display: 'flex', gap: 4 }}>
                     <button onClick={() => setRightPanelTab('blocks')} style={tabBtnStyle(rightPanelTab === 'blocks')}>Blocks</button>
                     <button onClick={() => setRightPanelTab('entities')} style={tabBtnStyle(rightPanelTab === 'entities')}>Entities</button>
+                    <button onClick={() => setRightPanelTab('explorer')} style={tabBtnStyle(rightPanelTab === 'explorer')}>Explorer</button>
                 </div>
             </h3>
             <section className="kp-section" style={{ borderBottom: '1px solid #1f2937', paddingBottom: 8, marginBottom: 8 }}>
@@ -182,6 +184,11 @@ export const RightPanel: React.FC = () => {
                         </div>
                     </section>
                 </>
+            )}
+            {rightPanelTab === 'explorer' && (
+                <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
+                    <RightExplorer />
+                </section>
             )}
             {rightPanelTab === 'entities' && (
                 <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>

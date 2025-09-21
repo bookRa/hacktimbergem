@@ -102,7 +102,7 @@ interface AppState {
     updateEntityMeta: (id: string, data: any) => Promise<void>;
     deleteEntity: (id: string) => Promise<void>;
     // Panel tabs
-    rightPanelTab: 'blocks' | 'entities';
+    rightPanelTab: 'blocks' | 'entities' | 'explorer';
     leftTab: 'sheets' | 'search';
     // UI layout (Sprint 1)
     leftPanel: { widthPx: number; collapsed: boolean };
@@ -118,6 +118,9 @@ interface AppState {
     // Right inspector sizing
     rightInspectorHeightPx: number;
     setRightInspectorHeight: (px: number) => void;
+    // Explorer selections
+    selectedScopeId: string | null;
+    setSelectedScopeId: (id: string | null) => void;
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
     // Scroll targeting for PdfCanvas
     scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
@@ -753,6 +756,8 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         try { localStorage.setItem('ui:rightInspectorHeight', String(h)); } catch {}
         return { rightInspectorHeightPx: h } as any;
     }),
+    selectedScopeId: null,
+    setSelectedScopeId: (id) => set({ selectedScopeId: id } as any),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {

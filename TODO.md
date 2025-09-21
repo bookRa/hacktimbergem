@@ -29,8 +29,8 @@ Acceptance (S1)
  - [x] Inspector height is resizable and persists.
 
 ### Sprint 2 — Explorer/Inspector Foundation + Scopes & Symbol Instances
-- [ ] Zustand: unified UI state (tabs, selection, hover, linking, filters, panel sizes).
-- [ ] Explorer tabs scaffold; initial `Scopes` and `Symbols ▸ Instances` tabs.
+- [~] Zustand: unified UI state (tabs, selection, hover, linking, filters, panel sizes).
+- [~] Explorer tabs scaffold; initial `Scopes` and `Symbols ▸ Instances` tabs.
 - [ ] Inspector dock at bottom: Properties, Links, Evidence sections (collapsible).
 - [ ] Cross-highlighting: hover list → canvas; hover canvas → list row.
 - [ ] Linking Mode v1: start from Scope; click items to add evidence chips; finish to commit.
