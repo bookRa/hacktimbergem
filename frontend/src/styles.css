@@ -43,6 +43,38 @@ body {
     display: grid;
     grid-template-columns: 240px 1fr 360px;
     height: 100%;
+    position: relative;
+}
+
+.split-handle {
+    position: absolute;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 20;
+    background: transparent;
+}
+
+.split-handle.left { left: 0; }
+.split-handle.right { right: 0; }
+
+.collapse-btn {
+    position: absolute;
+    bottom: 8px;
+    background: #f0f4f7;
+    border: 1px solid #d5dde3;
+    border-radius: 12px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+}
+.collapse-btn.left { right: 8px; }
+.collapse-btn.right { left: 8px; }
+
+.left-pane-wrapper,
+.right-pane-wrapper {
+    position: relative;
 }
 
 .left-nav,

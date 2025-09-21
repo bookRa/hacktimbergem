@@ -103,6 +103,13 @@ interface AppState {
     deleteEntity: (id: string) => Promise<void>;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
+    // UI layout (Sprint 1)
+    leftPanel: { widthPx: number; collapsed: boolean };
+    rightPanel: { widthPx: number; collapsed: boolean };
+    setLeftPanelWidth: (px: number) => void;
+    setRightPanelWidth: (px: number) => void;
+    toggleLeftCollapsed: () => void;
+    toggleRightCollapsed: () => void;
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
     // Scroll targeting for PdfCanvas
     scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
@@ -115,6 +122,13 @@ interface AppState {
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
+
+const lsNum = (k: string, def: number) => {
+    try { const v = localStorage.getItem(k); return v ? Math.max(0, parseInt(v, 10)) : def; } catch { return def; }
+};
+const lsBool = (k: string, def: boolean) => {
+    try { const v = localStorage.getItem(k); return v ? v === '1' : def; } catch { return def; }
+};
 
 export const useProjectStore = create<AppState>((set, get): AppState => ({
     pdfDoc: null,
@@ -135,6 +149,8 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     notes: [],
     pageTitles: {},
     rightPanelTab: 'blocks',
+    leftPanel: { widthPx: lsNum('ui:leftWidth', 240), collapsed: lsBool('ui:leftCollapsed', false) },
+    rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
     scrollTarget: null,
     entities: [],
     entitiesStatus: 'idle',
@@ -701,6 +717,24 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+    setLeftPanelWidth: (px) => set(state => {
+        const width = Math.max(160, Math.min(540, Math.round(px)));
+        try { localStorage.setItem('ui:leftWidth', String(width)); } catch {}
+        return { leftPanel: { ...state.leftPanel, widthPx: width } } as any;
+    }),
+    setRightPanelWidth: (px) => set(state => {
+        const width = Math.max(260, Math.min(640, Math.round(px)));
+        try { localStorage.setItem('ui:rightWidth', String(width)); } catch {}
+        return { rightPanel: { ...state.rightPanel, widthPx: width } } as any;
+    }),
+    toggleLeftCollapsed: () => set(state => {
+        const next = !state.leftPanel.collapsed; try { localStorage.setItem('ui:leftCollapsed', next ? '1' : '0'); } catch {}
+        return { leftPanel: { ...state.leftPanel, collapsed: next } } as any;
+    }),
+    toggleRightCollapsed: () => set(state => {
+        const next = !state.rightPanel.collapsed; try { localStorage.setItem('ui:rightCollapsed', next ? '1' : '0'); } catch {}
+        return { rightPanel: { ...state.rightPanel, collapsed: next } } as any;
+    }),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {
