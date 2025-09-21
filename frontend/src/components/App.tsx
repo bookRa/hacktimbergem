@@ -3,6 +3,7 @@ import { UploadArea } from './UploadArea';
 import { LeftNavigator } from './LeftNavigator';
 import { PdfCanvas } from './PdfCanvas';
 import { ZoomControls } from './ZoomControls';
+import { CanvasToolbar } from './CanvasToolbar';
 import { RightPanel } from './RightPanel';
 import { useProjectStore, ProjectStore } from '../state/store';
 import { StatusBanner } from './StatusBanner';
@@ -34,26 +35,44 @@ export const App: React.FC = () => {
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
     };
+    const COLLAPSED_RAIL = 36;
     return (
         <div className="app-shell">
             <StatusBanner />
             <ToastContainer />
             {!pdfDoc && <UploadArea />}
             {pdfDoc && (
-                <div className="three-pane" style={{ gridTemplateColumns: `${leftPanel.collapsed ? 0 : leftPanel.widthPx}px 1fr ${rightPanel.collapsed ? 0 : rightPanel.widthPx}px` }}>
-                    <div className="left-pane-wrapper" style={{ display: leftPanel.collapsed ? 'none' : 'block' }}>
-                        <LeftNavigator />
-                        <button className="collapse-btn left" onClick={toggleLeftCollapsed}>{'«'}</button>
+                <div className="three-pane" style={{ gridTemplateColumns: `${leftPanel.collapsed ? COLLAPSED_RAIL : leftPanel.widthPx}px 1fr ${rightPanel.collapsed ? COLLAPSED_RAIL : rightPanel.widthPx}px` }}>
+                    <div className="left-pane-wrapper">
+                        {leftPanel.collapsed ? (
+                            <div className="collapsed-rail left">
+                                <button className="expand-btn left" onClick={toggleLeftCollapsed}>{'»'}</button>
+                            </div>
+                        ) : (
+                            <>
+                                <LeftNavigator />
+                                <button className="collapse-btn left" onClick={toggleLeftCollapsed}>{'«'}</button>
+                            </>
+                        )}
                     </div>
                     <div className="center-pane">
                         {!leftPanel.collapsed && <div className="split-handle left" onMouseDown={onDragLeft} />}
                         <ZoomControls />
+                        <CanvasToolbar />
                         <PdfCanvas />
                         {!rightPanel.collapsed && <div className="split-handle right" onMouseDown={onDragRight} />}
                     </div>
-                    <div className="right-pane-wrapper" style={{ display: rightPanel.collapsed ? 'none' : 'block' }}>
-                        <RightPanel />
-                        <button className="collapse-btn right" onClick={toggleRightCollapsed}>{'»'}</button>
+                    <div className="right-pane-wrapper">
+                        {rightPanel.collapsed ? (
+                            <div className="collapsed-rail right">
+                                <button className="expand-btn right" onClick={toggleRightCollapsed}>{'«'}</button>
+                            </div>
+                        ) : (
+                            <>
+                                <RightPanel />
+                                <button className="collapse-btn right" onClick={toggleRightCollapsed}>{'»'}</button>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

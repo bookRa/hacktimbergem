@@ -3,14 +3,16 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const LeftNavigator: React.FC = () => {
-    const { pages, currentPageIndex, setCurrentPageIndex, pageTitles, entities, pageImages, fetchPageImage } = useProjectStore((s: ProjectStore & any) => ({
+    const { pages, currentPageIndex, setCurrentPageIndex, pageTitles, entities, pageImages, fetchPageImage, leftTab, setLeftTab } = useProjectStore((s: ProjectStore & any) => ({
         pages: s.pages,
         currentPageIndex: s.currentPageIndex,
         setCurrentPageIndex: s.setCurrentPageIndex,
         pageTitles: s.pageTitles,
         entities: s.entities,
         pageImages: s.pageImages,
-        fetchPageImage: s.fetchPageImage
+        fetchPageImage: s.fetchPageImage,
+        leftTab: s.leftTab,
+        setLeftTab: s.setLeftTab,
     }));
     const [query, setQuery] = React.useState('');
     const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -60,7 +62,15 @@ export const LeftNavigator: React.FC = () => {
 
     return (
         <aside className="left-nav" style={{ position: 'relative', paddingBottom: 40 }}>
-            <h3>Sheets</h3>
+            <h3 style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setLeftTab('sheets')} style={tabBtn(leftTab === 'sheets')}>Sheets</button>
+                <button onClick={() => setLeftTab('search')} style={tabBtn(leftTab === 'search')}>Search</button>
+            </h3>
+            {leftTab === 'search' && (
+                <SearchTab />
+            )}
+            {leftTab === 'sheets' && (
+                <>
             <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                 <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" style={{ flex: 1, background: '#f0f4f7', border: '1px solid #d5dde3', borderRadius: 6, padding: '6px 8px', font: 'inherit' }} />
                 <button title="Previous" onClick={() => setCurrentPageIndex(Math.max(0, currentPageIndex - 1))} style={navBtn()}>‹</button>
@@ -114,6 +124,8 @@ export const LeftNavigator: React.FC = () => {
                 </div>
             )}
             {pages.length === 0 && <p className="placeholder">(No pages yet)</p>}
+                </>
+            )}
         </aside>
     );
 };
@@ -125,3 +137,49 @@ const Badge: React.FC<{ label: string; count: number; muted?: boolean }> = ({ la
 function navBtn(): React.CSSProperties {
     return { background: '#f0f4f7', border: '1px solid #d5dde3', borderRadius: 6, padding: '6px 8px', cursor: 'pointer' };
 }
+
+function tabBtn(active: boolean): React.CSSProperties {
+    return {
+        background: active ? '#264f9e' : '#f0f4f7',
+        color: active ? '#fff' : '#1f2a37',
+        border: '1px solid #d5dde3',
+        borderRadius: 6,
+        padding: '6px 8px',
+        cursor: 'pointer'
+    };
+}
+
+const SearchTab: React.FC = () => {
+    const { entities, concepts } = useProjectStore((s: any) => ({ entities: s.entities, concepts: s.concepts }));
+    const [q, setQ] = React.useState('');
+    const results = React.useMemo(() => {
+        const query = q.trim().toLowerCase();
+        if (!query) return [] as Array<{ kind: 'entity' | 'concept'; id: string; label: string; sheet?: number }>;
+        const R: Array<{ kind: 'entity' | 'concept'; id: string; label: string; sheet?: number }> = [];
+        (entities as any[]).forEach(e => {
+            const label = `${e.entity_type} ${e.title || e.name || e.text || ''}`.toLowerCase();
+            if (label.includes(query)) R.push({ kind: 'entity', id: e.id, label: `${e.entity_type}: ${e.title || e.name || e.text?.slice?.(0,40) || ''}`, sheet: e.source_sheet_number });
+        });
+        (concepts as any[]).forEach(c => {
+            const label = `${c.kind} ${c.name || c.description || ''}`.toLowerCase();
+            if (label.includes(query)) R.push({ kind: 'concept', id: c.id, label: `${c.kind}: ${c.name || c.description?.slice?.(0,40) || ''}` });
+        });
+        return R.slice(0, 200);
+    }, [q, entities, concepts]);
+    return (
+        <div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search project" style={{ flex: 1, background: '#f0f4f7', border: '1px solid #d5dde3', borderRadius: 6, padding: '6px 8px', font: 'inherit' }} />
+            </div>
+            <div style={{ maxHeight: 'calc(100vh - 220px)', overflow: 'auto', display: 'grid', gap: 6 }}>
+                {results.map(r => (
+                    <div key={r.kind + r.id} style={{ border: '1px solid #d5dde3', borderRadius: 6, padding: '6px 8px', background: '#fff' }}>
+                        <div style={{ fontSize: 12 }}>{r.label}</div>
+                        {typeof r.sheet === 'number' && <div style={{ fontSize: 10, opacity: .7 }}>Sheet {r.sheet}</div>}
+                    </div>
+                ))}
+                {q && results.length === 0 && <div className="placeholder">No matches</div>}
+            </div>
+        </div>
+    );
+};

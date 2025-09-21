@@ -103,6 +103,7 @@ interface AppState {
     deleteEntity: (id: string) => Promise<void>;
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities';
+    leftTab: 'sheets' | 'search';
     // UI layout (Sprint 1)
     leftPanel: { widthPx: number; collapsed: boolean };
     rightPanel: { widthPx: number; collapsed: boolean };
@@ -110,6 +111,10 @@ interface AppState {
     setRightPanelWidth: (px: number) => void;
     toggleLeftCollapsed: () => void;
     toggleRightCollapsed: () => void;
+    setLeftTab: (t: 'sheets' | 'search') => void;
+    // Layer visibility (skeleton for toolbar)
+    layers: { ocr: boolean; drawings: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
+    setLayer: (k: keyof AppState['layers'], v: boolean) => void;
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
     // Scroll targeting for PdfCanvas
     scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
@@ -149,8 +154,10 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     notes: [],
     pageTitles: {},
     rightPanelTab: 'blocks',
+    leftTab: 'sheets',
     leftPanel: { widthPx: lsNum('ui:leftWidth', 240), collapsed: lsBool('ui:leftCollapsed', false) },
     rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
+    layers: { ocr: false, drawings: true, symbols: true, components: true, notes: true, scopes: true },
     scrollTarget: null,
     entities: [],
     entitiesStatus: 'idle',
@@ -717,6 +724,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+    setLeftTab: (t) => set({ leftTab: t }),
     setLeftPanelWidth: (px) => set(state => {
         const width = Math.max(160, Math.min(540, Math.round(px)));
         try { localStorage.setItem('ui:leftWidth', String(width)); } catch {}
@@ -735,6 +743,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         const next = !state.rightPanel.collapsed; try { localStorage.setItem('ui:rightCollapsed', next ? '1' : '0'); } catch {}
         return { rightPanel: { ...state.rightPanel, collapsed: next } } as any;
     }),
+    setLayer: (k, v) => set(state => ({ layers: { ...state.layers, [k]: v } } as any)),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {

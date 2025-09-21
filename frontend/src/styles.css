@@ -77,6 +77,28 @@ body {
     position: relative;
 }
 
+.collapsed-rail {
+    position: relative;
+    height: 100%;
+    background: #ffffff;
+    border-right: 1px solid #e3e7ea;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.collapsed-rail.right {
+    border-right: none;
+    border-left: 1px solid #e3e7ea;
+}
+.expand-btn {
+    background: #f0f4f7;
+    border: 1px solid #d5dde3;
+    border-radius: 12px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+}
+
 .left-nav,
 .right-panel {
     overflow: auto;

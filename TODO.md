@@ -18,7 +18,9 @@ Conventions
   - [x] Hover: quick preview overlay; click loads sheet and restores zoom.
   - [x] Keyboard: ↑/↓ to move, Enter to open.
 - [ ] Left Panel: `Search` tab (skeleton; no backend yet).
+  - [x] Search tab scaffold with local project search across entities and concepts.
 - [ ] Canvas toolbar shell and layer toggles (no functionality change yet).
+  - [x] Canvas toolbar shell with layer toggles (OCR, Symbols, Components, Notes, Scopes).
 - [x] Keep legacy Right Panel as-is for parity.
 
 Acceptance (S1)
