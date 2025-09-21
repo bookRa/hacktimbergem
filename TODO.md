@@ -11,7 +11,7 @@ Conventions
 - [x] SplitPanels layout with drag handles and collapse buttons on left/right.
 - [x] Persist left/right panel widths (localStorage).
 - [x] Persist collapsed state (left/right).
-- [ ] Persist right inspector height.
+- [x] Persist right inspector height.
 - [ ] Left Panel: `Sheets` tab
   - [x] List with virtualized rows; search and sort (number/title).
   - [x] Per-sheet row: number, title, thumbnail, entity count badges.
@@ -26,6 +26,7 @@ Conventions
 Acceptance (S1)
 - [x] Panels are resizable/collapsible; sizes persist across reloads.
 - [ ] Sheets tab renders smoothly with 200+ sheets (virtualized).
+ - [x] Inspector height is resizable and persists.
 
 ### Sprint 2 — Explorer/Inspector Foundation + Scopes & Symbol Instances
 - [ ] Zustand: unified UI state (tabs, selection, hover, linking, filters, panel sizes).

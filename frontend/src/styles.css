@@ -147,6 +147,11 @@ body {
     border-color: #264f9e;
 }
 
+/* Ensure virtualized sheet rows reserve space and don't overlap */
+.left-nav .sheet-row {
+    box-sizing: border-box;
+}
+
 .center-pane {
     position: relative;
     display: flex;

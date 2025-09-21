@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById, rightInspectorHeightPx, setRightInspectorHeight } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -51,6 +51,8 @@ export const RightPanel: React.FC = () => {
         cancelLinking: (s as any).cancelLinking,
         linking: (s as any).linking,
         deleteLinkById: (s as any).deleteLinkById,
+        rightInspectorHeightPx: (s as any).rightInspectorHeightPx,
+        setRightInspectorHeight: (s as any).setRightInspectorHeight,
     }));
     const [defDraft, setDefDraft] = React.useState<null | { type: 'symbol_definition' | 'component_definition'; name: string; scope: 'project' | 'sheet'; description: string; visual_pattern_description?: string; specifications?: string }>(null);
     const defsSectionRef = React.useRef<HTMLDivElement | null>(null);
@@ -182,7 +184,7 @@ export const RightPanel: React.FC = () => {
                 </>
             )}
             {rightPanelTab === 'entities' && (
-                <section className="kp-section" style={{ maxHeight: 'calc(100vh - 260px)', overflow: 'auto' }}>
+                <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>Entities (Page {currentPageIndex + 1})</div>
                         <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
@@ -578,8 +580,21 @@ export const RightPanel: React.FC = () => {
                     {notes.filter((n: any) => n.pageIndex === currentPageIndex).length === 0 && <p style={{ fontSize: 12, opacity: .7, margin: 0 }}>(No notes yet)</p>}
                 </section>
             )}
-            <section className="kp-section muted" style={{ marginTop: 12 }}>
+            <section className="kp-section muted" style={{ marginTop: 12, position: 'relative' }}>
                 <p style={{ fontSize: 11, lineHeight: 1.4 }}>Tips: Use Cmd/Ctrl/Shift to multi-select. Merge creates a composite block. Promote turns selection into a Note and auto-accepts its blocks.</p>
+                {/* Resize grabber for inspector height */}
+                <div
+                    onMouseDown={(e) => {
+                        const startY = e.clientY;
+                        const startH = rightInspectorHeightPx;
+                        const onMove = (ev: MouseEvent) => setRightInspectorHeight(startH + (ev.clientY - startY));
+                        const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onUp);
+                    }}
+                    title="Drag to resize inspector"
+                    style={{ position: 'absolute', top: -6, left: 6, right: 6, height: 8, cursor: 'row-resize', background: 'transparent' }}
+                />
             </section>
         </aside>
     );

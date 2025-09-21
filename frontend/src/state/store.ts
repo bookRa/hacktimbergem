@@ -115,6 +115,9 @@ interface AppState {
     // Layer visibility (skeleton for toolbar)
     layers: { ocr: boolean; drawings: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
     setLayer: (k: keyof AppState['layers'], v: boolean) => void;
+    // Right inspector sizing
+    rightInspectorHeightPx: number;
+    setRightInspectorHeight: (px: number) => void;
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
     // Scroll targeting for PdfCanvas
     scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
@@ -158,6 +161,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     leftPanel: { widthPx: lsNum('ui:leftWidth', 240), collapsed: lsBool('ui:leftCollapsed', false) },
     rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
     layers: { ocr: false, drawings: true, symbols: true, components: true, notes: true, scopes: true },
+    rightInspectorHeightPx: lsNum('ui:rightInspectorHeight', 260),
     scrollTarget: null,
     entities: [],
     entitiesStatus: 'idle',
@@ -744,6 +748,11 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         return { rightPanel: { ...state.rightPanel, collapsed: next } } as any;
     }),
     setLayer: (k, v) => set(state => ({ layers: { ...state.layers, [k]: v } } as any)),
+    setRightInspectorHeight: (px) => set(state => {
+        const h = Math.max(160, Math.min(600, Math.round(px)));
+        try { localStorage.setItem('ui:rightInspectorHeight', String(h)); } catch {}
+        return { rightInspectorHeightPx: h } as any;
+    }),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {

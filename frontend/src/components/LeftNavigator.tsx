@@ -16,12 +16,6 @@ export const LeftNavigator: React.FC = () => {
     }));
     const [query, setQuery] = React.useState('');
     const containerRef = React.useRef<HTMLDivElement | null>(null);
-    const rowVirtualizer = useVirtualizer({
-        count: pages.length,
-        getScrollElement: () => containerRef.current,
-        estimateSize: () => 56,
-        overscan: 8
-    });
     const filteredIndexes = React.useMemo(() => {
         if (!query.trim()) return pages;
         const q = query.trim().toLowerCase();
@@ -33,13 +27,20 @@ export const LeftNavigator: React.FC = () => {
         });
         return result;
     }, [pages, pageTitles, query]);
-    // Hover preview state
-    const [hover, setHover] = React.useState<{ index: number; x: number; y: number } | null>(null);
+    // Virtualizer over filtered indices only (prevents spacing bugs)
+    const rowVirtualizer = useVirtualizer({
+        count: filteredIndexes.length,
+        getScrollElement: () => containerRef.current,
+        estimateSize: () => 84,
+        overscan: 8,
+        measureElement: (el) => (el as HTMLElement).getBoundingClientRect().height
+    });
+    // Removed hover preview per UX request
     // Prefetch visible thumbnails
     React.useEffect(() => {
         const vis = rowVirtualizer.getVirtualItems();
-        vis.forEach(v => { const idx = v.index; if (!pageImages[idx]) fetchPageImage(idx); });
-    }, [rowVirtualizer.getVirtualItems().map(v => v.index).join(','), pageImages]);
+        vis.forEach(v => { const idx = filteredIndexes[v.index]; if (typeof idx === 'number' && !pageImages[idx]) fetchPageImage(idx); });
+    }, [rowVirtualizer.getVirtualItems().map(v => v.index).join(','), pageImages, filteredIndexes]);
 
     // Per sheet counts (simple summary by entity_type)
     const countsFor = React.useCallback((sheetIdx: number) => {
@@ -86,25 +87,22 @@ export const LeftNavigator: React.FC = () => {
             >
                 <div style={{ height: rowVirtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
                     {rowVirtualizer.getVirtualItems().map(vi => {
-                        const i = vi.index;
-                        if (!filteredIndexes.includes(i)) return null; // simple filter; keeps virtualization basics
+                        const i = filteredIndexes[vi.index];
                         const title = pageTitles[i]?.text;
                         const label = title ? `${i + 1}. ${title}` : `Page ${i + 1}`;
                         const thumb = pageImages[i];
                         const sel = i === currentPageIndex;
                         const c = countsFor(i);
                         return (
-                            <div key={vi.key} style={{ position: 'absolute', top: vi.start, left: 0, width: '100%', height: vi.size }}>
-                                <div className={sel ? 'active' : ''} style={{ display: 'grid', gridTemplateColumns: '40px 1fr', gap: 8, alignItems: 'center', padding: '6px 6px', borderRadius: 8, border: sel ? '1px solid #264f9e' : '1px solid transparent', background: sel ? '#eaf1ff' : 'transparent' }}
-                                    onMouseEnter={(e) => { if (thumb) setHover({ index: i, x: e.clientX, y: e.clientY }); }}
-                                    onMouseMove={(e) => { if (thumb) setHover({ index: i, x: e.clientX, y: e.clientY }); }}
-                                    onMouseLeave={() => setHover(null)}
+                            <div key={vi.key} ref={rowVirtualizer.measureElement as any} style={{ position: 'absolute', top: vi.start, left: 0, width: '100%' }}>
+                                <div className={sel ? 'active' : ''} style={{ display: 'grid', gridTemplateColumns: '40px 1fr', gap: 8, alignItems: 'center', padding: '8px 8px', borderRadius: 8, border: sel ? '1px solid #264f9e' : '1px solid transparent', background: sel ? '#eaf1ff' : 'transparent', boxSizing: 'border-box', marginBottom: 6, cursor: 'pointer' }}
+                                    onClick={() => setCurrentPageIndex(i)}
                                 >
                                     <div style={{ width: 40, height: 40, borderRadius: 4, overflow: 'hidden', background: '#eef2f6', border: '1px solid #d5dde3' }}>
                                         {thumb && <img src={thumb} alt="thumb" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                                     </div>
-                                    <button title={label} onClick={() => setCurrentPageIndex(i)} style={{ textAlign: 'left', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</button>
-                                    <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 6, marginLeft: 48 }}>
+                                    <div title={label} style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+                                    <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 6, marginLeft: 48, flexWrap: 'wrap' }}>
                                         <Badge label="Drawings" count={c.drawings} />
                                         <Badge label="Defs" count={c.defs} />
                                         <Badge label="Inst" count={c.inst} />
@@ -118,11 +116,6 @@ export const LeftNavigator: React.FC = () => {
                     })}
                 </div>
             </div>
-            {hover && pageImages[hover.index] && (
-                <div style={{ position: 'fixed', left: hover.x + 12, top: Math.max(12, hover.y - 120), width: 220, height: 220, background: '#fff', border: '1px solid #d5dde3', borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.12)', padding: 6, pointerEvents: 'none', zIndex: 1000 }}>
-                    <img src={pageImages[hover.index]} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                </div>
-            )}
             {pages.length === 0 && <p className="placeholder">(No pages yet)</p>}
                 </>
             )}
