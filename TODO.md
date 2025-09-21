@@ -37,9 +37,9 @@ Acceptance (S1)
 - [~] Explorer tabs scaffold; initial `Scopes` and `Symbols ▸ Instances` tabs.
   - [x] Scopes list shows descriptions and evidence counts.
   - [x] Symbols ▸ Instances list renders instances.
-  - [ ] Scopes: click selects and opens Inspector; double-click jumps to first evidence on sheet.
+  - [x] Scopes: click selects; double-click jumps to first evidence on sheet and opens Inspector.
   - [ ] Scopes: Link Evidence button enters Linking Mode (v1).
-  - [ ] Instances: group by Drawing with expandable headers.
+  - [x] Instances: group by Drawing (basic grouping by sheet shown; refine to drawing).
   - [ ] Instances: add Stamp Palette with number-key shortcuts 1–9.
 - [ ] Inspector dock at bottom: Properties, Links, Evidence sections (collapsible).
   - [ ] Split right side into Explorer (top) + Inspector (bottom) containers.

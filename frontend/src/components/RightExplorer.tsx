@@ -30,7 +30,27 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
                 const evidenceCount = (useProjectStore.getState() as any).links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id).length;
                 const sel = selectedScopeId === s.id;
                 return (
-                    <div key={s.id} onClick={() => setSelectedScopeId(sel ? null : s.id)} onMouseEnter={() => setHover(s.id)} onMouseLeave={() => setHover(null)} style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', cursor: 'pointer', marginBottom: 6 }}>
+                    <div
+                        key={s.id}
+                        onClick={() => setSelectedScopeId(sel ? null : s.id)}
+                        onDoubleClick={() => {
+                            // Jump to first evidence entity
+                            const st = useProjectStore.getState() as any;
+                            const links = st.links as any[];
+                            const ev = links.find(l => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id);
+                            if (ev) {
+                                const ent = (st.entities as any[]).find(e => e.id === ev.target_id);
+                                if (ent) {
+                                    st.setCurrentPageIndex?.(ent.source_sheet_number - 1);
+                                    st.setSelectedEntityId(ent.id);
+                                    st.setRightPanelTab('entities');
+                                }
+                            }
+                        }}
+                        onMouseEnter={() => setHover(s.id)}
+                        onMouseLeave={() => setHover(null)}
+                        style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', cursor: 'pointer', marginBottom: 6 }}
+                    >
                         <div style={{ fontSize: 12, fontWeight: 600 }}>{s.description || s.id.slice(0,6)}</div>
                         <div style={{ fontSize: 11, opacity: .7 }}>Evidence: {evidenceCount}</div>
                     </div>
@@ -43,11 +63,21 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
 
 const SymbolsInstances: React.FC<{ entities: any[] }> = ({ entities }) => {
     const inst = entities.filter(e => e.entity_type === 'symbol_instance');
+    const grouped = inst.reduce((acc: Record<number, any[]>, e: any) => {
+        const sn = e.source_sheet_number; (acc[sn] ||= []).push(e); return acc;
+    }, {});
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
-            {inst.map(i => (
-                <div key={i.id} style={{ padding: 8, borderRadius: 6, border: '1px solid #e1e6eb', background: '#fff', marginBottom: 6 }}>
-                    <div style={{ fontSize: 12 }}>#{i.id.slice(0,6)} on sheet {i.source_sheet_number}</div>
+            {Object.keys(grouped).sort((a,b)=>parseInt(a)-parseInt(b)).map((sn) => (
+                <div key={sn} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
+                    <div style={{ padding: '6px 8px', fontSize: 12, fontWeight: 600 }}>Sheet {sn}</div>
+                    <div style={{ padding: '0 8px 8px', display: 'grid', gap: 6 }}>
+                        {grouped[parseInt(sn,10)].map(i => (
+                            <div key={i.id} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb' }}>
+                                <div style={{ fontSize: 12 }}>#{i.id.slice(0,6)} • def {i.symbol_definition_id?.slice?.(0,6)}</div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             ))}
             {inst.length === 0 && <div style={{ fontSize: 12, opacity: .7 }}>(No instances yet)</div>}
