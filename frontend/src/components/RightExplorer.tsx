@@ -2,14 +2,18 @@ import React from 'react';
 import { useProjectStore } from '../state/store';
 
 export const RightExplorer: React.FC = () => {
-    const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId } = useProjectStore((s: any) => ({
+    const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId, hoverEntityId, explorerTab, setExplorerTab } = useProjectStore((s: any) => ({
         concepts: s.concepts,
         entities: s.entities,
         selectedScopeId: s.selectedScopeId,
         setSelectedScopeId: s.setSelectedScopeId,
         setHoverScopeId: s.setHoverScopeId,
+        hoverEntityId: s.hoverEntityId,
+        explorerTab: s.explorerTab,
+        setExplorerTab: s.setExplorerTab,
     }));
-    const [tab, setTab] = React.useState<'scopes'|'symbolsInst'>('scopes');
+    const tab = explorerTab;
+    const setTab = setExplorerTab;
     return (
         <div className="right-explorer" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -17,7 +21,7 @@ export const RightExplorer: React.FC = () => {
                 <button onClick={() => setTab('symbolsInst')} style={btn(tab==='symbolsInst')}>Symbols ▸ Instances</button>
             </div>
             {tab === 'scopes' && <ScopesList concepts={concepts} selectedScopeId={selectedScopeId} setSelectedScopeId={setSelectedScopeId} entities={entities} setHover={(id)=>setHoverScopeId(id)} />}
-            {tab === 'symbolsInst' && <SymbolsInstances entities={entities} />}
+            {tab === 'symbolsInst' && <SymbolsInstances entities={entities} hoverEntityId={hoverEntityId} />}
         </div>
     );
 };
@@ -61,20 +65,41 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
     );
 };
 
-const SymbolsInstances: React.FC<{ entities: any[] }> = ({ entities }) => {
+const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | null }> = ({ entities, hoverEntityId }) => {
     const inst = entities.filter(e => e.entity_type === 'symbol_instance');
-    const grouped = inst.reduce((acc: Record<number, any[]>, e: any) => {
-        const sn = e.source_sheet_number; (acc[sn] ||= []).push(e); return acc;
-    }, {});
+    // Group by containing drawing using bbox containment; fallback to sheet group if none
+    const drawings = entities.filter(e => e.entity_type === 'drawing');
+    const grouped = inst.reduce((acc: Record<string, any[]>, e: any) => {
+        const d = drawings.find((dr: any) => {
+            const bb = dr.bounding_box; const ib = e.bounding_box;
+            return ib.x1 >= bb.x1 && ib.y1 >= bb.y1 && ib.x2 <= bb.x2 && ib.y2 <= bb.y2 && dr.source_sheet_number === e.source_sheet_number;
+        });
+        const key = d ? `d:${d.id}` : `s:${e.source_sheet_number}`;
+        (acc[key] ||= []).push(e);
+        return acc;
+    }, {} as Record<string, any[]>);
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
-            {Object.keys(grouped).sort((a,b)=>parseInt(a)-parseInt(b)).map((sn) => (
-                <div key={sn} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
-                    <div style={{ padding: '6px 8px', fontSize: 12, fontWeight: 600 }}>Sheet {sn}</div>
+            {Object.keys(grouped).map((key) => (
+                <div key={key} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
+                    <div style={{ padding: '6px 8px', fontSize: 12, fontWeight: 600 }}>
+                        {(() => {
+                            if (key.startsWith('d:')) {
+                                const id = key.slice(2);
+                                const dr = drawings.find((d: any) => d.id === id);
+                                return `Drawing ${dr?.title || id.slice(0,6)}`;
+                            }
+                            const sn = key.slice(2);
+                            return `Sheet ${sn}`;
+                        })()}
+                    </div>
                     <div style={{ padding: '0 8px 8px', display: 'grid', gap: 6 }}>
-                        {grouped[parseInt(sn,10)].map(i => (
-                            <div key={i.id} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb' }}>
-                                <div style={{ fontSize: 12 }}>#{i.id.slice(0,6)} • def {i.symbol_definition_id?.slice?.(0,6)}</div>
+                        {grouped[key].map(i => (
+                            <div key={i.id} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb', background: hoverEntityId === i.id ? '#eff6ff' : '#fff' }}>
+                                <div style={{ fontSize: 12 }}>#{i.id.slice(0,6)} • def {(() => {
+                                    const def = entities.find((e: any) => e.id === i.symbol_definition_id);
+                                    return def?.name || i.symbol_definition_id?.slice?.(0,6);
+                                })()}</div>
                             </div>
                         ))}
                     </div>

@@ -59,7 +59,7 @@ This document specifies the UI/UX overhaul for the three‑pane Timbergem worksp
 
 #### 7.3 Symbols
 - Definitions sub‑tab: grouped by Legend and by Scope (Project‑wide vs Sheet‑only). “Select in Legend” jumps to bbox.
-- Instances sub‑tab: grouped by Drawing. “Stamp Palette” enables rapid placement on canvas with number key shortcuts.
+- Instances sub‑tab: grouped by Drawing (containment check of instance bbox within a drawing’s bbox; fallback group by sheet). Each instance row shows the associated definition’s human‑readable name.
 
 #### 7.4 Components
 - Mirrors Symbols: Definitions from Schedules and their Instances.
@@ -113,7 +113,7 @@ No other backend changes are required.
 1) Shell + Resizable Panels + New Sheets tab. Keep legacy right panel during transition for parity on the `ui_overhaul` branch.
 2) New Explorer/Inspector for Scopes and Symbols (Instances) + unified selection + Linking Mode v1.
 3) Symbols (Definitions), Components, Spaces, Notes + overlay perf work.
-4) Search tab + All Entities table + polish (keyboard, density, theme tokens).
+4) Search tab + All Entities table + polish (keyboard, density, theme tokens). Ensure Explorer tab state is independent; canvas selections do not override Scope inspector unless explicitly switching context.
 Work lands directly on branch `ui_overhaul`; no feature flags are required during local development.
 
 ### 15. Acceptance Criteria (Representative)

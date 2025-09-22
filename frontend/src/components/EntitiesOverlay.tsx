@@ -32,7 +32,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId, setHoverEntityId } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -50,6 +50,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         toggleLinkTarget: (s as any).toggleLinkTarget,
         cancelLinking: (s as any).cancelLinking,
         hoverScopeId: (s as any).hoverScopeId,
+        setHoverEntityId: (s as any).setHoverEntityId,
     }));
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -354,7 +355,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             e.preventDefault();
             return;
         }
-        // Hover cursor logic when not editing/creating
+        // Hover cursor logic when not editing/creating; also set hoverEntityId for Explorer highlighting
         if (!creatingEntity && !linkingActive && selectedEntityId) {
             const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
             if (ent) {
@@ -371,8 +372,18 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                     if (hoverCursor) setHoverCursor(null);
                 }
             }
-        } else if (hoverCursor) {
+        } else {
+            // set generic hover entity id (topmost under pointer) for Explorer list highlight
+            let topId: string | null = null;
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
+                const [bx1, by1, bx2, by2] = ent._canvas_box;
+                if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) { topId = ent.id; break; }
+            }
+            setHoverEntityId(topId);
+            if (hoverCursor) {
             setHoverCursor(null);
+            }
         }
     };
     const [editingBoxes, setEditingBoxes] = useState<Record<string, { x1: number; y1: number; x2: number; y2: number }>>({});

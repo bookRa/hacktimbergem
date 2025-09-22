@@ -39,7 +39,7 @@ Acceptance (S1)
   - [x] Symbols ▸ Instances list renders instances.
   - [x] Scopes: click selects; double-click jumps to first evidence on sheet and opens Inspector.
   - [ ] Scopes: Link Evidence button enters Linking Mode (v1).
-  - [x] Instances: group by Drawing (basic grouping by sheet shown; refine to drawing).
+  - [x] Instances: group by Drawing via bbox containment (fallback to sheet).
   - [ ] Instances: add Stamp Palette with number-key shortcuts 1–9.
 - [ ] Inspector dock at bottom: Properties, Links, Evidence sections (collapsible).
   - [x] Split right side into Explorer (top) + Inspector (bottom) containers.
@@ -47,7 +47,9 @@ Acceptance (S1)
   - [ ] Collapse state remembered per section.
 - [ ] Cross-highlighting: hover list → canvas; hover canvas → list row.
   - [x] Hovering a Scope in Explorer highlights its evidence on the canvas.
+  - [x] Hovering an entity on the canvas highlights matching row in Symbols ▸ Instances.
 - [ ] Linking Mode v1: start from Scope; click items to add evidence chips; finish to commit.
+  - [~] Linking banner and Finish/Cancel controls in Inspector; canvas selection toggles evidence. (Need chip tray UI.)
 - [ ] Stamp Palette for Symbols (Instances) with number-key shortcuts.
 - [ ] Undo/Redo wiring for create/link/delete actions.
 

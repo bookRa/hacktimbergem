@@ -191,8 +191,21 @@ export const RightPanel: React.FC = () => {
                     <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
                         <RightExplorer />
                     </section>
-                    <section className="kp-section" style={{ height: rightInspectorHeightPx, overflow: 'auto' }}>
-                        {selectedEntityId ? (
+                    <section className="kp-section" style={{ height: rightInspectorHeightPx, overflow: 'auto', position: 'relative' }}>
+                        {/* Linking banner for Explorer context */}
+                        {linking && linking.relType === 'JUSTIFIED_BY' && (
+                            <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 10, color: '#e2e8f0' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12 }}>Linking Evidence • Scope #{linking.anchor.id.slice(0,6)}</div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button onClick={() => finishLinking()} style={miniBtn(false)}>Finish ({linking.selectedTargetIds.length})</button>
+                                        <button onClick={() => cancelLinking()} style={miniBtn(false)}>Cancel</button>
+                                    </div>
+                                </div>
+                                <div style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>Click instances or notes on the canvas (or in lists) to add evidence.</div>
+                            </div>
+                        )}
+                        {selectedEntityId && rightPanelTab !== 'explorer' ? (
                             (() => {
                                 const ent = entities.find((e: any) => e.id === selectedEntityId);
                                 if (!ent) return <div style={{ fontSize: 12, opacity: .7 }}>(Select an entity to inspect)</div>;

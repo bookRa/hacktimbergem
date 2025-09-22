@@ -104,6 +104,7 @@ interface AppState {
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities' | 'explorer';
     leftTab: 'sheets' | 'search';
+    explorerTab: 'scopes' | 'symbolsInst';
     // UI layout (Sprint 1)
     leftPanel: { widthPx: number; collapsed: boolean };
     rightPanel: { widthPx: number; collapsed: boolean };
@@ -112,6 +113,7 @@ interface AppState {
     toggleLeftCollapsed: () => void;
     toggleRightCollapsed: () => void;
     setLeftTab: (t: 'sheets' | 'search') => void;
+    setExplorerTab: (t: 'scopes' | 'symbolsInst') => void;
     // Layer visibility (skeleton for toolbar)
     layers: { ocr: boolean; drawings: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
     setLayer: (k: keyof AppState['layers'], v: boolean) => void;
@@ -169,6 +171,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
     layers: { ocr: false, drawings: true, symbols: true, components: true, notes: true, scopes: true },
     rightInspectorHeightPx: lsNum('ui:rightInspectorHeight', 260),
+    explorerTab: 'scopes',
     scrollTarget: null,
     entities: [],
     entitiesStatus: 'idle',
@@ -736,6 +739,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     },
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
     setLeftTab: (t) => set({ leftTab: t }),
+    setExplorerTab: (t) => set({ explorerTab: t }),
     setLeftPanelWidth: (px) => set(state => {
         const width = Math.max(160, Math.min(540, Math.round(px)));
         try { localStorage.setItem('ui:leftWidth', String(width)); } catch {}
