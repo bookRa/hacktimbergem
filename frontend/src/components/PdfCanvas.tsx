@@ -68,11 +68,16 @@ export const PdfCanvas: React.FC = () => {
             if (availableW > 0 && availableH > 0) {
                 fitScale = Math.min(availableW / canvas.width, availableH / canvas.height);
             }
+            // pageWidthPts/pageHeightPts are PDF-space dimensions (points). Since
+            // viewport was created with scale=RASTER_SCALE (300/72), dividing by
+            // RASTER_SCALE yields original PDF width/height in points.
             setPageMeta({
                 pageNumber: currentPageIndex,
                 nativeWidth: canvas.width,
                 nativeHeight: canvas.height,
-                fitPageScale: fitScale
+                fitPageScale: fitScale,
+                pageWidthPts: viewport.width / RASTER_SCALE,
+                pageHeightPts: viewport.height / RASTER_SCALE
             });
             if (zoom.mode === 'fit') updateFitScale(currentPageIndex, fitScale);
             // Only render via pdf.js if no backend raster yet
@@ -84,12 +89,12 @@ export const PdfCanvas: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pdfDoc, currentPageIndex, zoom.mode, pageImages]);
 
-    // Fetch backend image lazily when we have a projectId
+    // Fetch backend image and OCR lazily when we have a projectId (OCR fetch is required for coordinate transforms)
     useEffect(() => {
         fetchPageImage(currentPageIndex);
-        if (showOcr) fetchPageOcr(currentPageIndex);
+        fetchPageOcr(currentPageIndex);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPageIndex, showOcr]);
+    }, [currentPageIndex]);
 
     // Recompute when switching into fit mode (ensures correct scale after manual panning/resize)
     useEffect(() => {

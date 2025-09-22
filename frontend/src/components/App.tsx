@@ -13,11 +13,11 @@ export const App: React.FC = () => {
     const pdfDoc = useProjectStore((s: ProjectStore) => s.pdfDoc);
     const { initProjectById, projectId } = useProjectStore((s: any) => ({ initProjectById: s.initProjectById, projectId: s.projectId }));
     React.useEffect(() => {
-        // Restore project via URL hash (#p=projectId) or localStorage 'lastProjectId'
+        // Restore project ONLY via URL hash (#p=projectId). Root without hash should show Upload.
         const tryInit = async () => {
             const hash = typeof window !== 'undefined' ? window.location.hash : '';
             const match = hash && hash.match(/#p=([a-f0-9]+)/i);
-            const pid = match?.[1] || localStorage.getItem('lastProjectId');
+            const pid = match?.[1] || null;
             if (pid && !projectId) {
                 await initProjectById(pid);
             }

@@ -12,6 +12,8 @@ export interface PageRenderMeta {
     nativeWidth: number;   // 300 DPI raster width (px)
     nativeHeight: number;  // 300 DPI raster height (px)
     fitPageScale: number;  // computed to fit entire page (width & height)
+    pageWidthPts?: number; // original PDF width in points (72dpi space)
+    pageHeightPts?: number; // original PDF height in points
 }
 
 export interface ZoomState {

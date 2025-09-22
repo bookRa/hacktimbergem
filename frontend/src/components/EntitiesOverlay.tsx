@@ -79,6 +79,19 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     const [hoverDrawingId, setHoverDrawingId] = useState<string | null>(null);
     const pendingOcrClickRef = useRef<{ startX: number; startY: number; blockIndex: number; additive: boolean } | null>(null);
 
+    // Editing state must be declared before any conditional returns to avoid hook order discrepancies
+    const [editingBoxes, setEditingBoxes] = useState<Record<string, { x1: number; y1: number; x2: number; y2: number }>>({});
+    const setTempEdit = (id: string, box: { x1: number; y1: number; x2: number; y2: number }) => {
+        setEditingBoxes(b => ({ ...b, [id]: box }));
+    };
+    const commitEdit = async (id: string) => {
+        const box = editingBoxes[id];
+        if (box) {
+            await updateEntityBBox(id, [box.x1, box.y1, box.x2, box.y2]);
+            setEditingBoxes(b => { const { [id]: _, ...rest } = b; return rest; });
+        }
+    };
+
     useEffect(() => {
         const esc = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -104,17 +117,21 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     // Convert all entity PDF-space boxes to canvas space for rendering and hit-testing
     const ocr = (pageOcr as any)?.[pageIndex];
     const meta = (pagesMeta as any)?.[pageIndex];
-    const renderMeta = ocr && meta ? {
-        pageWidthPts: ocr.width_pts,
-        pageHeightPts: ocr.height_pts,
+    // Require reliable page dimensions before rendering. Avoid drawing with bogus defaults.
+    const pageWidthPts = (meta as any)?.pageWidthPts || ocr?.width_pts;
+    const pageHeightPts = (meta as any)?.pageHeightPts || ocr?.height_pts;
+    if (!meta || !pageWidthPts || !pageHeightPts) return null;
+    const renderMeta = {
+        pageWidthPts,
+        pageHeightPts,
         rasterWidthPx: meta.nativeWidth,
         rasterHeightPx: meta.nativeHeight,
         rotation: 0 as 0
-    } : null;
-    const pageEntities = (renderMeta ? pageEntitiesRaw.map((e: any) => ({
+    } as const;
+    const pageEntities = (pageEntitiesRaw.map((e: any) => ({
         ...e,
         _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
-    })) : pageEntitiesRaw.map((e: any) => ({ ...e, _canvas_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] }))) as any[];
+    }))) as any[];
 
     const linkingActive = !!linking;
     const isAllowedByLinking = (ent: any): boolean => {
@@ -383,17 +400,6 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             } else if (hoverCursor) {
                 setHoverCursor(null);
             }
-        }
-    };
-    const [editingBoxes, setEditingBoxes] = useState<Record<string, { x1: number; y1: number; x2: number; y2: number }>>({});
-    const setTempEdit = (id: string, box: { x1: number; y1: number; x2: number; y2: number }) => {
-        setEditingBoxes(b => ({ ...b, [id]: box }));
-    };
-    const commitEdit = async (id: string) => {
-        const box = editingBoxes[id];
-        if (box) {
-            await updateEntityBBox(id, [box.x1, box.y1, box.x2, box.y2]);
-            setEditingBoxes(b => { const { [id]: _, ...rest } = b; return rest; });
         }
     };
 
