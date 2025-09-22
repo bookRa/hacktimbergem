@@ -32,7 +32,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId, setHoverEntityId } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId, setHoverEntityId, hoverEntityId } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -51,6 +51,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         cancelLinking: (s as any).cancelLinking,
         hoverScopeId: (s as any).hoverScopeId,
         setHoverEntityId: (s as any).setHoverEntityId,
+        hoverEntityId: (s as any).hoverEntityId,
     }));
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -356,23 +357,8 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             return;
         }
         // Hover cursor logic when not editing/creating; also set hoverEntityId for Explorer highlighting
-        if (!creatingEntity && !linkingActive && selectedEntityId) {
-            const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
-            if (ent) {
-                const [bx1, by1, bx2, by2] = ent._canvas_box;
-                const tol = TOL_PX / scale;
-                if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
-                    const h = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
-                    if (h) {
-                        setHoverCursor(handleToCursor(h));
-                    } else {
-                        setHoverCursor('move');
-                    }
-                } else {
-                    if (hoverCursor) setHoverCursor(null);
-                }
-            }
-        } else {
+        // If we are not editing/dragging, set hoverEntityId to the topmost entity under the pointer.
+        {
             // set generic hover entity id (topmost under pointer) for Explorer list highlight
             let topId: string | null = null;
             for (let i = pageEntities.length - 1; i >= 0; i--) {
@@ -381,8 +367,21 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) { topId = ent.id; break; }
             }
             setHoverEntityId(topId);
-            if (hoverCursor) {
-            setHoverCursor(null);
+            // Cursor affordance when a selected entity is under the pointer
+            if (selectedEntityId) {
+                const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
+                if (ent) {
+                    const [bx1, by1, bx2, by2] = ent._canvas_box;
+                    const tol = TOL_PX / scale;
+                    if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
+                        const h = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
+                        setHoverCursor(h ? handleToCursor(h) : 'move');
+                    } else if (hoverCursor) {
+                        setHoverCursor(null);
+                    }
+                }
+            } else if (hoverCursor) {
+                setHoverCursor(null);
             }
         }
     };
@@ -473,8 +472,13 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                     const allowed = isAllowedByLinking(e);
                     const linkSelected = linkingActive && linking!.selectedTargetIds.includes(e.id);
                     const isScopeEvidence = hoverScopeId && (useProjectStore.getState() as any).links.some((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === hoverScopeId && l.target_id === e.id);
-                    const stroke = linkingActive ? (linkSelected ? '#16a34a' : allowed ? '#64748b' : 'rgba(148,163,184,0.3)') : (selected ? c.stroke : isScopeEvidence ? '#06b6d4' : 'rgba(148,163,184,0.6)');
-                    const fill = linkingActive ? (linkSelected ? 'rgba(22,163,74,0.18)' : allowed ? 'rgba(100,116,139,0.10)' : 'rgba(30,41,59,0.10)') : (isScopeEvidence ? 'rgba(6,182,212,0.18)' : c.fill);
+                    const isHoverEntity = hoverEntityId && hoverEntityId === e.id;
+                    const stroke = linkingActive
+                        ? (linkSelected ? '#16a34a' : allowed ? '#64748b' : 'rgba(148,163,184,0.3)')
+                        : (selected ? c.stroke : isScopeEvidence ? '#06b6d4' : isHoverEntity ? '#1d4ed8' : 'rgba(148,163,184,0.6)');
+                    const fill = linkingActive
+                        ? (linkSelected ? 'rgba(22,163,74,0.18)' : allowed ? 'rgba(100,116,139,0.10)' : 'rgba(30,41,59,0.10)')
+                        : (isScopeEvidence ? 'rgba(6,182,212,0.18)' : isHoverEntity ? 'rgba(29,78,216,0.12)' : c.fill);
                     return (
                         <g key={e.id}>
                             <rect

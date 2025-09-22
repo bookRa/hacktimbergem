@@ -187,11 +187,14 @@ export const RightPanel: React.FC = () => {
                 </>
             )}
             {rightPanelTab === 'explorer' && (
+                (() => {
+                    const inspectorDynamicHeight = (linking && linking.relType === 'JUSTIFIED_BY') ? Math.max(rightInspectorHeightPx, 420) : rightInspectorHeightPx;
+                    return (
                 <>
-                    <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
+                    <section className="kp-section" style={{ maxHeight: `calc(100vh - ${inspectorDynamicHeight}px)`, overflow: 'auto' }}>
                         <RightExplorer />
                     </section>
-                    <section className="kp-section" style={{ height: rightInspectorHeightPx, overflow: 'auto', position: 'relative' }}>
+                    <section className="kp-section" style={{ height: inspectorDynamicHeight, overflow: 'auto', position: 'relative' }}>
                         {/* Linking banner for Explorer context */}
                         {linking && linking.relType === 'JUSTIFIED_BY' && (
                             <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 10, color: '#e2e8f0' }}>
@@ -218,6 +221,7 @@ export const RightPanel: React.FC = () => {
                         )}
                     </section>
                 </>
+                );})()
             )}
             {rightPanelTab === 'entities' && (
                 <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
@@ -907,7 +911,7 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
 };
 
 const ScopeInspector: React.FC<{ scopeId: string }> = ({ scopeId }) => {
-    const { concepts, links, startLinking } = useProjectStore((s: any) => ({ concepts: s.concepts, links: s.links, startLinking: s.startLinking }));
+    const { concepts, links, startLinking, linking, cancelLinking, toggleLinkTarget, finishLinking, entities } = useProjectStore((s: any) => ({ concepts: s.concepts, links: s.links, startLinking: s.startLinking, linking: s.linking, cancelLinking: s.cancelLinking, toggleLinkTarget: s.toggleLinkTarget, finishLinking: s.finishLinking, entities: s.entities }));
     const scope = concepts.find((c: any) => c.id === scopeId);
     const evidence = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === scopeId);
     if (!scope) return <div style={{ fontSize: 12, opacity: .7 }}>(Missing scope)</div>;
@@ -915,7 +919,7 @@ const ScopeInspector: React.FC<{ scopeId: string }> = ({ scopeId }) => {
         <div style={{ fontSize: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontWeight: 600 }}>Scope</div>
-                <button onClick={() => startLinking('JUSTIFIED_BY', { kind: 'scope', id: scopeId })} style={{ background: '#2563eb', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Link Evidence</button>
+                {!linking && <button onClick={() => startLinking('JUSTIFIED_BY', { kind: 'scope', id: scopeId })} style={{ background: '#2563eb', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Link Evidence</button>}
             </div>
             <div style={{ marginTop: 6 }}>
                 <div style={{ opacity: .7 }}>Description</div>
@@ -932,6 +936,29 @@ const ScopeInspector: React.FC<{ scopeId: string }> = ({ scopeId }) => {
                     {evidence.length === 0 && <span style={{ opacity: .7 }}>(none yet)</span>}
                 </div>
             </div>
+            {/* Chip tray when in linking mode to preview queued evidence */}
+            {linking && linking.relType === 'JUSTIFIED_BY' && linking.anchor?.id === scopeId && (
+                <div style={{ marginTop: 10 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Queued Evidence ({linking.selectedTargetIds.length})</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {linking.selectedTargetIds.map((id: string) => {
+                            const ent = entities.find((e: any) => e.id === id);
+                            const label = ent ? (ent.title || ent.name || ent.entity_type) : id.slice(0,6);
+                            return (
+                                <span key={id} style={{ fontSize: 11, border: '1px solid #e1e6eb', padding: '2px 6px', borderRadius: 10, background: '#f8fafc' }}>
+                                    {label}
+                                    <button onClick={() => toggleLinkTarget(id)} style={{ marginLeft: 6, fontSize: 11, background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>×</button>
+                                </span>
+                            );
+                        })}
+                        {linking.selectedTargetIds.length === 0 && <span style={{ opacity: .7 }}>(none queued)</span>}
+                    </div>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+                        <button onClick={() => finishLinking()} style={{ background: '#16a34a', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Finish</button>
+                        <button onClick={() => cancelLinking()} style={{ background: '#f59e0b', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

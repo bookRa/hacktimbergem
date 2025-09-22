@@ -50,6 +50,7 @@ Acceptance (S1)
   - [x] Hovering an entity on the canvas highlights matching row in Symbols ▸ Instances.
 - [ ] Linking Mode v1: start from Scope; click items to add evidence chips; finish to commit.
   - [~] Linking banner and Finish/Cancel controls in Inspector; canvas selection toggles evidence. (Need chip tray UI.)
+  - [x] Chip tray shows queued evidence and allows removal before finish.
 - [ ] Stamp Palette for Symbols (Instances) with number-key shortcuts.
 - [ ] Undo/Redo wiring for create/link/delete actions.
 
