@@ -101,6 +101,7 @@ interface AppState {
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
     setSelectedEntityId: (id: string | null) => void;
+    selectEntity: (id: string | null) => void;
     updateEntityBBox: (id: string, bbox: [number, number, number, number]) => Promise<void>;
     updateEntityMeta: (id: string, data: any) => Promise<void>;
     deleteEntity: (id: string) => Promise<void>;
@@ -126,6 +127,7 @@ interface AppState {
     // Explorer selections
     selectedScopeId: string | null;
     setSelectedScopeId: (id: string | null) => void;
+    selectScope: (id: string | null) => void;
     hoverEntityId: string | null;
     hoverScopeId: string | null;
     setHoverEntityId: (id: string | null) => void;
@@ -738,6 +740,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
+    selectEntity: (id) => set({ selectedEntityId: id, rightPanelTab: 'entities' } as any),
     updateEntityBBox: async (id, bbox) => {
         const { projectId, addToast, fetchEntities, fetchPageOcr, pushHistory } = get() as any;
         if (!projectId) return;
@@ -825,6 +828,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     }),
     selectedScopeId: null,
     setSelectedScopeId: (id) => set({ selectedScopeId: id } as any),
+    selectScope: (id) => set({ selectedScopeId: id, rightPanelTab: 'explorer', explorerTab: 'scopes' } as any),
     hoverEntityId: null,
     hoverScopeId: null,
     setHoverEntityId: (id) => set({ hoverEntityId: id } as any),
@@ -908,9 +912,9 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                     const created = await resp.json();
                     newIds.push(created?.id);
                 }
-                // store current ids for redo delete
-                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
                 await st.fetchLinks();
+                // store current ids for redo delete (after links are fetched)
+                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
             }
         } catch (e) { console.error('Undo failed', e); }
     },
@@ -960,8 +964,8 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                     const created = await resp.json();
                     newIds.push(created?.id);
                 }
-                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
                 await st.fetchLinks();
+                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
             } else if (entry.type === 'delete_links') {
                 for (const l of entry.links) {
                     // If link id known, delete by id; else search
