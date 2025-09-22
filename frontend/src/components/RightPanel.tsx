@@ -3,7 +3,7 @@ import { useProjectStore, ProjectStore } from '../state/store';
 import { RightExplorer } from './RightExplorer';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById, rightInspectorHeightPx, setRightInspectorHeight } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById, rightInspectorHeightPx, setRightInspectorHeight, selectedScopeId } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -54,6 +54,7 @@ export const RightPanel: React.FC = () => {
         deleteLinkById: (s as any).deleteLinkById,
         rightInspectorHeightPx: (s as any).rightInspectorHeightPx,
         setRightInspectorHeight: (s as any).setRightInspectorHeight,
+        selectedScopeId: (s as any).selectedScopeId,
     }));
     const [defDraft, setDefDraft] = React.useState<null | { type: 'symbol_definition' | 'component_definition'; name: string; scope: 'project' | 'sheet'; description: string; visual_pattern_description?: string; specifications?: string }>(null);
     const defsSectionRef = React.useRef<HTMLDivElement | null>(null);
@@ -186,9 +187,24 @@ export const RightPanel: React.FC = () => {
                 </>
             )}
             {rightPanelTab === 'explorer' && (
-                <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
-                    <RightExplorer />
-                </section>
+                <>
+                    <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
+                        <RightExplorer />
+                    </section>
+                    <section className="kp-section" style={{ height: rightInspectorHeightPx, overflow: 'auto' }}>
+                        {selectedEntityId ? (
+                            (() => {
+                                const ent = entities.find((e: any) => e.id === selectedEntityId);
+                                if (!ent) return <div style={{ fontSize: 12, opacity: .7 }}>(Select an entity to inspect)</div>;
+                                return <EntityEditor entity={ent} updateEntityMeta={updateEntityMeta} deleteEntity={deleteEntity} deselect={() => setSelectedEntityId(null)} />;
+                            })()
+                        ) : selectedScopeId ? (
+                            <ScopeInspector scopeId={selectedScopeId} />
+                        ) : (
+                            <div style={{ fontSize: 12, opacity: .7 }}>(Select a scope or entity)</div>
+                        )}
+                    </section>
+                </>
             )}
             {rightPanelTab === 'entities' && (
                 <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
@@ -873,6 +889,36 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
                     </div>
                 );
             })()}
+        </div>
+    );
+};
+
+const ScopeInspector: React.FC<{ scopeId: string }> = ({ scopeId }) => {
+    const { concepts, links, startLinking } = useProjectStore((s: any) => ({ concepts: s.concepts, links: s.links, startLinking: s.startLinking }));
+    const scope = concepts.find((c: any) => c.id === scopeId);
+    const evidence = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === scopeId);
+    if (!scope) return <div style={{ fontSize: 12, opacity: .7 }}>(Missing scope)</div>;
+    return (
+        <div style={{ fontSize: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontWeight: 600 }}>Scope</div>
+                <button onClick={() => startLinking('JUSTIFIED_BY', { kind: 'scope', id: scopeId })} style={{ background: '#2563eb', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Link Evidence</button>
+            </div>
+            <div style={{ marginTop: 6 }}>
+                <div style={{ opacity: .7 }}>Description</div>
+                <div>{scope.description || '(no description)'}</div>
+            </div>
+            <div style={{ marginTop: 8 }}>
+                <div style={{ opacity: .7 }}>Category</div>
+                <div>{scope.category || '(none)'}</div>
+            </div>
+            <div style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Evidence ({evidence.length})</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {evidence.map((l: any) => <span key={l.id} style={{ fontSize: 11, border: '1px solid #e1e6eb', padding: '2px 6px', borderRadius: 10 }}>ent {l.target_id.slice(0,6)}</span>)}
+                    {evidence.length === 0 && <span style={{ opacity: .7 }}>(none yet)</span>}
+                </div>
+            </div>
         </div>
     );
 };

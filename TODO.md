@@ -42,8 +42,8 @@ Acceptance (S1)
   - [x] Instances: group by Drawing (basic grouping by sheet shown; refine to drawing).
   - [ ] Instances: add Stamp Palette with number-key shortcuts 1–9.
 - [ ] Inspector dock at bottom: Properties, Links, Evidence sections (collapsible).
-  - [ ] Split right side into Explorer (top) + Inspector (bottom) containers.
-  - [ ] Inspector shows selected entity or scope; Evidence tray appears for scopes.
+  - [x] Split right side into Explorer (top) + Inspector (bottom) containers.
+  - [x] Inspector shows selected entity or scope; Evidence tray appears for scopes.
   - [ ] Collapse state remembered per section.
 - [ ] Cross-highlighting: hover list → canvas; hover canvas → list row.
   - [x] Hovering a Scope in Explorer highlights its evidence on the canvas.
