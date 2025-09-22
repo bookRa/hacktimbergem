@@ -45,7 +45,7 @@ Acceptance (S1)
 - [ ] Inspector dock at bottom: Properties, Links, Evidence sections (collapsible).
   - [x] Split right side into Explorer (top) + Inspector (bottom) containers.
   - [x] Inspector shows selected entity or scope; Evidence tray appears for scopes.
-  - [ ] Collapse state remembered per section.
+  - [x] Collapse state remembered per section.
   - [x] Dynamic inspector height in Linking Mode (chip tray + banner visible without nested scrolls).
 - [ ] Cross-highlighting: hover list → canvas; hover canvas → list row.
   - [x] Hovering a Scope in Explorer highlights its evidence on the canvas.
@@ -57,6 +57,7 @@ Acceptance (S1)
 - [ ] Stamp Palette for Symbols (Instances) with number-key shortcuts.
   - [x] Stamp Palette added with 1–9 shortcuts; Esc cancels.
 - [ ] Undo/Redo wiring for create/link/delete actions.
+  - [~] Core history stack in store with undo/redo actions (create/delete entity, create/delete links); UI wiring pending.
 
 Milestone Demo Targets (S2)
 - [ ] From Scopes tab, hover highlights related bboxes on the canvas within 100ms.

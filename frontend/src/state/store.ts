@@ -139,6 +139,13 @@ interface AppState {
     toasts: { id: string; kind: 'info' | 'error' | 'success'; message: string; createdAt: number; timeoutMs?: number; }[];
     addToast: (t: { kind?: 'info' | 'error' | 'success'; message: string; timeoutMs?: number; }) => void;
     dismissToast: (id: string) => void;
+    // --- Simple history (undo/redo) for core actions ---
+    historyPast: any[];
+    historyFuture: any[];
+    pushHistory: (entry: any) => void;
+    undo: () => Promise<void>;
+    redo: () => Promise<void>;
+    historyIdMap: Record<string, string>; // originalId -> currentId mapping for recreated entities
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
@@ -580,12 +587,14 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     deleteLinkById: async (id) => {
-        const { projectId, addToast, fetchLinks } = get();
+        const { projectId, addToast, fetchLinks, pushHistory } = get() as any;
         if (!projectId) return;
         try {
+            const linkObj = (get() as any).links.find((l: any) => l.id === id);
             await apiDeleteLink(projectId, id);
             await fetchLinks();
             addToast({ kind: 'success', message: 'Link deleted' });
+            if (linkObj) try { pushHistory({ type: 'delete_links', links: [linkObj] }); } catch {}
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e?.message || 'Failed to delete link' });
@@ -601,7 +610,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         return { linking: { ...linking, selectedTargetIds: Array.from(setIds) } } as Partial<AppState> as any;
     }),
     finishLinking: async () => {
-        const { projectId, linking, addToast, fetchLinks, entities, concepts } = get() as any;
+        const { projectId, linking, addToast, fetchLinks, entities, concepts, pushHistory } = get() as any;
         if (!projectId || !linking) return;
         if (!linking.selectedTargetIds.length) { addToast({ kind: 'error', message: 'No targets selected' }); return; }
         // Helper: find kind of an id from entities/concepts
@@ -637,12 +646,16 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             }
         }
         try {
+            const before = new Set(((get() as any).links || []).map((l: any) => l.id));
             for (const p of payloads) {
                 await apiCreateLink(projectId, p as any);
             }
             await fetchLinks();
+            const after = (get() as any).links || [];
+            const created = after.filter((l: any) => !before.has(l.id));
             set({ linking: null });
             addToast({ kind: 'success', message: 'Links created' });
+            try { pushHistory({ type: 'create_links', links: created }); } catch {}
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e?.message || 'Failed to create links' });
@@ -657,7 +670,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     startInstanceStamp: (kind, definitionId, opts) => set({ creatingEntity: { type: kind === 'symbol' ? 'symbol_instance' : 'component_instance', startX: -1, startY: -1, meta: { definitionId, ...opts } } }),
     cancelEntityCreation: () => set({ creatingEntity: null }),
     finalizeEntityCreation: async (x1, y1, x2, y2) => {
-        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId, fetchPageOcr } = get() as any;
+        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId, fetchPageOcr, pushHistory } = get() as any;
         if (!creatingEntity || !projectId) return;
         const sheetNumber = currentPageIndex + 1; // 1-based
         try {
@@ -711,6 +724,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             await fetchEntities();
             setSelectedEntityId(created?.id || null);
             addToast({ kind: 'success', message: `${creatingEntity.type} created` });
+            try { pushHistory({ type: 'create_entity', entity: created }); } catch {}
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e.message || 'Create failed' });
@@ -725,7 +739,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
     updateEntityBBox: async (id, bbox) => {
-        const { projectId, addToast, fetchEntities, fetchPageOcr } = get() as any;
+        const { projectId, addToast, fetchEntities, fetchPageOcr, pushHistory } = get() as any;
         if (!projectId) return;
         try {
             // Convert canvas -> PDF using current page meta
@@ -741,32 +755,43 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 rasterHeightPx: pageMeta.nativeHeight,
                 rotation: 0 as 0,
             };
+            const beforeEnt = (get() as any).entities.find((e: any) => e.id === id);
+            const beforeBox = beforeEnt ? [beforeEnt.bounding_box.x1, beforeEnt.bounding_box.y1, beforeEnt.bounding_box.x2, beforeEnt.bounding_box.y2] : null;
             const [px1, py1, px2, py2] = canvasToPdf(bbox as any, renderMeta as any);
-            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: [px1, py1, px2, py2] }) });
+            const afterBox = [px1, py1, px2, py2];
+            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: afterBox }) });
             await fetchEntities();
+            try { if (beforeBox) pushHistory({ type: 'edit_entity', id, before: { bounding_box: beforeBox }, after: { bounding_box: afterBox } }); } catch {}
         } catch (e: any) {
             console.error(e); addToast({ kind: 'error', message: e.message || 'Update failed' });
         }
     },
     updateEntityMeta: async (id, data) => {
-        const { projectId, addToast, fetchEntities } = get();
+        const { projectId, addToast, fetchEntities, pushHistory } = get() as any;
         if (!projectId) return;
         try {
+            const beforeEnt = (get() as any).entities.find((e: any) => e.id === id) || {};
+            const keys = Object.keys(data || {});
+            const before: any = {};
+            keys.forEach(k => { if (k in beforeEnt) before[k] = (beforeEnt as any)[k]; });
             await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
             await fetchEntities();
             addToast({ kind: 'success', message: 'Updated' });
+            try { pushHistory({ type: 'edit_entity', id, before, after: data }); } catch {}
         } catch (e: any) {
             console.error(e); addToast({ kind: 'error', message: e.message || 'Update failed' });
         }
     },
     deleteEntity: async (id) => {
-        const { projectId, addToast, fetchEntities, selectedEntityId, setSelectedEntityId } = get();
+        const { projectId, addToast, fetchEntities, selectedEntityId, setSelectedEntityId, pushHistory } = get() as any;
         if (!projectId) return;
         try {
+            const ent = (get() as any).entities.find((e: any) => e.id === id);
             await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
             if (selectedEntityId === id) setSelectedEntityId(null);
             await fetchEntities();
             addToast({ kind: 'success', message: 'Entity deleted' });
+            if (ent) try { pushHistory({ type: 'delete_entity', entity: ent }); } catch {}
         } catch (e: any) {
             console.error(e); addToast({ kind: 'error', message: e.message || 'Delete failed' });
         }
@@ -819,5 +844,135 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             }, timeoutMs);
         }
     },
-    dismissToast: (id: string) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) }))
+    dismissToast: (id: string) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) })),
+    // --- Simple history (undo/redo) for core actions ---
+    historyPast: [],
+    historyFuture: [],
+    pushHistory: (entry: any) => set(state => ({ historyPast: [...(state as any).historyPast, entry], historyFuture: [] } as any)),
+    historyIdMap: {},
+    undo: async () => {
+        const st: any = get();
+        const past: any[] = st.historyPast || [];
+        if (!past.length) return;
+        const entry = past[past.length - 1];
+        set({ historyPast: past.slice(0, -1), historyFuture: [entry, ...(st.historyFuture || [])] } as any);
+        const projectId = st.projectId; if (!projectId) return;
+        try {
+            if (entry.type === 'create_entity') {
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.entity.id] || entry.entity.id;
+                // If the entity still exists, delete it; else no-op
+                const e = (get() as any).entities.find((x: any) => x.id === id);
+                if (e) await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
+                await st.fetchEntities();
+            } else if (entry.type === 'edit_entity') {
+                // Undo edit: apply `before` fields
+                const payload = { ...(entry.before || {}) };
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.id] || entry.id;
+                await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                await st.fetchEntities();
+            } else if (entry.type === 'delete_entity') {
+                const e = entry.entity;
+                const payload: any = { entity_type: e.entity_type, source_sheet_number: e.source_sheet_number, bounding_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] };
+                if (['drawing','legend','schedule'].includes(e.entity_type)) payload.title = e.title || null;
+                if (e.entity_type === 'note') payload.text = e.text || null;
+                if (['symbol_definition','component_definition'].includes(e.entity_type)) {
+                    payload.name = e.name || null; payload.description = e.description || null; payload.scope = e.scope || 'sheet'; payload.defined_in_id = e.defined_in_id || null;
+                    if (e.entity_type === 'symbol_definition') payload.visual_pattern_description = e.visual_pattern_description || null;
+                    if (e.entity_type === 'component_definition') payload.specifications = e.specifications || {};
+                }
+                if (e.entity_type === 'symbol_instance') payload.symbol_definition_id = e.symbol_definition_id;
+                if (e.entity_type === 'component_instance') payload.component_definition_id = e.component_definition_id;
+                const resp = await fetch(`/api/projects/${projectId}/entities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const recreated = await resp.json();
+                entry.currentId = recreated?.id;
+                const alias = (get() as any).historyIdMap || {};
+                set({ historyIdMap: { ...alias, [entry.entity.id]: recreated?.id } } as any);
+                await st.fetchEntities();
+            } else if (entry.type === 'create_links') {
+                for (const l of entry.links) {
+                    // If id known delete by id; else try to find by triple
+                    if (l.id) {
+                        await fetch(`/api/projects/${projectId}/links/${l.id}`, { method: 'DELETE' });
+                    } else {
+                        const match = (get() as any).links.find((x: any) => x.rel_type === l.rel_type && x.source_id === l.source_id && x.target_id === l.target_id);
+                        if (match) await fetch(`/api/projects/${projectId}/links/${match.id}`, { method: 'DELETE' });
+                    }
+                }
+                await st.fetchLinks();
+            } else if (entry.type === 'delete_links') {
+                const newIds: any[] = [];
+                for (const l of entry.links) {
+                    const resp = await fetch(`/api/projects/${projectId}/links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel_type: l.rel_type, source_id: l.source_id, target_id: l.target_id }) });
+                    const created = await resp.json();
+                    newIds.push(created?.id);
+                }
+                // store current ids for redo delete
+                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
+                await st.fetchLinks();
+            }
+        } catch (e) { console.error('Undo failed', e); }
+    },
+    redo: async () => {
+        const st: any = get();
+        const future: any[] = st.historyFuture || [];
+        if (!future.length) return;
+        const entry = future[0];
+        set({ historyFuture: future.slice(1), historyPast: [ ...(st.historyPast || []), entry ] } as any);
+        const projectId = st.projectId; if (!projectId) return;
+        try {
+            if (entry.type === 'create_entity') {
+                const e = entry.entity;
+                const payload: any = { entity_type: e.entity_type, source_sheet_number: e.source_sheet_number, bounding_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] };
+                if (['drawing','legend','schedule'].includes(e.entity_type)) payload.title = e.title || null;
+                if (e.entity_type === 'note') payload.text = e.text || null;
+                if (['symbol_definition','component_definition'].includes(e.entity_type)) {
+                    payload.name = e.name || null; payload.description = e.description || null; payload.scope = e.scope || 'sheet'; payload.defined_in_id = e.defined_in_id || null;
+                    if (e.entity_type === 'symbol_definition') payload.visual_pattern_description = e.visual_pattern_description || null;
+                    if (e.entity_type === 'component_definition') payload.specifications = e.specifications || {};
+                }
+                if (e.entity_type === 'symbol_instance') payload.symbol_definition_id = e.symbol_definition_id;
+                if (e.entity_type === 'component_instance') payload.component_definition_id = e.component_definition_id;
+                const resp = await fetch(`/api/projects/${projectId}/entities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const created = await resp.json();
+                entry.currentId = created?.id;
+                const alias = (get() as any).historyIdMap || {};
+                set({ historyIdMap: { ...alias, [entry.entity.id]: created?.id } } as any);
+                await st.fetchEntities();
+            } else if (entry.type === 'edit_entity') {
+                // Redo edit: apply `after` fields again
+                const payload = { ...(entry.after || {}) };
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.id] || entry.id;
+                await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                await st.fetchEntities();
+            } else if (entry.type === 'delete_entity') {
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.entity.id] || entry.entity.id;
+                const e = (get() as any).entities.find((x: any) => x.id === id);
+                if (e) await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
+                await st.fetchEntities();
+            } else if (entry.type === 'create_links') {
+                const newIds: any[] = [];
+                for (const l of entry.links) {
+                    const resp = await fetch(`/api/projects/${projectId}/links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel_type: l.rel_type, source_id: l.source_id, target_id: l.target_id }) });
+                    const created = await resp.json();
+                    newIds.push(created?.id);
+                }
+                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
+                await st.fetchLinks();
+            } else if (entry.type === 'delete_links') {
+                for (const l of entry.links) {
+                    // If link id known, delete by id; else search
+                    if (l.id) await fetch(`/api/projects/${projectId}/links/${l.id}`, { method: 'DELETE' });
+                    else {
+                        const match = (get() as any).links.find((x: any) => x.rel_type === l.rel_type && x.source_id === l.source_id && x.target_id === l.target_id);
+                        if (match) await fetch(`/api/projects/${projectId}/links/${match.id}`, { method: 'DELETE' });
+                    }
+                }
+                await st.fetchLinks();
+            }
+        } catch (e) { console.error('Redo failed', e); }
+    }
 }));
