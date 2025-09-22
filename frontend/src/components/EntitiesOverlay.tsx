@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { shallow } from 'zustand/shallow';
 import { useProjectStore } from '../state/store';
 import { pdfToCanvas } from '../utils/coords';
 
@@ -52,7 +53,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         hoverScopeId: (s as any).hoverScopeId,
         setHoverEntityId: (s as any).setHoverEntityId,
         hoverEntityId: (s as any).hoverEntityId,
-    }));
+    }), shallow);
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
     const passthroughRef = useRef(false);
@@ -103,8 +104,6 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         return () => window.removeEventListener('keydown', esc);
     }, [creatingEntity, cancelEntityCreation, linking, cancelLinking]);
 
-    if (pageIndex !== currentPageIndex) return null;
-
     const pageEntitiesRaw = entities
         .filter((e: any) => e.source_sheet_number === pageIndex + 1)
         .slice()
@@ -120,18 +119,21 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     // Require reliable page dimensions before rendering. Avoid drawing with bogus defaults.
     const pageWidthPts = (meta as any)?.pageWidthPts || ocr?.width_pts;
     const pageHeightPts = (meta as any)?.pageHeightPts || ocr?.height_pts;
+    const pageEntities = useMemo(() => {
+        if (!meta || !pageWidthPts || !pageHeightPts) return [] as any[];
+        const renderMeta = {
+            pageWidthPts,
+            pageHeightPts,
+            rasterWidthPx: meta.nativeWidth,
+            rasterHeightPx: meta.nativeHeight,
+            rotation: 0 as 0
+        } as const;
+        return pageEntitiesRaw.map((e: any) => ({
+            ...e,
+            _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
+        }));
+    }, [pageEntitiesRaw, pageWidthPts, pageHeightPts, (meta as any)?.nativeWidth, (meta as any)?.nativeHeight]);
     if (!meta || !pageWidthPts || !pageHeightPts) return null;
-    const renderMeta = {
-        pageWidthPts,
-        pageHeightPts,
-        rasterWidthPx: meta.nativeWidth,
-        rasterHeightPx: meta.nativeHeight,
-        rotation: 0 as 0
-    } as const;
-    const pageEntities = (pageEntitiesRaw.map((e: any) => ({
-        ...e,
-        _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
-    }))) as any[];
 
     const linkingActive = !!linking;
     const isAllowedByLinking = (ent: any): boolean => {
@@ -383,7 +385,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                 const [bx1, by1, bx2, by2] = ent._canvas_box;
                 if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) { topId = ent.id; break; }
             }
-            setHoverEntityId(topId);
+            if (topId !== hoverEntityId) setHoverEntityId(topId);
             // Cursor affordance when a selected entity is under the pointer
             if (selectedEntityId) {
                 const ent = pageEntities.find(e2 => e2.id === selectedEntityId);

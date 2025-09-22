@@ -17,8 +17,9 @@ export const PdfCanvas: React.FC = () => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const pageWrapperRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
+    const renderTaskRef = useRef<any>(null);
 
-    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity } = useProjectStore((s: ProjectStore & any) => ({
+    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity, manifestStatus } = useProjectStore((s: ProjectStore & any) => ({
         pdfDoc: s.pdfDoc,
         currentPageIndex: s.currentPageIndex,
         pages: s.pages,
@@ -37,7 +38,8 @@ export const PdfCanvas: React.FC = () => {
         scrollTarget: s.scrollTarget,
         setScrollTarget: s.setScrollTarget,
         clearScrollTarget: s.clearScrollTarget,
-        creatingEntity: s.creatingEntity
+        creatingEntity: s.creatingEntity,
+        manifestStatus: s.manifestStatus,
     }));
 
     // Render page and compute fit scale (only if backend image not yet present)
@@ -49,13 +51,10 @@ export const PdfCanvas: React.FC = () => {
             const page = await pdfDoc.getPage(pageNumber);
             if (cancelled) return;
             const viewport = page.getViewport({ scale: RASTER_SCALE });
-            const canvas = canvasRef.current;
             const holder = containerRef.current;
-            if (!canvas || !holder) return;
-            const ctx = canvas.getContext('2d', { alpha: false });
-            if (!ctx) return;
-            canvas.width = Math.floor(viewport.width);
-            canvas.height = Math.floor(viewport.height);
+            if (!holder) return;
+            const nativeWidth = Math.floor(viewport.width);
+            const nativeHeight = Math.floor(viewport.height);
             // Compute fit scale immediately using holder size
             const style = getComputedStyle(holder);
             const padL = parseFloat(style.paddingLeft) || 0;
@@ -66,52 +65,81 @@ export const PdfCanvas: React.FC = () => {
             const availableH = holder.clientHeight - padT - padB - 4;
             let fitScale = 1;
             if (availableW > 0 && availableH > 0) {
-                fitScale = Math.min(availableW / canvas.width, availableH / canvas.height);
+                fitScale = Math.min(availableW / nativeWidth, availableH / nativeHeight);
             }
             // pageWidthPts/pageHeightPts are PDF-space dimensions (points). Since
             // viewport was created with scale=RASTER_SCALE (300/72), dividing by
             // RASTER_SCALE yields original PDF width/height in points.
             setPageMeta({
                 pageNumber: currentPageIndex,
-                nativeWidth: canvas.width,
-                nativeHeight: canvas.height,
+                nativeWidth,
+                nativeHeight,
                 fitPageScale: fitScale,
                 pageWidthPts: viewport.width / RASTER_SCALE,
                 pageHeightPts: viewport.height / RASTER_SCALE
             });
             if (zoom.mode === 'fit') updateFitScale(currentPageIndex, fitScale);
+            // Cancel any in-flight render before starting a new one
+            if (renderTaskRef.current && typeof renderTaskRef.current.cancel === 'function') {
+                try { renderTaskRef.current.cancel(); } catch {}
+                renderTaskRef.current = null;
+            }
             // Only render via pdf.js if no backend raster yet
             if (!pageImages[currentPageIndex]) {
-                await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d', { alpha: false });
+                if (!ctx) return;
+                canvas.width = nativeWidth;
+                canvas.height = nativeHeight;
+                const task = page.render({ canvasContext: ctx, viewport, intent: 'print' });
+                renderTaskRef.current = task;
+                try {
+                    await task.promise;
+                } catch (_) {
+                    // ignore cancellations
+                } finally {
+                    if (renderTaskRef.current === task) renderTaskRef.current = null;
+                }
             }
         })();
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            if (renderTaskRef.current && typeof renderTaskRef.current.cancel === 'function') {
+                try { renderTaskRef.current.cancel(); } catch {}
+                renderTaskRef.current = null;
+            }
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pdfDoc, currentPageIndex, zoom.mode, pageImages]);
+    }, [pdfDoc, currentPageIndex]);
 
     // Fetch backend image and OCR lazily when we have a projectId (OCR fetch is required for coordinate transforms)
     useEffect(() => {
-        fetchPageImage(currentPageIndex);
-        fetchPageOcr(currentPageIndex);
+        // Avoid double fetch if already cached
+        if (!pageImages[currentPageIndex]) fetchPageImage(currentPageIndex);
+        if (!pageOcr[currentPageIndex]) fetchPageOcr(currentPageIndex);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPageIndex]);
 
-    // Recompute when switching into fit mode (ensures correct scale after manual panning/resize)
+    // Recompute when switching into fit mode or when wrapper resizes
     useEffect(() => {
-        if (zoom.mode === 'fit') {
-            recomputeFitScale();
-        }
+        if (zoom.mode === 'fit') recomputeFitScale();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [zoom.mode]);
+    }, [zoom.mode, currentPageIndex]);
 
-    // Resize observer to recompute fit width scale
+    // Resize observer to recompute fit width scale (debounced)
     useLayoutEffect(() => {
         if (!containerRef.current) return;
+        let frame: number | null = null;
         resizeObsRef.current = new ResizeObserver(() => {
-            recomputeFitScale();
+            if (frame != null) cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => {
+                recomputeFitScale();
+                frame = null;
+            });
         });
         resizeObsRef.current.observe(containerRef.current);
-        return () => resizeObsRefRefCleanup();
+        return () => { if (frame != null) cancelAnimationFrame(frame); resizeObsRefRefCleanup(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPageIndex]);
 

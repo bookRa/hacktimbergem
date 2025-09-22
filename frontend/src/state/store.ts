@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createWithEqualityFn } from 'zustand/traditional';
 import { getDocument, PDFDocumentProxy } from 'pdfjs-dist';
 import { canvasToPdf } from '../utils/coords';
 import type { Concept } from '../api/concepts';
@@ -159,7 +159,7 @@ const lsBool = (k: string, def: boolean) => {
     try { const v = localStorage.getItem(k); return v ? v === '1' : def; } catch { return def; }
 };
 
-export const useProjectStore = create<AppState>((set, get): AppState => ({
+export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppState => ({
     pdfDoc: null,
     pages: [],
     currentPageIndex: 0,

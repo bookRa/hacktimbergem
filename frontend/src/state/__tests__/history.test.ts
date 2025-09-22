@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+declare const global: any;
 import { useProjectStore } from '../../state/store';
 
 type Ent = any;

@@ -107,7 +107,7 @@ export const RightPanel: React.FC = () => {
                 </div>
                 <div style={{ marginTop: 8 }}>
                     <div style={{ fontSize: 11, opacity: .7, marginBottom: 4 }}>Sheet Title</div>
-                    <input
+                    <input id="sheet-title" name="sheet-title" autoComplete="off"
                         value={draftTitle}
                         onChange={e => setDraftTitle(e.target.value)}
                         onBlur={applyTitle}
@@ -165,7 +165,7 @@ export const RightPanel: React.FC = () => {
                                                 title="Set sheet title from this block"
                                             >Title</button>
                                         </div>
-                                        <select
+                                        <select id={`ocr-status-${i}`} name={`ocr-status-${i}`}
                                             value={status}
                                             onChange={e => setBlockStatus(currentPageIndex, i, e.target.value as any)}
                                             style={{ background: '#1f2937', color: '#fff', border: '1px solid #374151', fontSize: 11, borderRadius: 4 }}
@@ -330,22 +330,22 @@ export const RightPanel: React.FC = () => {
                                     <div style={{ display: 'grid', gap: 6 }}>
                                         <div>
                                             <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Name</label>
-                                            <input value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                                                <input id="def-name-parent" name="def-name-parent" autoComplete="off" value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Scope</label>
                                             <div style={{ display: 'flex', gap: 10, fontSize: 12 }}>
                                                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                    <input type="radio" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
+                                                    <input type="radio" name="def-scope-parent" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
                                                 </label>
                                                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                    <input type="radio" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
+                                                    <input type="radio" name="def-scope-parent" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
                                                 </label>
                                             </div>
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Description</label>
-                                            <textarea value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-description-parent" name="def-description-parent" value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                         </div>
                                         {defDraft.type === 'symbol_definition' && (
                                             <div>
@@ -452,33 +452,33 @@ export const RightPanel: React.FC = () => {
                                         <div style={{ display: 'grid', gap: 6 }}>
                                             <div>
                                                 <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Name</label>
-                                                <input value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                                                <input id="def-name" name="def-name" autoComplete="off" value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Scope</label>
                                                 <div style={{ display: 'flex', gap: 10, fontSize: 12 }}>
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                        <input type="radio" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
+                                                    <input type="radio" name="def-scope" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
                                                     </label>
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                        <input type="radio" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
+                                                    <input type="radio" name="def-scope" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
                                                     </label>
                                                 </div>
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Description</label>
-                                                <textarea value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-description" name="def-description" value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                             </div>
                                             {defDraft.type === 'symbol_definition' && (
                                                 <div>
                                                     <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Visual Pattern Description</label>
-                                                    <textarea value={defDraft.visual_pattern_description || ''} onChange={e => setDefDraft({ ...defDraft, visual_pattern_description: e.target.value })} rows={2} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-visual" name="def-visual" value={defDraft.visual_pattern_description || ''} onChange={e => setDefDraft({ ...defDraft, visual_pattern_description: e.target.value })} rows={2} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                                 </div>
                                             )}
                                             {defDraft.type === 'component_definition' && (
                                                 <div>
                                                     <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Specifications (JSON)</label>
-                                                    <textarea value={defDraft.specifications || ''} onChange={e => setDefDraft({ ...defDraft, specifications: e.target.value })} rows={3} placeholder='{"key":"value"}' style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-specs" name="def-specs" value={defDraft.specifications || ''} onChange={e => setDefDraft({ ...defDraft, specifications: e.target.value })} rows={3} placeholder='{"key":"value"}' style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                                 </div>
                                             )}
                                             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>

@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const LeftNavigator: React.FC = () => {
-    const { pages, currentPageIndex, setCurrentPageIndex, pageTitles, entities, pageImages, fetchPageImage, leftTab, setLeftTab } = useProjectStore((s: ProjectStore & any) => ({
+    const { pages, currentPageIndex, setCurrentPageIndex, pageTitles, entities, pageImages, fetchPageImage, leftTab, setLeftTab, manifestStatus } = useProjectStore((s: ProjectStore & any) => ({
         pages: s.pages,
         currentPageIndex: s.currentPageIndex,
         setCurrentPageIndex: s.setCurrentPageIndex,
@@ -13,6 +13,7 @@ export const LeftNavigator: React.FC = () => {
         fetchPageImage: s.fetchPageImage,
         leftTab: s.leftTab,
         setLeftTab: s.setLeftTab,
+        manifestStatus: s.manifestStatus,
     }));
     const [query, setQuery] = React.useState('');
     const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -20,7 +21,7 @@ export const LeftNavigator: React.FC = () => {
         if (!query.trim()) return pages;
         const q = query.trim().toLowerCase();
         const result: number[] = [];
-        pages.forEach((_, i) => {
+        pages.forEach((_: number, i: number) => {
             const title = pageTitles[i]?.text || '';
             const label = `${i + 1}. ${title}`.toLowerCase();
             if (label.includes(q)) result.push(i);
@@ -38,28 +39,34 @@ export const LeftNavigator: React.FC = () => {
     // Removed hover preview per UX request
     // Prefetch visible thumbnails
     React.useEffect(() => {
-        const vis = rowVirtualizer.getVirtualItems();
-        vis.forEach(v => { const idx = filteredIndexes[v.index]; if (typeof idx === 'number' && !pageImages[idx]) fetchPageImage(idx); });
-    }, [rowVirtualizer.getVirtualItems().map(v => v.index).join(','), pageImages, filteredIndexes]);
+        if (manifestStatus !== 'complete') return;
+        const raf = requestAnimationFrame(() => {
+            const vis = rowVirtualizer.getVirtualItems();
+            vis.forEach(v => { const idx = filteredIndexes[v.index]; if (typeof idx === 'number' && !pageImages[idx]) fetchPageImage(idx); });
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [manifestStatus, rowVirtualizer.getVirtualItems().map(v => v.index).join(','), filteredIndexes]);
 
-    // Per sheet counts (simple summary by entity_type)
-    const countsFor = React.useCallback((sheetIdx: number) => {
-        const sn = sheetIdx + 1;
-        const c: Record<string, number> = {};
+    // Precompute per-sheet counts to avoid O(Npages * Nentities) every render
+    const countsBySheet = React.useMemo(() => {
+        const map: Record<number, { drawings: number; defs: number; inst: number; notes: number; legends: number; schedules: number }> = {};
         for (const e of entities as any[]) {
-            if (e.source_sheet_number !== sn) continue;
-            const t = e.entity_type;
-            c[t] = (c[t] || 0) + 1;
+            const idx = (e.source_sheet_number || 1) - 1;
+            if (!map[idx]) map[idx] = { drawings: 0, defs: 0, inst: 0, notes: 0, legends: 0, schedules: 0 };
+            switch (e.entity_type) {
+                case 'drawing': map[idx].drawings++; break;
+                case 'symbol_definition':
+                case 'component_definition': map[idx].defs++; break;
+                case 'symbol_instance':
+                case 'component_instance': map[idx].inst++; break;
+                case 'note': map[idx].notes++; break;
+                case 'legend': map[idx].legends++; break;
+                case 'schedule': map[idx].schedules++; break;
+            }
         }
-        // Aggregate groups for display
-        const drawings = (c['drawing'] || 0);
-        const defs = (c['symbol_definition'] || 0) + (c['component_definition'] || 0);
-        const inst = (c['symbol_instance'] || 0) + (c['component_instance'] || 0);
-        const notes = (c['note'] || 0);
-        const legends = (c['legend'] || 0);
-        const schedules = (c['schedule'] || 0);
-        return { drawings, defs, inst, notes, legends, schedules };
+        return map;
     }, [entities]);
+    const countsFor = React.useCallback((sheetIdx: number) => countsBySheet[sheetIdx] || { drawings: 0, defs: 0, inst: 0, notes: 0, legends: 0, schedules: 0 }, [countsBySheet]);
 
     return (
         <aside className="left-nav" style={{ position: 'relative', paddingBottom: 40 }}>
@@ -73,7 +80,7 @@ export const LeftNavigator: React.FC = () => {
             {leftTab === 'sheets' && (
                 <>
             <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" style={{ flex: 1, background: '#f0f4f7', border: '1px solid #d5dde3', borderRadius: 6, padding: '6px 8px', font: 'inherit' }} />
+                <input id="leftnav-search" name="leftnav-search" autoComplete="off" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" style={{ flex: 1, background: '#f0f4f7', border: '1px solid #d5dde3', borderRadius: 6, padding: '6px 8px', font: 'inherit' }} />
                 <button title="Previous" onClick={() => setCurrentPageIndex(Math.max(0, currentPageIndex - 1))} style={navBtn()}>‹</button>
                 <button title="Next" onClick={() => setCurrentPageIndex(Math.min(pages.length - 1, currentPageIndex + 1))} style={navBtn()}>›</button>
             </div>
@@ -94,7 +101,7 @@ export const LeftNavigator: React.FC = () => {
                         const sel = i === currentPageIndex;
                         const c = countsFor(i);
                         return (
-                            <div key={vi.key} ref={rowVirtualizer.measureElement as any} style={{ position: 'absolute', top: vi.start, left: 0, width: '100%' }}>
+                            <div key={vi.key} ref={rowVirtualizer.measureElement as any} data-index={vi.index} style={{ position: 'absolute', top: vi.start, left: 0, width: '100%' }}>
                                 <div className={sel ? 'active' : ''} style={{ display: 'grid', gridTemplateColumns: '40px 1fr', gap: 8, alignItems: 'center', padding: '8px 8px', borderRadius: 8, border: sel ? '1px solid #264f9e' : '1px solid transparent', background: sel ? '#eaf1ff' : 'transparent', boxSizing: 'border-box', marginBottom: 6, cursor: 'pointer' }}
                                     onClick={() => setCurrentPageIndex(i)}
                                 >
