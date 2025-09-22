@@ -11,6 +11,22 @@ import { ToastContainer } from './ToastContainer';
 
 export const App: React.FC = () => {
     const pdfDoc = useProjectStore((s: ProjectStore) => s.pdfDoc);
+    const { initProjectById, projectId } = useProjectStore((s: any) => ({ initProjectById: s.initProjectById, projectId: s.projectId }));
+    React.useEffect(() => {
+        // Restore project via URL hash (#p=projectId) or localStorage 'lastProjectId'
+        const tryInit = async () => {
+            const hash = typeof window !== 'undefined' ? window.location.hash : '';
+            const match = hash && hash.match(/#p=([a-f0-9]+)/i);
+            const pid = match?.[1] || localStorage.getItem('lastProjectId');
+            if (pid && !projectId) {
+                await initProjectById(pid);
+            }
+        };
+        // Defer until next tick to allow store listeners to mount
+        const id = setTimeout(tryInit, 0);
+        return () => clearTimeout(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [projectId]);
     const { leftPanel, rightPanel, setLeftPanelWidth, setRightPanelWidth, toggleLeftCollapsed, toggleRightCollapsed } = useProjectStore((s: any) => ({
         leftPanel: s.leftPanel,
         rightPanel: s.rightPanel,

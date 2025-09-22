@@ -34,6 +34,7 @@ Acceptance (S1)
   - [x] `rightInspectorHeightPx` persisted.
   - [x] `selectedScopeId` state for Explorer.
   - [ ] Consolidate canvas/list hover/selection into a shared selection model.
+  - [x] Session restore: persist project id to URL hash and localStorage; restore on reload.
 - [~] Explorer tabs scaffold; initial `Scopes` and `Symbols ▸ Instances` tabs.
   - [x] Scopes list shows descriptions and evidence counts.
   - [x] Symbols ▸ Instances list renders instances.

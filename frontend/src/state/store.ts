@@ -35,6 +35,7 @@ interface AppState {
     manifest: any | null;
     manifestStatus: 'idle' | 'polling' | 'complete' | 'error';
     uploadAndStart: (file: File) => Promise<void>; // uploads to backend & loads local PDF
+    initProjectById: (projectId: string) => Promise<void>; // initialize session from existing backend project id
     pollManifest: () => Promise<void>;
     fetchPageImage: (pageIndex: number) => Promise<void>;
     fetchPageOcr: (pageIndex: number) => Promise<void>;
@@ -191,12 +192,35 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             await get().loadPdf(file); // local preview
             const resp = await uploadPromise;
             set({ projectId: resp.project_id, manifestStatus: 'polling' });
+            try { localStorage.setItem('lastProjectId', resp.project_id); } catch {}
+            try { if (typeof window !== 'undefined') window.location.hash = `#p=${resp.project_id}`; } catch {}
             get().pollManifest();
         } catch (e) {
             console.error(e);
             set({ manifestStatus: 'error' });
             get().addToast({ kind: 'error', message: 'Upload failed' });
         }
+    },
+    initProjectById: async (projectId: string) => {
+        if (!projectId) return;
+        set({ projectId, manifestStatus: 'polling' });
+        try { localStorage.setItem('lastProjectId', projectId); } catch {}
+        // Try to load original PDF from backend so pdf.js can compute pages/fit scales
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/original.pdf`);
+            if (resp.ok) {
+                const blob = await resp.blob();
+                const file = new File([blob], 'original.pdf', { type: 'application/pdf' });
+                await (get() as any).loadPdf(file);
+            }
+        } catch (e) {
+            console.warn('Could not fetch original.pdf for project', projectId, e);
+        }
+        await get().pollManifest();
+        // After poll completes, ensure we have entities/concepts/links
+        get().fetchEntities();
+        get().fetchConcepts();
+        get().fetchLinks();
     },
     pollManifest: async () => {
         const { projectId } = get();
@@ -209,6 +233,14 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 const data = await r.json();
                 set({ manifest: data });
                 if (data.status === 'complete') {
+                    // Derive total pages if not yet set
+                    const pages = (get() as any).pages as number[];
+                    if (!pages || pages.length === 0) {
+                        const total = (data.total_pages || data.pages_total || data.page_count || (Array.isArray(data.pages) ? data.pages.length : 0) || 0) as number;
+                        if (total && total > 0) {
+                            set({ pages: Array.from({ length: total }, (_, i) => i) });
+                        }
+                    }
                     set({ manifestStatus: 'complete' });
                     get().addToast({ kind: 'success', message: 'Processing complete' });
                     // Fetch entities once processing completes (initial load)

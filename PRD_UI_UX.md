@@ -94,6 +94,7 @@ No other backend changes are required.
   - Panel sizes/collapsed, active tabs, hover/selection, Linking Mode, filters.
   - Explorer state: selected scope id, hover ids for scope/entity for cross-highlighting.
   - Derived selectors compute active sheet, selected entity payloads, and cross filters.
+  - Session persistence: last opened project id stored in `localStorage` and in URL hash `#p=<projectId>`; app restores session on reload via `initProjectById`.
 - Virtualized lists (`@tanstack/react-virtual`).
 - Spatial index for overlay hit‑testing when entities are large in number (RBush or simple grid buckets).
 
@@ -114,6 +115,7 @@ No other backend changes are required.
 2) New Explorer/Inspector for Scopes and Symbols (Instances) + unified selection + Linking Mode v1.
 3) Symbols (Definitions), Components, Spaces, Notes + overlay perf work.
 4) Search tab + All Entities table + polish (keyboard, density, theme tokens). Ensure Explorer tab state is independent; canvas selections do not override Scope inspector unless explicitly switching context.
+  - Persist/reopen last project: upon upload, set URL hash `#p=<projectId>` and `localStorage.lastProjectId`. On app start, if present, initialize from that project id to restore state without requiring re-upload.
 Work lands directly on branch `ui_overhaul`; no feature flags are required during local development.
 
 ### 15. Acceptance Criteria (Representative)

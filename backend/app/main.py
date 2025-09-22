@@ -79,6 +79,14 @@ async def get_ocr(project_id: str, page_num: int):
         return json.load(f)
 
 
+@app.get("/api/projects/{project_id}/original.pdf")
+async def get_original_pdf(project_id: str):
+    path = os.path.join(project_dir(project_id), "original.pdf")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Original PDF not found")
+    return FileResponse(path, media_type="application/pdf")
+
+
 # --------- Entities Endpoints ---------
 
 
