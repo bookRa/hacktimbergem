@@ -45,13 +45,16 @@ Acceptance (S1)
   - [x] Split right side into Explorer (top) + Inspector (bottom) containers.
   - [x] Inspector shows selected entity or scope; Evidence tray appears for scopes.
   - [ ] Collapse state remembered per section.
+  - [x] Dynamic inspector height in Linking Mode (chip tray + banner visible without nested scrolls).
 - [ ] Cross-highlighting: hover list → canvas; hover canvas → list row.
   - [x] Hovering a Scope in Explorer highlights its evidence on the canvas.
   - [x] Hovering an entity on the canvas highlights matching row in Symbols ▸ Instances.
-- [ ] Linking Mode v1: start from Scope; click items to add evidence chips; finish to commit.
-  - [~] Linking banner and Finish/Cancel controls in Inspector; canvas selection toggles evidence. (Need chip tray UI.)
+  - [x] Hovering a row in Symbols ▸ Instances highlights the matching overlay on the canvas.
+- [x] Linking Mode v1: start from Scope; click items to add evidence chips; finish to commit.
+  - [x] Linking banner and Finish/Cancel controls in Inspector; canvas selection toggles evidence.
   - [x] Chip tray shows queued evidence and allows removal before finish.
 - [ ] Stamp Palette for Symbols (Instances) with number-key shortcuts.
+  - [x] Stamp Palette added with 1–9 shortcuts; Esc cancels.
 - [ ] Undo/Redo wiring for create/link/delete actions.
 
 Milestone Demo Targets (S2)

@@ -58,8 +58,12 @@ export const RightPanel: React.FC = () => {
     }));
     const [defDraft, setDefDraft] = React.useState<null | { type: 'symbol_definition' | 'component_definition'; name: string; scope: 'project' | 'sheet'; description: string; visual_pattern_description?: string; specifications?: string }>(null);
     const defsSectionRef = React.useRef<HTMLDivElement | null>(null);
-    const [sectionsOpen, setSectionsOpen] = React.useState<{ details: boolean; definitions: boolean; spaces: boolean; scopes: boolean; backend: boolean; notes: boolean }>({ details: true, definitions: true, spaces: true, scopes: true, backend: true, notes: true });
-    const toggleSection = (k: 'details' | 'definitions' | 'spaces' | 'scopes' | 'backend' | 'notes') => setSectionsOpen(s => ({ ...s, [k]: !s[k] }));
+    const persistedSections = React.useMemo(() => {
+        try { const raw = localStorage.getItem('ui:sectionsOpen'); return raw ? JSON.parse(raw) : null; } catch { return null; }
+    }, []);
+    const [sectionsOpen, setSectionsOpen] = React.useState<{ details: boolean; definitions: boolean; spaces: boolean; scopes: boolean; backend: boolean; notes: boolean }>(persistedSections || { details: true, definitions: true, spaces: true, scopes: true, backend: true, notes: true });
+    const persistSections = (next: any) => { try { localStorage.setItem('ui:sectionsOpen', JSON.stringify(next)); } catch {} };
+    const toggleSection = (k: 'details' | 'definitions' | 'spaces' | 'scopes' | 'backend' | 'notes') => setSectionsOpen(s => { const n = { ...s, [k]: !s[k] }; persistSections(n); return n; });
     React.useEffect(() => {
         if (!selectedEntityId && sectionsOpen.details) {
             setSectionsOpen(s => ({ ...s, details: false }));
