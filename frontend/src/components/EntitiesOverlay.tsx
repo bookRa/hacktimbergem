@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { shallow } from 'zustand/shallow';
 import { useProjectStore } from '../state/store';
 import { pdfToCanvas } from '../utils/coords';
+import { buildIndex, queryRect } from '../utils/spatialIndex';
 
 declare global { interface Window { __TG_DEBUG_OCR_CLICK?: boolean; } }
 const dbg = (...args: any[]) => { if (window.__TG_DEBUG_OCR_CLICK) console.log('[OCRClick]', ...args); };
@@ -104,15 +105,16 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         return () => window.removeEventListener('keydown', esc);
     }, [creatingEntity, cancelEntityCreation, linking, cancelLinking]);
 
-    const pageEntitiesRaw = entities
-        .filter((e: any) => e.source_sheet_number === pageIndex + 1)
-        .slice()
-        .sort((a: any, b: any) => {
+    const pageEntitiesRaw = useMemo(() => {
+        const raw = (entities as any[]).filter((e: any) => e.source_sheet_number === pageIndex + 1);
+        raw.sort((a: any, b: any) => {
             const za = TYPE_Z_ORDER[a.entity_type] ?? 1;
             const zb = TYPE_Z_ORDER[b.entity_type] ?? 1;
             if (za !== zb) return za - zb; // lower z drawn first, higher z on top
             return 0;
         });
+        return raw;
+    }, [entities, pageIndex]);
     // Convert all entity PDF-space boxes to canvas space for rendering and hit-testing
     const ocr = (pageOcr as any)?.[pageIndex];
     const meta = (pagesMeta as any)?.[pageIndex];
@@ -133,7 +135,37 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
         }));
     }, [pageEntitiesRaw, pageWidthPts, pageHeightPts, (meta as any)?.nativeWidth, (meta as any)?.nativeHeight]);
-    if (!meta || !pageWidthPts || !pageHeightPts) return null;
+    // Defer early-return until after all hooks above are declared (to preserve hook order)
+
+    // Spatial index + viewport virtualization
+    const [visibleIds, setVisibleIds] = useState<string[] | null>(null);
+    const prevIdsRef = useRef<string[] | null>(null);
+    useEffect(() => {
+        const target = wrapperRef.current;
+        if (!target || !meta) return;
+        const items = pageEntities.map((e: any) => ({ id: e.id, rect: { x1: e._canvas_box[0], y1: e._canvas_box[1], x2: e._canvas_box[2], y2: e._canvas_box[3] } }));
+        const localIndex = buildIndex(items, 96);
+        const update = () => {
+            const sl = target.scrollLeft; const st = target.scrollTop; const cw = target.clientWidth; const ch = target.clientHeight;
+            const rect = { x1: sl / scale, y1: st / scale, x2: (sl + cw) / scale, y2: (st + ch) / scale } as any;
+            const ids = queryRect(localIndex, rect);
+            const prev = prevIdsRef.current;
+            let changed = true;
+            if (prev && prev.length === ids.length) {
+                changed = false;
+                for (let i = 0; i < ids.length; i++) { if (ids[i] !== prev[i]) { changed = true; break; } }
+            }
+            if (changed) {
+                prevIdsRef.current = ids;
+                setVisibleIds(ids);
+            }
+        };
+        update();
+        const onScroll = () => { requestAnimationFrame(update); };
+        target.addEventListener('scroll', onScroll);
+        const ro = new ResizeObserver(() => requestAnimationFrame(update)); ro.observe(target);
+        return () => { target.removeEventListener('scroll', onScroll); ro.disconnect(); };
+    }, [wrapperRef, scale, pageEntities, (meta as any)?.nativeWidth, (meta as any)?.nativeHeight]);
 
     const linkingActive = !!linking;
     const isAllowedByLinking = (ent: any): boolean => {
@@ -471,7 +503,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                         <rect key={`guide-${d.id}`} x={x1 * scale} y={y1 * scale} width={(x2 - x1) * scale} height={(y2 - y1) * scale} fill={isHover ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.05)'} stroke={isHover ? '#3b82f6' : '#93c5fd'} strokeDasharray="6 4" strokeWidth={isHover ? 2 : 1} />
                     );
                 })}
-                {pageEntities.map((e: any) => {
+                {(visibleIds ? pageEntities.filter((e: any) => visibleIds.includes(e.id)) : pageEntities).map((e: any) => {
                     const c = TYPE_COLORS[e.entity_type] || { stroke: '#64748b', fill: 'rgba(100,116,139,0.15)' };
                     const live = editingBoxes[e.id] || { x1: e._canvas_box[0], y1: e._canvas_box[1], x2: e._canvas_box[2], y2: e._canvas_box[3] };
                     const { x1, y1, x2, y2 } = live;

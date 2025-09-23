@@ -75,6 +75,9 @@ interface AppState {
     entities: any[]; // typed later via api/entities
     entitiesStatus: 'idle' | 'loading' | 'error';
     fetchEntities: () => Promise<void>;
+    // UI density
+    uiDensity: 'comfortable' | 'compact';
+    setUiDensity: (d: 'comfortable' | 'compact') => void;
     // Conceptual nodes
     concepts: Concept[];
     conceptsStatus: 'idle' | 'loading' | 'error';
@@ -108,7 +111,7 @@ interface AppState {
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities' | 'explorer';
     leftTab: 'sheets' | 'search';
-    explorerTab: 'scopes' | 'symbolsInst';
+    explorerTab: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes';
     // UI layout (Sprint 1)
     leftPanel: { widthPx: number; collapsed: boolean };
     rightPanel: { widthPx: number; collapsed: boolean };
@@ -128,6 +131,9 @@ interface AppState {
     selectedScopeId: string | null;
     setSelectedScopeId: (id: string | null) => void;
     selectScope: (id: string | null) => void;
+    selectedSpaceId: string | null;
+    activeSheetFilter: number[] | null; // filtered sheet indexes (zero-based) or null for all
+    selectSpace: (id: string | null) => void;
     hoverEntityId: string | null;
     hoverScopeId: string | null;
     setHoverEntityId: (id: string | null) => void;
@@ -137,6 +143,10 @@ interface AppState {
     scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
     setScrollTarget: (pageIndex: number, blockIndex: number) => void;
     clearScrollTarget: () => void;
+    // Focus specific bbox on canvas (in PDF pts)
+    focusBBoxPts: { pageIndex: number; bboxPts: [number, number, number, number]; at: number } | null;
+    setFocusBBox: (pageIndex: number, bboxPts: [number, number, number, number]) => void;
+    clearFocusBBox: () => void;
     // Toast notifications
     toasts: { id: string; kind: 'info' | 'error' | 'success'; message: string; createdAt: number; timeoutMs?: number; }[];
     addToast: (t: { kind?: 'info' | 'error' | 'success'; message: string; timeoutMs?: number; }) => void;
@@ -148,6 +158,8 @@ interface AppState {
     undo: () => Promise<void>;
     redo: () => Promise<void>;
     historyIdMap: Record<string, string>; // originalId -> currentId mapping for recreated entities
+    // Persisted Notes from OCR selection
+    promoteSelectionToNotePersist: (pageIndex: number) => Promise<void>;
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
@@ -191,8 +203,12 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     conceptsStatus: 'idle',
     links: [],
     linksStatus: 'idle',
+    uiDensity: (() => { try { return (localStorage.getItem('ui:density') as any) || 'comfortable'; } catch { return 'comfortable'; } })(),
     creatingEntity: null,
     selectedEntityId: null,
+    selectedSpaceId: null,
+    activeSheetFilter: null,
+    focusBBoxPts: null,
     uploadAndStart: async (file: File) => {
         // parallel: upload to backend and local load for immediate viewing
         const form = new FormData();
@@ -526,6 +542,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             addToast({ kind: 'error', message: 'Failed to load entities' });
         }
     },
+    setUiDensity: (d) => set(() => { try { localStorage.setItem('ui:density', d); } catch {} return { uiDensity: d } as any; }),
     fetchConcepts: async () => {
         const { projectId, addToast } = get();
         if (!projectId) return;
@@ -829,12 +846,34 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     selectedScopeId: null,
     setSelectedScopeId: (id) => set({ selectedScopeId: id } as any),
     selectScope: (id) => set({ selectedScopeId: id, rightPanelTab: 'explorer', explorerTab: 'scopes' } as any),
+    selectSpace: (id) => {
+        const st: any = get();
+        const { entities, links } = st;
+        if (!id) { set({ selectedSpaceId: null, activeSheetFilter: null } as any); return; }
+        // Compute relevant sheets
+        const depicting = links.filter((l: any) => l.rel_type === 'DEPICTS' && l.target_id === id).map((l: any) => entities.find((e: any) => e.id === l.source_id)).filter(Boolean);
+        const located = links.filter((l: any) => l.rel_type === 'LOCATED_IN' && l.target_id === id).map((l: any) => entities.find((e: any) => e.id === l.source_id)).filter(Boolean);
+        const sheets = new Set<number>();
+        depicting.forEach((d: any) => sheets.add((d.source_sheet_number || 1) - 1));
+        located.forEach((inst: any) => sheets.add((inst.source_sheet_number || 1) - 1));
+        const arr = Array.from(sheets).sort((a, b) => a - b);
+        // Pick a focus target: prefer a drawing from DEPICTS, else first located instance
+        const focusEnt: any = depicting[0] || located[0] || null;
+        set({ selectedSpaceId: id, activeSheetFilter: arr, leftTab: 'sheets' } as any);
+        if (focusEnt) {
+            const pageIndex = (focusEnt.source_sheet_number || 1) - 1;
+            const bb = focusEnt.bounding_box;
+            set({ currentPageIndex: pageIndex, focusBBoxPts: { pageIndex, bboxPts: [bb.x1, bb.y1, bb.x2, bb.y2], at: Date.now() } } as any);
+        }
+    },
     hoverEntityId: null,
     hoverScopeId: null,
     setHoverEntityId: (id) => set({ hoverEntityId: id } as any),
     setHoverScopeId: (id) => set({ hoverScopeId: id } as any),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
+    setFocusBBox: (pageIndex, bboxPts) => set({ focusBBoxPts: { pageIndex, bboxPts, at: Date.now() } } as any),
+    clearFocusBBox: () => set({ focusBBoxPts: null } as any),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {
         const id = Math.random().toString(36).slice(2);
         const toast = { id, kind, message, createdAt: Date.now(), timeoutMs };
@@ -854,6 +893,47 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     historyFuture: [],
     pushHistory: (entry: any) => set(state => ({ historyPast: [...(state as any).historyPast, entry], historyFuture: [] } as any)),
     historyIdMap: {},
+    promoteSelectionToNotePersist: async (pageIndex: number) => {
+        const { projectId, addToast, pageOcr, selectedBlocks, fetchEntities } = get() as any;
+        if (!projectId) return;
+        const ocr = pageOcr[pageIndex];
+        if (!ocr) return;
+        const selected = (selectedBlocks[pageIndex] || []).sort((a: number, b: number) => a - b);
+        if (!selected.length) { addToast({ kind: 'error', message: 'No OCR blocks selected' }); return; }
+        const blocks = ocr.blocks || [];
+        const chosen = selected.map((i: number) => blocks[i]).filter(Boolean);
+        if (!chosen.length) return;
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        const texts: string[] = [];
+        chosen.forEach((b: any) => {
+            const [bx1, by1, bx2, by2] = b.bbox;
+            if (bx1 < x1) x1 = bx1; if (by1 < y1) y1 = by1; if (bx2 > x2) x2 = bx2; if (by2 > y2) y2 = by2;
+            if (b.text) texts.push((b.text as string).trim());
+        });
+        const payload = { entity_type: 'note', source_sheet_number: pageIndex + 1, bounding_box: [x1, y1, x2, y2], text: texts.join('\n\n') } as any;
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!resp.ok) {
+                let msg = 'Create note failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            await fetchEntities();
+            // Auto-accept blocks used
+            const pageMeta = (get() as any).ocrBlockState[pageIndex];
+            if (pageMeta) {
+                const updatedMeta: Record<number, { status: 'unverified' | 'accepted' | 'flagged' | 'noise' }> = { ...pageMeta };
+                selected.forEach((i: number) => { if (updatedMeta[i]) updatedMeta[i] = { status: 'accepted' }; });
+                set((state) => ({ ocrBlockState: { ...state.ocrBlockState, [pageIndex]: updatedMeta }, selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] } }) as any);
+            } else {
+                set((state) => ({ selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] } }) as any);
+            }
+            addToast({ kind: 'success', message: 'Note created' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Create note failed' });
+        }
+    },
     undo: async () => {
         const st: any = get();
         const past: any[] = st.historyPast || [];

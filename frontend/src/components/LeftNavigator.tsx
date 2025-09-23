@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useProjectStore, ProjectStore } from '../state/store';
 
 export const LeftNavigator: React.FC = () => {
-    const { pages, currentPageIndex, setCurrentPageIndex, pageTitles, entities, pageImages, fetchPageImage, leftTab, setLeftTab, manifestStatus } = useProjectStore((s: ProjectStore & any) => ({
+    const { pages, currentPageIndex, setCurrentPageIndex, pageTitles, entities, pageImages, fetchPageImage, leftTab, setLeftTab, manifestStatus, activeSheetFilter, selectedSpaceId, selectSpace } = useProjectStore((s: ProjectStore & any) => ({
         pages: s.pages,
         currentPageIndex: s.currentPageIndex,
         setCurrentPageIndex: s.setCurrentPageIndex,
@@ -14,20 +14,26 @@ export const LeftNavigator: React.FC = () => {
         leftTab: s.leftTab,
         setLeftTab: s.setLeftTab,
         manifestStatus: s.manifestStatus,
+        activeSheetFilter: s.activeSheetFilter,
+        selectedSpaceId: s.selectedSpaceId,
+        selectSpace: s.selectSpace,
     }));
     const [query, setQuery] = React.useState('');
     const containerRef = React.useRef<HTMLDivElement | null>(null);
+    const baseIndexes = React.useMemo(() => {
+        return Array.isArray(activeSheetFilter) && activeSheetFilter.length ? activeSheetFilter : pages;
+    }, [activeSheetFilter, pages]);
     const filteredIndexes = React.useMemo(() => {
-        if (!query.trim()) return pages;
+        if (!query.trim()) return baseIndexes;
         const q = query.trim().toLowerCase();
         const result: number[] = [];
-        pages.forEach((_: number, i: number) => {
+        baseIndexes.forEach((i: number) => {
             const title = pageTitles[i]?.text || '';
             const label = `${i + 1}. ${title}`.toLowerCase();
             if (label.includes(q)) result.push(i);
         });
         return result;
-    }, [pages, pageTitles, query]);
+    }, [baseIndexes, pageTitles, query]);
     // Virtualizer over filtered indices only (prevents spacing bugs)
     const rowVirtualizer = useVirtualizer({
         count: filteredIndexes.length,
@@ -84,6 +90,12 @@ export const LeftNavigator: React.FC = () => {
                 <button title="Previous" onClick={() => setCurrentPageIndex(Math.max(0, currentPageIndex - 1))} style={navBtn()}>‹</button>
                 <button title="Next" onClick={() => setCurrentPageIndex(Math.min(pages.length - 1, currentPageIndex + 1))} style={navBtn()}>›</button>
             </div>
+            {activeSheetFilter && activeSheetFilter.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, color: '#264f9e' }}>Filtered by Space</span>
+                    <button onClick={() => selectSpace(null)} style={{ background: '#eaf1ff', border: '1px solid #b6c6f1', color: '#264f9e', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Clear</button>
+                </div>
+            )}
             <div ref={containerRef as any} style={{ height: 'calc(100vh - 180px)', overflow: 'auto', position: 'relative' }}
                 onKeyDown={(e) => {
                     if (e.key === 'ArrowUp') { e.preventDefault(); setCurrentPageIndex(Math.max(0, currentPageIndex - 1)); }

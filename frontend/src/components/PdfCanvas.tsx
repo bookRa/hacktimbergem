@@ -19,7 +19,7 @@ export const PdfCanvas: React.FC = () => {
     const resizeObsRef = useRef<ResizeObserver | null>(null);
     const renderTaskRef = useRef<any>(null);
 
-    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity, manifestStatus } = useProjectStore((s: ProjectStore & any) => ({
+    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity, manifestStatus, focusBBoxPts, clearFocusBBox } = useProjectStore((s: ProjectStore & any) => ({
         pdfDoc: s.pdfDoc,
         currentPageIndex: s.currentPageIndex,
         pages: s.pages,
@@ -40,6 +40,8 @@ export const PdfCanvas: React.FC = () => {
         clearScrollTarget: s.clearScrollTarget,
         creatingEntity: s.creatingEntity,
         manifestStatus: s.manifestStatus,
+        focusBBoxPts: (s as any).focusBBoxPts,
+        clearFocusBBox: (s as any).clearFocusBBox,
     }));
 
     // Render page and compute fit scale (only if backend image not yet present)
@@ -195,6 +197,40 @@ export const PdfCanvas: React.FC = () => {
         setTimeout(() => { clearScrollTarget(); }, 50);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scrollTarget, scale]);
+
+    // Focus to an arbitrary bbox (PDF pts) when requested
+    useEffect(() => {
+        if (!focusBBoxPts) return;
+        const { pageIndex, bboxPts } = focusBBoxPts as any;
+        if (pageIndex !== currentPageIndex) return;
+        const ocr = pageOcr[currentPageIndex];
+        if (!ocr || !containerRef.current || !meta) return;
+        const [x1, y1, x2, y2] = bboxPts as [number, number, number, number];
+        const centerX = (x1 + x2) / 2;
+        const centerY = (y1 + y2) / 2;
+        const desiredW = (x2 - x1);
+        const desiredH = (y2 - y1);
+        // If bbox is tiny, gently zoom in for visibility
+        const minViewPx = 160; // target minimum size on screen
+        const neededScaleX = (minViewPx / Math.max(1, desiredW)) / (meta.nativeWidth / ocr.width_pts);
+        const neededScaleY = (minViewPx / Math.max(1, desiredH)) / (meta.nativeHeight / ocr.height_pts);
+        const neededScale = Math.min(4, Math.max(scale, Math.min(neededScaleX, neededScaleY)));
+        if (neededScale > scale) {
+            setZoomMode('manual');
+            setManualScale(neededScale);
+        }
+        requestAnimationFrame(() => {
+            if (!containerRef.current) return;
+            const maxLeft = meta.nativeWidth * neededScale - containerRef.current.clientWidth;
+            const maxTop = meta.nativeHeight * neededScale - containerRef.current.clientHeight;
+            const targetScrollLeft = Math.max(0, Math.min(maxLeft, centerX * neededScale - containerRef.current.clientWidth / 2));
+            const targetScrollTop = Math.max(0, Math.min(maxTop, centerY * neededScale - containerRef.current.clientHeight / 2));
+            containerRef.current.scrollTo({ left: targetScrollLeft, top: targetScrollTop, behavior: 'smooth' });
+        });
+        // Clear focus after applying
+        setTimeout(() => { (clearFocusBBox as any)(); }, 150);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusBBoxPts, scale]);
 
     // Pointer-centered zoom utility
     const applyPointerZoom = (deltaFactor: number, clientX: number, clientY: number) => {
