@@ -5,6 +5,7 @@ import 'pdfjs-dist/web/pdf_viewer.css';
 import { OcrOverlay } from './OcrOverlay';
 import { DragSelectOverlay } from './DragSelectOverlay';
 import { EntitiesOverlay } from './EntitiesOverlay';
+import { ZoomControls } from './ZoomControls';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -17,8 +18,10 @@ export const PdfCanvas: React.FC = () => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const pageWrapperRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
+    const renderTaskRef = useRef<any>(null);
+    const zoomOverlayRef = useRef<HTMLDivElement | null>(null);
 
-    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity } = useProjectStore((s: ProjectStore & any) => ({
+    const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity, manifestStatus, focusBBoxPts, clearFocusBBox } = useProjectStore((s: ProjectStore & any) => ({
         pdfDoc: s.pdfDoc,
         currentPageIndex: s.currentPageIndex,
         pages: s.pages,
@@ -37,7 +40,10 @@ export const PdfCanvas: React.FC = () => {
         scrollTarget: s.scrollTarget,
         setScrollTarget: s.setScrollTarget,
         clearScrollTarget: s.clearScrollTarget,
-        creatingEntity: s.creatingEntity
+        creatingEntity: s.creatingEntity,
+        manifestStatus: s.manifestStatus,
+        focusBBoxPts: (s as any).focusBBoxPts,
+        clearFocusBBox: (s as any).clearFocusBBox,
     }));
 
     // Render page and compute fit scale (only if backend image not yet present)
@@ -49,13 +55,10 @@ export const PdfCanvas: React.FC = () => {
             const page = await pdfDoc.getPage(pageNumber);
             if (cancelled) return;
             const viewport = page.getViewport({ scale: RASTER_SCALE });
-            const canvas = canvasRef.current;
             const holder = containerRef.current;
-            if (!canvas || !holder) return;
-            const ctx = canvas.getContext('2d', { alpha: false });
-            if (!ctx) return;
-            canvas.width = Math.floor(viewport.width);
-            canvas.height = Math.floor(viewport.height);
+            if (!holder) return;
+            const nativeWidth = Math.floor(viewport.width);
+            const nativeHeight = Math.floor(viewport.height);
             // Compute fit scale immediately using holder size
             const style = getComputedStyle(holder);
             const padL = parseFloat(style.paddingLeft) || 0;
@@ -66,47 +69,95 @@ export const PdfCanvas: React.FC = () => {
             const availableH = holder.clientHeight - padT - padB - 4;
             let fitScale = 1;
             if (availableW > 0 && availableH > 0) {
-                fitScale = Math.min(availableW / canvas.width, availableH / canvas.height);
+                fitScale = Math.min(availableW / nativeWidth, availableH / nativeHeight);
             }
+            // pageWidthPts/pageHeightPts are PDF-space dimensions (points). Since
+            // viewport was created with scale=RASTER_SCALE (300/72), dividing by
+            // RASTER_SCALE yields original PDF width/height in points.
             setPageMeta({
                 pageNumber: currentPageIndex,
-                nativeWidth: canvas.width,
-                nativeHeight: canvas.height,
-                fitPageScale: fitScale
+                nativeWidth,
+                nativeHeight,
+                fitPageScale: fitScale,
+                pageWidthPts: viewport.width / RASTER_SCALE,
+                pageHeightPts: viewport.height / RASTER_SCALE
             });
             if (zoom.mode === 'fit') updateFitScale(currentPageIndex, fitScale);
+            // Cancel any in-flight render before starting a new one
+            if (renderTaskRef.current && typeof renderTaskRef.current.cancel === 'function') {
+                try { renderTaskRef.current.cancel(); } catch {}
+                renderTaskRef.current = null;
+            }
             // Only render via pdf.js if no backend raster yet
             if (!pageImages[currentPageIndex]) {
-                await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d', { alpha: false });
+                if (!ctx) return;
+                canvas.width = nativeWidth;
+                canvas.height = nativeHeight;
+                const task = page.render({ canvasContext: ctx, viewport, intent: 'print' });
+                renderTaskRef.current = task;
+                try {
+                    await task.promise;
+                } catch (_) {
+                    // ignore cancellations
+                } finally {
+                    if (renderTaskRef.current === task) renderTaskRef.current = null;
+                }
             }
         })();
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            if (renderTaskRef.current && typeof renderTaskRef.current.cancel === 'function') {
+                try { renderTaskRef.current.cancel(); } catch {}
+                renderTaskRef.current = null;
+            }
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pdfDoc, currentPageIndex, zoom.mode, pageImages]);
+    }, [pdfDoc, currentPageIndex]);
 
-    // Fetch backend image lazily when we have a projectId
+    // Fetch backend image and OCR lazily when we have a projectId (OCR fetch is required for coordinate transforms)
     useEffect(() => {
-        fetchPageImage(currentPageIndex);
-        if (showOcr) fetchPageOcr(currentPageIndex);
+        // Avoid double fetch if already cached
+        if (!pageImages[currentPageIndex]) fetchPageImage(currentPageIndex);
+        if (!pageOcr[currentPageIndex]) fetchPageOcr(currentPageIndex);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPageIndex, showOcr]);
+    }, [currentPageIndex]);
 
-    // Recompute when switching into fit mode (ensures correct scale after manual panning/resize)
+    // Recompute when switching into fit mode or when wrapper resizes
     useEffect(() => {
-        if (zoom.mode === 'fit') {
-            recomputeFitScale();
-        }
+        if (zoom.mode === 'fit') recomputeFitScale();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [zoom.mode]);
+    }, [zoom.mode, currentPageIndex]);
 
-    // Resize observer to recompute fit width scale
+    // When entering Fit mode, immediately center the page within the viewport (no animated scroll)
+    useEffect(() => {
+        if (zoom.mode !== 'fit') return;
+        const holder = containerRef.current;
+        const meta = pagesMeta[currentPageIndex];
+        if (!holder || !meta) return;
+        const scaleFit = meta.fitPageScale || effectiveScale(currentPageIndex);
+        const contentW = meta.nativeWidth * scaleFit;
+        const contentH = meta.nativeHeight * scaleFit;
+        const targetLeft = Math.max(0, (contentW - holder.clientWidth) / 2);
+        const targetTop = Math.max(0, (contentH - holder.clientHeight) / 2);
+        holder.scrollTo({ left: targetLeft, top: targetTop, behavior: 'auto' });
+    }, [zoom.mode, currentPageIndex, pagesMeta, effectiveScale]);
+
+    // Resize observer to recompute fit width scale (debounced)
     useLayoutEffect(() => {
         if (!containerRef.current) return;
+        let frame: number | null = null;
         resizeObsRef.current = new ResizeObserver(() => {
-            recomputeFitScale();
+            if (frame != null) cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => {
+                recomputeFitScale();
+                frame = null;
+            });
         });
         resizeObsRef.current.observe(containerRef.current);
-        return () => resizeObsRefRefCleanup();
+        return () => { if (frame != null) cancelAnimationFrame(frame); resizeObsRefRefCleanup(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPageIndex]);
 
@@ -162,6 +213,40 @@ export const PdfCanvas: React.FC = () => {
         setTimeout(() => { clearScrollTarget(); }, 50);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scrollTarget, scale]);
+
+    // Focus to an arbitrary bbox (PDF pts) when requested
+    useEffect(() => {
+        if (!focusBBoxPts) return;
+        const { pageIndex, bboxPts } = focusBBoxPts as any;
+        if (pageIndex !== currentPageIndex) return;
+        const ocr = pageOcr[currentPageIndex];
+        if (!ocr || !containerRef.current || !meta) return;
+        const [x1, y1, x2, y2] = bboxPts as [number, number, number, number];
+        const centerX = (x1 + x2) / 2;
+        const centerY = (y1 + y2) / 2;
+        const desiredW = (x2 - x1);
+        const desiredH = (y2 - y1);
+        // If bbox is tiny, gently zoom in for visibility
+        const minViewPx = 160; // target minimum size on screen
+        const neededScaleX = (minViewPx / Math.max(1, desiredW)) / (meta.nativeWidth / ocr.width_pts);
+        const neededScaleY = (minViewPx / Math.max(1, desiredH)) / (meta.nativeHeight / ocr.height_pts);
+        const neededScale = Math.min(4, Math.max(scale, Math.min(neededScaleX, neededScaleY)));
+        if (neededScale > scale) {
+            setZoomMode('manual');
+            setManualScale(neededScale);
+        }
+        requestAnimationFrame(() => {
+            if (!containerRef.current) return;
+            const maxLeft = meta.nativeWidth * neededScale - containerRef.current.clientWidth;
+            const maxTop = meta.nativeHeight * neededScale - containerRef.current.clientHeight;
+            const targetScrollLeft = Math.max(0, Math.min(maxLeft, centerX * neededScale - containerRef.current.clientWidth / 2));
+            const targetScrollTop = Math.max(0, Math.min(maxTop, centerY * neededScale - containerRef.current.clientHeight / 2));
+            containerRef.current.scrollTo({ left: targetScrollLeft, top: targetScrollTop, behavior: 'auto' });
+        });
+        // Clear focus after applying
+        setTimeout(() => { (clearFocusBBox as any)(); }, 150);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusBBoxPts, scale]);
 
     // Pointer-centered zoom utility
     const applyPointerZoom = (deltaFactor: number, clientX: number, clientY: number) => {
@@ -274,10 +359,31 @@ export const PdfCanvas: React.FC = () => {
         };
     }, [applyPointerZoom, scale, zoom.mode]);
 
+    // Keep zoom pill centered at bottom of visible viewport (accounts for both axes scroll)
+    useEffect(() => {
+        const holder = containerRef.current;
+        const overlay = zoomOverlayRef.current;
+        if (!holder || !overlay) return;
+        const update = () => {
+            const centerX = holder.scrollLeft + holder.clientWidth / 2;
+            const margin = 24; // keep above horizontal scrollbar and content
+            const pillH = overlay.offsetHeight || 0;
+            const topY = holder.scrollTop + holder.clientHeight - pillH - margin;
+            overlay.style.left = `${centerX}px`;
+            overlay.style.top = `${topY}px`;
+        };
+        update();
+        const onScroll = () => requestAnimationFrame(update);
+        holder.addEventListener('scroll', onScroll);
+        const ro = new ResizeObserver(() => requestAnimationFrame(update));
+        ro.observe(holder);
+        return () => { holder.removeEventListener('scroll', onScroll); ro.disconnect(); };
+    }, [currentPageIndex]);
+
     if (!pdfDoc) return null;
 
     return (
-        <div ref={containerRef} className="pdf-canvas-wrapper" style={{ padding: '8px' }}>
+        <div ref={containerRef} className="pdf-canvas-wrapper" style={{ padding: '8px', position: 'relative' }}>
             <div ref={pageWrapperRef} style={{ margin: '0 auto', position: 'relative', width: displayWidth, height: displayHeight }}>
                 {pageImages[currentPageIndex] ? (
                     <>
@@ -303,6 +409,13 @@ export const PdfCanvas: React.FC = () => {
                         <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 )}
+            </div>
+            {/* Bottom-centered zoom pill pinned inside the scroll viewport */}
+            {/* Bottom-center zoom pill: absolute overlay updated on scroll to stay centered in viewport */}
+            <div ref={zoomOverlayRef} style={{ position: 'absolute', transform: 'translateX(-50%)', zIndex: 50, pointerEvents: 'none' }}>
+                <div style={{ pointerEvents: 'auto' }}>
+                    <ZoomControls />
+                </div>
             </div>
         </div>
     );

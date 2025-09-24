@@ -1,8 +1,9 @@
 import React from 'react';
 import { useProjectStore, ProjectStore } from '../state/store';
+import { RightExplorer } from './RightExplorer';
 
 export const RightPanel: React.FC = () => {
-    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById } = useProjectStore((s: ProjectStore & any) => ({
+    const { currentPageIndex, pageOcr, ocrBlockState, setBlockStatus, toggleOcr, showOcr, selectedBlocks, toggleSelectBlock, clearSelection, bulkSetStatus, mergeSelectedBlocks, deleteSelectedBlocks, promoteSelectionToNote, notes, rightPanelTab, setRightPanelTab, setScrollTarget, updateNoteType, pageTitles, setPageTitle, deriveTitleFromBlocks, entities, startEntityCreation, startDefinitionCreation, startInstanceStamp, creatingEntity, cancelEntityCreation, fetchEntities, selectedEntityId, setSelectedEntityId, updateEntityMeta, deleteEntity, addToast, concepts, links, conceptsStatus, linksStatus, fetchConcepts, fetchLinks, createConcept, updateConcept, deleteConceptById, startLinking, toggleLinkTarget, finishLinking, cancelLinking, linking, deleteLinkById, rightInspectorHeightPx, setRightInspectorHeight, selectedScopeId } = useProjectStore((s: ProjectStore & any) => ({
         currentPageIndex: s.currentPageIndex,
         pageOcr: s.pageOcr,
         ocrBlockState: s.ocrBlockState,
@@ -51,11 +52,18 @@ export const RightPanel: React.FC = () => {
         cancelLinking: (s as any).cancelLinking,
         linking: (s as any).linking,
         deleteLinkById: (s as any).deleteLinkById,
+        rightInspectorHeightPx: (s as any).rightInspectorHeightPx,
+        setRightInspectorHeight: (s as any).setRightInspectorHeight,
+        selectedScopeId: (s as any).selectedScopeId,
     }));
     const [defDraft, setDefDraft] = React.useState<null | { type: 'symbol_definition' | 'component_definition'; name: string; scope: 'project' | 'sheet'; description: string; visual_pattern_description?: string; specifications?: string }>(null);
     const defsSectionRef = React.useRef<HTMLDivElement | null>(null);
-    const [sectionsOpen, setSectionsOpen] = React.useState<{ details: boolean; definitions: boolean; spaces: boolean; scopes: boolean; backend: boolean; notes: boolean }>({ details: true, definitions: true, spaces: true, scopes: true, backend: true, notes: true });
-    const toggleSection = (k: 'details' | 'definitions' | 'spaces' | 'scopes' | 'backend' | 'notes') => setSectionsOpen(s => ({ ...s, [k]: !s[k] }));
+    const persistedSections = React.useMemo(() => {
+        try { const raw = localStorage.getItem('ui:sectionsOpen'); return raw ? JSON.parse(raw) : null; } catch { return null; }
+    }, []);
+    const [sectionsOpen, setSectionsOpen] = React.useState<{ details: boolean; definitions: boolean; spaces: boolean; scopes: boolean; backend: boolean; notes: boolean }>(persistedSections || { details: true, definitions: true, spaces: true, scopes: true, backend: true, notes: true });
+    const persistSections = (next: any) => { try { localStorage.setItem('ui:sectionsOpen', JSON.stringify(next)); } catch {} };
+    const toggleSection = (k: 'details' | 'definitions' | 'spaces' | 'scopes' | 'backend' | 'notes') => setSectionsOpen(s => { const n = { ...s, [k]: !s[k] }; persistSections(n); return n; });
     React.useEffect(() => {
         if (!selectedEntityId && sectionsOpen.details) {
             setSectionsOpen(s => ({ ...s, details: false }));
@@ -87,6 +95,7 @@ export const RightPanel: React.FC = () => {
                 <div style={{ display: 'flex', gap: 4 }}>
                     <button onClick={() => setRightPanelTab('blocks')} style={tabBtnStyle(rightPanelTab === 'blocks')}>Blocks</button>
                     <button onClick={() => setRightPanelTab('entities')} style={tabBtnStyle(rightPanelTab === 'entities')}>Entities</button>
+                    <button onClick={() => setRightPanelTab('explorer')} style={tabBtnStyle(rightPanelTab === 'explorer')}>Explorer</button>
                 </div>
             </h3>
             <section className="kp-section" style={{ borderBottom: '1px solid #1f2937', paddingBottom: 8, marginBottom: 8 }}>
@@ -98,7 +107,7 @@ export const RightPanel: React.FC = () => {
                 </div>
                 <div style={{ marginTop: 8 }}>
                     <div style={{ fontSize: 11, opacity: .7, marginBottom: 4 }}>Sheet Title</div>
-                    <input
+                    <input id="sheet-title" name="sheet-title" autoComplete="off"
                         value={draftTitle}
                         onChange={e => setDraftTitle(e.target.value)}
                         onBlur={applyTitle}
@@ -156,7 +165,7 @@ export const RightPanel: React.FC = () => {
                                                 title="Set sheet title from this block"
                                             >Title</button>
                                         </div>
-                                        <select
+                                        <select id={`ocr-status-${i}`} name={`ocr-status-${i}`}
                                             value={status}
                                             onChange={e => setBlockStatus(currentPageIndex, i, e.target.value as any)}
                                             style={{ background: '#1f2937', color: '#fff', border: '1px solid #374151', fontSize: 11, borderRadius: 4 }}
@@ -181,8 +190,45 @@ export const RightPanel: React.FC = () => {
                     </section>
                 </>
             )}
+            {rightPanelTab === 'explorer' && (
+                (() => {
+                    const inspectorDynamicHeight = (linking && linking.relType === 'JUSTIFIED_BY') ? Math.max(rightInspectorHeightPx, 420) : rightInspectorHeightPx;
+                    return (
+                <>
+                    <section className="kp-section" style={{ maxHeight: `calc(100vh - ${inspectorDynamicHeight}px)`, overflow: 'auto' }}>
+                        <RightExplorer />
+                    </section>
+                    <section className="kp-section" style={{ height: inspectorDynamicHeight, overflow: 'auto', position: 'relative' }}>
+                        {/* Linking banner for Explorer context */}
+                        {linking && linking.relType === 'JUSTIFIED_BY' && (
+                            <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 10, color: '#e2e8f0' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12 }}>Linking Evidence • Scope #{linking.anchor.id.slice(0,6)}</div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button onClick={() => finishLinking()} style={miniBtn(false)}>Finish ({linking.selectedTargetIds.length})</button>
+                                        <button onClick={() => cancelLinking()} style={miniBtn(false)}>Cancel</button>
+                                    </div>
+                                </div>
+                                <div style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>Click instances or notes on the canvas (or in lists) to add evidence.</div>
+                            </div>
+                        )}
+                        {selectedEntityId && rightPanelTab !== 'explorer' ? (
+                            (() => {
+                                const ent = entities.find((e: any) => e.id === selectedEntityId);
+                                if (!ent) return <div style={{ fontSize: 12, opacity: .7 }}>(Select an entity to inspect)</div>;
+                                return <EntityEditor entity={ent} updateEntityMeta={updateEntityMeta} deleteEntity={deleteEntity} deselect={() => setSelectedEntityId(null)} />;
+                            })()
+                        ) : selectedScopeId ? (
+                            <ScopeInspector scopeId={selectedScopeId} />
+                        ) : (
+                            <div style={{ fontSize: 12, opacity: .7 }}>(Select a scope or entity)</div>
+                        )}
+                    </section>
+                </>
+                );})()
+            )}
             {rightPanelTab === 'entities' && (
-                <section className="kp-section" style={{ maxHeight: 'calc(100vh - 260px)', overflow: 'auto' }}>
+                <section className="kp-section" style={{ maxHeight: `calc(100vh - ${rightInspectorHeightPx}px)`, overflow: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>Entities (Page {currentPageIndex + 1})</div>
                         <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
@@ -284,22 +330,22 @@ export const RightPanel: React.FC = () => {
                                     <div style={{ display: 'grid', gap: 6 }}>
                                         <div>
                                             <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Name</label>
-                                            <input value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                                                <input id="def-name-parent" name="def-name-parent" autoComplete="off" value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Scope</label>
                                             <div style={{ display: 'flex', gap: 10, fontSize: 12 }}>
                                                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                    <input type="radio" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
+                                                    <input type="radio" name="def-scope-parent" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
                                                 </label>
                                                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                    <input type="radio" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
+                                                    <input type="radio" name="def-scope-parent" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
                                                 </label>
                                             </div>
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Description</label>
-                                            <textarea value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-description-parent" name="def-description-parent" value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                         </div>
                                         {defDraft.type === 'symbol_definition' && (
                                             <div>
@@ -406,33 +452,33 @@ export const RightPanel: React.FC = () => {
                                         <div style={{ display: 'grid', gap: 6 }}>
                                             <div>
                                                 <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Name</label>
-                                                <input value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
+                                                <input id="def-name" name="def-name" autoComplete="off" value={defDraft.name} onChange={e => setDefDraft({ ...defDraft, name: e.target.value })} placeholder="Required" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4 }} />
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Scope</label>
                                                 <div style={{ display: 'flex', gap: 10, fontSize: 12 }}>
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                        <input type="radio" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
+                                                    <input type="radio" name="def-scope" checked={defDraft.scope === 'sheet'} onChange={() => setDefDraft({ ...defDraft, scope: 'sheet' })} /> This Sheet Only
                                                     </label>
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f8fafc' }}>
-                                                        <input type="radio" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
+                                                    <input type="radio" name="def-scope" checked={defDraft.scope === 'project'} onChange={() => setDefDraft({ ...defDraft, scope: 'project' })} /> Project-Wide
                                                     </label>
                                                 </div>
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Description</label>
-                                                <textarea value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-description" name="def-description" value={defDraft.description} onChange={e => setDefDraft({ ...defDraft, description: e.target.value })} rows={3} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                             </div>
                                             {defDraft.type === 'symbol_definition' && (
                                                 <div>
                                                     <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Visual Pattern Description</label>
-                                                    <textarea value={defDraft.visual_pattern_description || ''} onChange={e => setDefDraft({ ...defDraft, visual_pattern_description: e.target.value })} rows={2} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-visual" name="def-visual" value={defDraft.visual_pattern_description || ''} onChange={e => setDefDraft({ ...defDraft, visual_pattern_description: e.target.value })} rows={2} placeholder="Optional" style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                                 </div>
                                             )}
                                             {defDraft.type === 'component_definition' && (
                                                 <div>
                                                     <label style={{ fontSize: 10, opacity: .8, display: 'block', marginBottom: 2, color: '#cbd5e1' }}>Specifications (JSON)</label>
-                                                    <textarea value={defDraft.specifications || ''} onChange={e => setDefDraft({ ...defDraft, specifications: e.target.value })} rows={3} placeholder='{"key":"value"}' style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
+                                                <textarea id="def-specs" name="def-specs" value={defDraft.specifications || ''} onChange={e => setDefDraft({ ...defDraft, specifications: e.target.value })} rows={3} placeholder='{"key":"value"}' style={{ width: '100%', background: '#1f2937', border: '1px solid #334155', color: '#f8fafc', fontSize: 12, padding: '4px 6px', borderRadius: 4, resize: 'vertical' }} />
                                                 </div>
                                             )}
                                             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -578,8 +624,21 @@ export const RightPanel: React.FC = () => {
                     {notes.filter((n: any) => n.pageIndex === currentPageIndex).length === 0 && <p style={{ fontSize: 12, opacity: .7, margin: 0 }}>(No notes yet)</p>}
                 </section>
             )}
-            <section className="kp-section muted" style={{ marginTop: 12 }}>
+            <section className="kp-section muted" style={{ marginTop: 12, position: 'relative' }}>
                 <p style={{ fontSize: 11, lineHeight: 1.4 }}>Tips: Use Cmd/Ctrl/Shift to multi-select. Merge creates a composite block. Promote turns selection into a Note and auto-accepts its blocks.</p>
+                {/* Resize grabber for inspector height */}
+                <div
+                    onMouseDown={(e) => {
+                        const startY = e.clientY;
+                        const startH = rightInspectorHeightPx;
+                        const onMove = (ev: MouseEvent) => setRightInspectorHeight(startH + (ev.clientY - startY));
+                        const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onUp);
+                    }}
+                    title="Drag to resize inspector"
+                    style={{ position: 'absolute', top: -6, left: 6, right: 6, height: 8, cursor: 'row-resize', background: 'transparent' }}
+                />
             </section>
         </aside>
     );
@@ -851,6 +910,59 @@ const EntityEditor: React.FC<EntityEditorProps> = ({ entity, updateEntityMeta, d
                     </div>
                 );
             })()}
+        </div>
+    );
+};
+
+const ScopeInspector: React.FC<{ scopeId: string }> = ({ scopeId }) => {
+    const { concepts, links, startLinking, linking, cancelLinking, toggleLinkTarget, finishLinking, entities } = useProjectStore((s: any) => ({ concepts: s.concepts, links: s.links, startLinking: s.startLinking, linking: s.linking, cancelLinking: s.cancelLinking, toggleLinkTarget: s.toggleLinkTarget, finishLinking: s.finishLinking, entities: s.entities }));
+    const scope = concepts.find((c: any) => c.id === scopeId);
+    const evidence = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === scopeId);
+    if (!scope) return <div style={{ fontSize: 12, opacity: .7 }}>(Missing scope)</div>;
+    return (
+        <div style={{ fontSize: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontWeight: 600 }}>Scope</div>
+                {!linking && <button onClick={() => startLinking('JUSTIFIED_BY', { kind: 'scope', id: scopeId })} style={{ background: '#2563eb', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Link Evidence</button>}
+            </div>
+            <div style={{ marginTop: 6 }}>
+                <div style={{ opacity: .7 }}>Description</div>
+                <div>{scope.description || '(no description)'}</div>
+            </div>
+            <div style={{ marginTop: 8 }}>
+                <div style={{ opacity: .7 }}>Category</div>
+                <div>{scope.category || '(none)'}</div>
+            </div>
+            <div style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Evidence ({evidence.length})</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {evidence.map((l: any) => <span key={l.id} style={{ fontSize: 11, border: '1px solid #e1e6eb', padding: '2px 6px', borderRadius: 10 }}>ent {l.target_id.slice(0,6)}</span>)}
+                    {evidence.length === 0 && <span style={{ opacity: .7 }}>(none yet)</span>}
+                </div>
+            </div>
+            {/* Chip tray when in linking mode to preview queued evidence */}
+            {linking && linking.relType === 'JUSTIFIED_BY' && linking.anchor?.id === scopeId && (
+                <div style={{ marginTop: 10 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Queued Evidence ({linking.selectedTargetIds.length})</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {linking.selectedTargetIds.map((id: string) => {
+                            const ent = entities.find((e: any) => e.id === id);
+                            const label = ent ? (ent.title || ent.name || ent.entity_type) : id.slice(0,6);
+                            return (
+                                <span key={id} style={{ fontSize: 11, border: '1px solid #e1e6eb', padding: '2px 6px', borderRadius: 10, background: '#f8fafc' }}>
+                                    {label}
+                                    <button onClick={() => toggleLinkTarget(id)} style={{ marginLeft: 6, fontSize: 11, background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>×</button>
+                                </span>
+                            );
+                        })}
+                        {linking.selectedTargetIds.length === 0 && <span style={{ opacity: .7 }}>(none queued)</span>}
+                    </div>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+                        <button onClick={() => finishLinking()} style={{ background: '#16a34a', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Finish</button>
+                        <button onClick={() => cancelLinking()} style={{ background: '#f59e0b', color: '#fff', border: 'none', fontSize: 12, padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -43,6 +43,58 @@ body {
     display: grid;
     grid-template-columns: 240px 1fr 360px;
     height: 100%;
+    position: relative;
+}
+
+.split-handle {
+    position: absolute;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 20;
+    background: transparent;
+}
+
+.split-handle.left { left: 0; }
+.split-handle.right { right: 0; }
+
+.collapse-btn {
+    position: absolute;
+    bottom: 8px;
+    background: #f0f4f7;
+    border: 1px solid #d5dde3;
+    border-radius: 12px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+}
+.collapse-btn.left { right: 8px; }
+.collapse-btn.right { left: 8px; }
+
+.left-pane-wrapper,
+.right-pane-wrapper { position: relative; }
+
+.collapsed-rail {
+    position: relative;
+    height: 100%;
+    background: #ffffff;
+    border-right: 1px solid #e3e7ea;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.collapsed-rail.right {
+    border-right: none;
+    border-left: 1px solid #e3e7ea;
+}
+.expand-btn {
+    background: #f0f4f7;
+    border: 1px solid #d5dde3;
+    border-radius: 12px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
 }
 
 .left-nav,
@@ -93,6 +145,11 @@ body {
     border-color: #264f9e;
 }
 
+/* Ensure virtualized sheet rows reserve space and don't overlap */
+.left-nav .sheet-row {
+    box-sizing: border-box;
+}
+
 .center-pane {
     position: relative;
     display: flex;
@@ -127,23 +184,7 @@ body {
     height: 100%;
 }
 
-.zoom-controls {
-    position: absolute;
-    top: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(32, 37, 43, 0.85);
-    backdrop-filter: blur(4px);
-    color: #fff;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
-    border-radius: 999px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    z-index: 10;
-}
+.zoom-controls { /* positioning now handled inline in ZoomControls */ }
 
 .zoom-controls button {
     background: #3a4450;

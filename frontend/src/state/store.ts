@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createWithEqualityFn } from 'zustand/traditional';
 import { getDocument, PDFDocumentProxy } from 'pdfjs-dist';
 import { canvasToPdf } from '../utils/coords';
 import type { Concept } from '../api/concepts';
@@ -12,6 +12,8 @@ export interface PageRenderMeta {
     nativeWidth: number;   // 300 DPI raster width (px)
     nativeHeight: number;  // 300 DPI raster height (px)
     fitPageScale: number;  // computed to fit entire page (width & height)
+    pageWidthPts?: number; // original PDF width in points (72dpi space)
+    pageHeightPts?: number; // original PDF height in points
 }
 
 export interface ZoomState {
@@ -35,10 +37,11 @@ interface AppState {
     manifest: any | null;
     manifestStatus: 'idle' | 'polling' | 'complete' | 'error';
     uploadAndStart: (file: File) => Promise<void>; // uploads to backend & loads local PDF
+    initProjectById: (projectId: string) => Promise<void>; // initialize session from existing backend project id
     pollManifest: () => Promise<void>;
     fetchPageImage: (pageIndex: number) => Promise<void>;
     fetchPageOcr: (pageIndex: number) => Promise<void>;
-    toggleOcr: () => void;
+    toggleOcr: () => void; // deprecated from UI; kept for Right Panel switch
     loadPdf: (file: File) => Promise<void>;
     setCurrentPageIndex: (i: number) => void;
     setPageMeta: (meta: PageRenderMeta) => void;
@@ -72,6 +75,9 @@ interface AppState {
     entities: any[]; // typed later via api/entities
     entitiesStatus: 'idle' | 'loading' | 'error';
     fetchEntities: () => Promise<void>;
+    // UI density
+    uiDensity: 'comfortable' | 'compact';
+    setUiDensity: (d: 'comfortable' | 'compact') => void;
     // Conceptual nodes
     concepts: Concept[];
     conceptsStatus: 'idle' | 'loading' | 'error';
@@ -98,25 +104,74 @@ interface AppState {
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
     setSelectedEntityId: (id: string | null) => void;
+    selectEntity: (id: string | null) => void;
     updateEntityBBox: (id: string, bbox: [number, number, number, number]) => Promise<void>;
     updateEntityMeta: (id: string, data: any) => Promise<void>;
     deleteEntity: (id: string) => Promise<void>;
     // Panel tabs
-    rightPanelTab: 'blocks' | 'entities';
+    rightPanelTab: 'blocks' | 'entities' | 'explorer';
+    leftTab: 'sheets' | 'search';
+    explorerTab: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes';
+    // UI layout (Sprint 1)
+    leftPanel: { widthPx: number; collapsed: boolean };
+    rightPanel: { widthPx: number; collapsed: boolean };
+    setLeftPanelWidth: (px: number) => void;
+    setRightPanelWidth: (px: number) => void;
+    toggleLeftCollapsed: () => void;
+    toggleRightCollapsed: () => void;
+    setLeftTab: (t: 'sheets' | 'search') => void;
+    setExplorerTab: (t: 'scopes' | 'symbolsInst') => void;
+    // Layer visibility (authoritative for overlays)
+    layers: { ocr: boolean; drawings: boolean; legends: boolean; schedules: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
+    setLayer: (k: keyof AppState['layers'], v: boolean) => void;
+    // Right inspector sizing
+    rightInspectorHeightPx: number;
+    setRightInspectorHeight: (px: number) => void;
+    // Explorer selections
+    selectedScopeId: string | null;
+    setSelectedScopeId: (id: string | null) => void;
+    selectScope: (id: string | null) => void;
+    selectedSpaceId: string | null;
+    activeSheetFilter: number[] | null; // filtered sheet indexes (zero-based) or null for all
+    selectSpace: (id: string | null) => void;
+    hoverEntityId: string | null;
+    hoverScopeId: string | null;
+    setHoverEntityId: (id: string | null) => void;
+    setHoverScopeId: (id: string | null) => void;
     setRightPanelTab: (tab: 'blocks' | 'entities') => void;
     // Scroll targeting for PdfCanvas
     scrollTarget: { pageIndex: number; blockIndex: number; at: number } | null;
     setScrollTarget: (pageIndex: number, blockIndex: number) => void;
     clearScrollTarget: () => void;
+    // Focus specific bbox on canvas (in PDF pts)
+    focusBBoxPts: { pageIndex: number; bboxPts: [number, number, number, number]; at: number } | null;
+    setFocusBBox: (pageIndex: number, bboxPts: [number, number, number, number]) => void;
+    clearFocusBBox: () => void;
     // Toast notifications
     toasts: { id: string; kind: 'info' | 'error' | 'success'; message: string; createdAt: number; timeoutMs?: number; }[];
     addToast: (t: { kind?: 'info' | 'error' | 'success'; message: string; timeoutMs?: number; }) => void;
     dismissToast: (id: string) => void;
+    // --- Simple history (undo/redo) for core actions ---
+    historyPast: any[];
+    historyFuture: any[];
+    pushHistory: (entry: any) => void;
+    undo: () => Promise<void>;
+    redo: () => Promise<void>;
+    historyIdMap: Record<string, string>; // originalId -> currentId mapping for recreated entities
+    // Persisted Notes from OCR selection
+    promoteSelectionToNotePersist: (pageIndex: number) => Promise<void>;
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
 
-export const useProjectStore = create<AppState>((set, get): AppState => ({
+const lsNum = (k: string, def: number) => {
+    try { const v = localStorage.getItem(k); return v ? Math.max(0, parseInt(v, 10)) : def; } catch { return def; }
+};
+const lsBool = (k: string, def: boolean) => {
+    try { const v = localStorage.getItem(k); return v ? v === '1' : def; } catch { return def; }
+};
+
+export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppState => ({
     pdfDoc: null,
     pages: [],
     currentPageIndex: 0,
@@ -135,6 +190,12 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     notes: [],
     pageTitles: {},
     rightPanelTab: 'blocks',
+    leftTab: 'sheets',
+    leftPanel: { widthPx: lsNum('ui:leftWidth', 240), collapsed: lsBool('ui:leftCollapsed', false) },
+    rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
+    layers: { ocr: false, drawings: true, legends: true, schedules: true, symbols: true, components: true, notes: true, scopes: true },
+    rightInspectorHeightPx: lsNum('ui:rightInspectorHeight', 260),
+    explorerTab: 'scopes',
     scrollTarget: null,
     entities: [],
     entitiesStatus: 'idle',
@@ -142,8 +203,12 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
     conceptsStatus: 'idle',
     links: [],
     linksStatus: 'idle',
+    uiDensity: (() => { try { return (localStorage.getItem('ui:density') as any) || 'comfortable'; } catch { return 'comfortable'; } })(),
     creatingEntity: null,
     selectedEntityId: null,
+    selectedSpaceId: null,
+    activeSheetFilter: null,
+    focusBBoxPts: null,
     uploadAndStart: async (file: File) => {
         // parallel: upload to backend and local load for immediate viewing
         const form = new FormData();
@@ -154,12 +219,35 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             await get().loadPdf(file); // local preview
             const resp = await uploadPromise;
             set({ projectId: resp.project_id, manifestStatus: 'polling' });
+            try { localStorage.setItem('lastProjectId', resp.project_id); } catch {}
+            try { if (typeof window !== 'undefined') window.location.hash = `#p=${resp.project_id}`; } catch {}
             get().pollManifest();
         } catch (e) {
             console.error(e);
             set({ manifestStatus: 'error' });
             get().addToast({ kind: 'error', message: 'Upload failed' });
         }
+    },
+    initProjectById: async (projectId: string) => {
+        if (!projectId) return;
+        set({ projectId, manifestStatus: 'polling' });
+        try { localStorage.setItem('lastProjectId', projectId); } catch {}
+        // Try to load original PDF from backend so pdf.js can compute pages/fit scales
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/original.pdf`);
+            if (resp.ok) {
+                const blob = await resp.blob();
+                const file = new File([blob], 'original.pdf', { type: 'application/pdf' });
+                await (get() as any).loadPdf(file);
+            }
+        } catch (e) {
+            console.warn('Could not fetch original.pdf for project', projectId, e);
+        }
+        await get().pollManifest();
+        // After poll completes, ensure we have entities/concepts/links
+        get().fetchEntities();
+        get().fetchConcepts();
+        get().fetchLinks();
     },
     pollManifest: async () => {
         const { projectId } = get();
@@ -172,6 +260,14 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 const data = await r.json();
                 set({ manifest: data });
                 if (data.status === 'complete') {
+                    // Derive total pages if not yet set
+                    const pages = (get() as any).pages as number[];
+                    if (!pages || pages.length === 0) {
+                        const total = (data.total_pages || data.pages_total || data.page_count || (Array.isArray(data.pages) ? data.pages.length : 0) || 0) as number;
+                        if (total && total > 0) {
+                            set({ pages: Array.from({ length: total }, (_, i) => i) });
+                        }
+                    }
                     set({ manifestStatus: 'complete' });
                     get().addToast({ kind: 'success', message: 'Processing complete' });
                     // Fetch entities once processing completes (initial load)
@@ -217,15 +313,14 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         initBlocksForPage(pageIndex, blocks.length);
     },
     toggleOcr: () => set((state) => {
-        const turningOff = state.showOcr === true;
-        if (turningOff) {
-            const pageIndex = state.currentPageIndex;
-            return {
-                showOcr: false,
-                selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] }
-            } as Partial<AppState> as any;
-        }
-        return { showOcr: true } as Partial<AppState> as any;
+        const turningOff = state.layers.ocr === true;
+        const pageIndex = state.currentPageIndex;
+        const nextLayers = { ...state.layers, ocr: !state.layers.ocr } as any;
+        return {
+            layers: nextLayers,
+            showOcr: nextLayers.ocr,
+            selectedBlocks: turningOff ? { ...state.selectedBlocks, [pageIndex]: [] } : state.selectedBlocks
+        } as Partial<AppState> as any;
     }),
     loadPdf: async (file: File) => {
         const arrayBuf = await file.arrayBuffer();
@@ -446,6 +541,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             addToast({ kind: 'error', message: 'Failed to load entities' });
         }
     },
+    setUiDensity: (d) => set(() => { try { localStorage.setItem('ui:density', d); } catch {} return { uiDensity: d } as any; }),
     fetchConcepts: async () => {
         const { projectId, addToast } = get();
         if (!projectId) return;
@@ -509,19 +605,34 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     deleteLinkById: async (id) => {
-        const { projectId, addToast, fetchLinks } = get();
+        const { projectId, addToast, fetchLinks, pushHistory } = get() as any;
         if (!projectId) return;
         try {
+            const linkObj = (get() as any).links.find((l: any) => l.id === id);
             await apiDeleteLink(projectId, id);
             await fetchLinks();
             addToast({ kind: 'success', message: 'Link deleted' });
+            if (linkObj) try { pushHistory({ type: 'delete_links', links: [linkObj] }); } catch {}
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e?.message || 'Failed to delete link' });
         }
     },
     linking: null,
-    startLinking: (relType, anchor) => set({ linking: { relType, anchor, selectedTargetIds: [] } }),
+    startLinking: (relType, anchor) => set(state => {
+        const nextLayers = { ...state.layers } as any;
+        if (relType === 'DEPICTS' && !nextLayers.drawings) nextLayers.drawings = true;
+        if (relType === 'LOCATED_IN') {
+            if (!nextLayers.symbols) nextLayers.symbols = true;
+            if (!nextLayers.components) nextLayers.components = true;
+        }
+        if (relType === 'JUSTIFIED_BY') {
+            if (!nextLayers.symbols) nextLayers.symbols = true;
+            if (!nextLayers.components) nextLayers.components = true;
+            if (!nextLayers.notes) nextLayers.notes = true;
+        }
+        return { layers: nextLayers, linking: { relType, anchor, selectedTargetIds: [] } } as any;
+    }),
     toggleLinkTarget: (targetId) => set(state => {
         const linking = state.linking;
         if (!linking) return {} as any;
@@ -530,7 +641,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         return { linking: { ...linking, selectedTargetIds: Array.from(setIds) } } as Partial<AppState> as any;
     }),
     finishLinking: async () => {
-        const { projectId, linking, addToast, fetchLinks, entities, concepts } = get() as any;
+        const { projectId, linking, addToast, fetchLinks, entities, concepts, pushHistory } = get() as any;
         if (!projectId || !linking) return;
         if (!linking.selectedTargetIds.length) { addToast({ kind: 'error', message: 'No targets selected' }); return; }
         // Helper: find kind of an id from entities/concepts
@@ -566,12 +677,16 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             }
         }
         try {
+            const before = new Set(((get() as any).links || []).map((l: any) => l.id));
             for (const p of payloads) {
                 await apiCreateLink(projectId, p as any);
             }
             await fetchLinks();
+            const after = (get() as any).links || [];
+            const created = after.filter((l: any) => !before.has(l.id));
             set({ linking: null });
             addToast({ kind: 'success', message: 'Links created' });
+            try { pushHistory({ type: 'create_links', links: created }); } catch {}
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e?.message || 'Failed to create links' });
@@ -583,10 +698,22 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         set({ creatingEntity: { type, startX: -1, startY: -1 }, selectedEntityId: null });
     },
     startDefinitionCreation: (type, parentId, meta) => set({ creatingEntity: { type, startX: -1, startY: -1, parentId, meta } }),
-    startInstanceStamp: (kind, definitionId, opts) => set({ creatingEntity: { type: kind === 'symbol' ? 'symbol_instance' : 'component_instance', startX: -1, startY: -1, meta: { definitionId, ...opts } } }),
+    startInstanceStamp: (kind, definitionId, opts) => set(state => {
+        const nextLayers = { ...state.layers } as any;
+        if (!nextLayers.drawings) nextLayers.drawings = true;
+        if (kind === 'symbol' && !nextLayers.symbols) nextLayers.symbols = true;
+        if (kind === 'component' && !nextLayers.components) nextLayers.components = true;
+        return { layers: nextLayers, creatingEntity: { type: kind === 'symbol' ? 'symbol_instance' : 'component_instance', startX: -1, startY: -1, meta: { definitionId, ...opts } } } as any;
+    }),
+    // Guard: auto-enable required layers for stamping
+    // Drawings must be visible to place instances (containment feedback)
+    // Enable symbols/components layer for visual feedback
+    // Keep user toggles otherwise intact
+    // (No-op on disable; never auto-disable)
+    
     cancelEntityCreation: () => set({ creatingEntity: null }),
     finalizeEntityCreation: async (x1, y1, x2, y2) => {
-        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId, fetchPageOcr } = get() as any;
+        const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId, fetchPageOcr, pushHistory } = get() as any;
         if (!creatingEntity || !projectId) return;
         const sheetNumber = currentPageIndex + 1; // 1-based
         try {
@@ -640,6 +767,7 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             await fetchEntities();
             setSelectedEntityId(created?.id || null);
             addToast({ kind: 'success', message: `${creatingEntity.type} created` });
+            try { pushHistory({ type: 'create_entity', entity: created }); } catch {}
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e.message || 'Create failed' });
@@ -653,8 +781,9 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
         }
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
+    selectEntity: (id) => set({ selectedEntityId: id, rightPanelTab: 'entities' } as any),
     updateEntityBBox: async (id, bbox) => {
-        const { projectId, addToast, fetchEntities, fetchPageOcr } = get() as any;
+        const { projectId, addToast, fetchEntities, fetchPageOcr, pushHistory } = get() as any;
         if (!projectId) return;
         try {
             // Convert canvas -> PDF using current page meta
@@ -670,39 +799,110 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
                 rasterHeightPx: pageMeta.nativeHeight,
                 rotation: 0 as 0,
             };
+            const beforeEnt = (get() as any).entities.find((e: any) => e.id === id);
+            const beforeBox = beforeEnt ? [beforeEnt.bounding_box.x1, beforeEnt.bounding_box.y1, beforeEnt.bounding_box.x2, beforeEnt.bounding_box.y2] : null;
             const [px1, py1, px2, py2] = canvasToPdf(bbox as any, renderMeta as any);
-            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: [px1, py1, px2, py2] }) });
+            const afterBox = [px1, py1, px2, py2];
+            await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: afterBox }) });
             await fetchEntities();
+            try { if (beforeBox) pushHistory({ type: 'edit_entity', id, before: { bounding_box: beforeBox }, after: { bounding_box: afterBox } }); } catch {}
         } catch (e: any) {
             console.error(e); addToast({ kind: 'error', message: e.message || 'Update failed' });
         }
     },
     updateEntityMeta: async (id, data) => {
-        const { projectId, addToast, fetchEntities } = get();
+        const { projectId, addToast, fetchEntities, pushHistory } = get() as any;
         if (!projectId) return;
         try {
+            const beforeEnt = (get() as any).entities.find((e: any) => e.id === id) || {};
+            const keys = Object.keys(data || {});
+            const before: any = {};
+            keys.forEach(k => { if (k in beforeEnt) before[k] = (beforeEnt as any)[k]; });
             await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
             await fetchEntities();
             addToast({ kind: 'success', message: 'Updated' });
+            try { pushHistory({ type: 'edit_entity', id, before, after: data }); } catch {}
         } catch (e: any) {
             console.error(e); addToast({ kind: 'error', message: e.message || 'Update failed' });
         }
     },
     deleteEntity: async (id) => {
-        const { projectId, addToast, fetchEntities, selectedEntityId, setSelectedEntityId } = get();
+        const { projectId, addToast, fetchEntities, selectedEntityId, setSelectedEntityId, pushHistory } = get() as any;
         if (!projectId) return;
         try {
+            const ent = (get() as any).entities.find((e: any) => e.id === id);
             await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
             if (selectedEntityId === id) setSelectedEntityId(null);
             await fetchEntities();
             addToast({ kind: 'success', message: 'Entity deleted' });
+            if (ent) try { pushHistory({ type: 'delete_entity', entity: ent }); } catch {}
         } catch (e: any) {
             console.error(e); addToast({ kind: 'error', message: e.message || 'Delete failed' });
         }
     },
     setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+    setLeftTab: (t) => set({ leftTab: t }),
+    setExplorerTab: (t) => set({ explorerTab: t }),
+    setLeftPanelWidth: (px) => set(state => {
+        const width = Math.max(160, Math.min(540, Math.round(px)));
+        try { localStorage.setItem('ui:leftWidth', String(width)); } catch {}
+        return { leftPanel: { ...state.leftPanel, widthPx: width } } as any;
+    }),
+    setRightPanelWidth: (px) => set(state => {
+        const width = Math.max(260, Math.min(640, Math.round(px)));
+        try { localStorage.setItem('ui:rightWidth', String(width)); } catch {}
+        return { rightPanel: { ...state.rightPanel, widthPx: width } } as any;
+    }),
+    toggleLeftCollapsed: () => set(state => {
+        const next = !state.leftPanel.collapsed; try { localStorage.setItem('ui:leftCollapsed', next ? '1' : '0'); } catch {}
+        return { leftPanel: { ...state.leftPanel, collapsed: next } } as any;
+    }),
+    toggleRightCollapsed: () => set(state => {
+        const next = !state.rightPanel.collapsed; try { localStorage.setItem('ui:rightCollapsed', next ? '1' : '0'); } catch {}
+        return { rightPanel: { ...state.rightPanel, collapsed: next } } as any;
+    }),
+    setLayer: (k, v) => set(state => {
+        const next = { ...state.layers, [k]: v } as any;
+        const extra: any = {};
+        if (k === 'ocr') extra.showOcr = v;
+        return { layers: next, ...extra } as any;
+    }),
+    setRightInspectorHeight: (px) => set(state => {
+        const h = Math.max(160, Math.min(600, Math.round(px)));
+        try { localStorage.setItem('ui:rightInspectorHeight', String(h)); } catch {}
+        return { rightInspectorHeightPx: h } as any;
+    }),
+    selectedScopeId: null,
+    setSelectedScopeId: (id) => set({ selectedScopeId: id } as any),
+    selectScope: (id) => set({ selectedScopeId: id, rightPanelTab: 'explorer', explorerTab: 'scopes' } as any),
+    selectSpace: (id) => {
+        const st: any = get();
+        const { entities, links } = st;
+        if (!id) { set({ selectedSpaceId: null, activeSheetFilter: null } as any); return; }
+        // Compute relevant sheets
+        const depicting = links.filter((l: any) => l.rel_type === 'DEPICTS' && l.target_id === id).map((l: any) => entities.find((e: any) => e.id === l.source_id)).filter(Boolean);
+        const located = links.filter((l: any) => l.rel_type === 'LOCATED_IN' && l.target_id === id).map((l: any) => entities.find((e: any) => e.id === l.source_id)).filter(Boolean);
+        const sheets = new Set<number>();
+        depicting.forEach((d: any) => sheets.add((d.source_sheet_number || 1) - 1));
+        located.forEach((inst: any) => sheets.add((inst.source_sheet_number || 1) - 1));
+        const arr = Array.from(sheets).sort((a, b) => a - b);
+        // Pick a focus target: prefer a drawing from DEPICTS, else first located instance
+        const focusEnt: any = depicting[0] || located[0] || null;
+        set({ selectedSpaceId: id, activeSheetFilter: arr, leftTab: 'sheets' } as any);
+        if (focusEnt) {
+            const pageIndex = (focusEnt.source_sheet_number || 1) - 1;
+            const bb = focusEnt.bounding_box;
+            set({ currentPageIndex: pageIndex, focusBBoxPts: { pageIndex, bboxPts: [bb.x1, bb.y1, bb.x2, bb.y2], at: Date.now() } } as any);
+        }
+    },
+    hoverEntityId: null,
+    hoverScopeId: null,
+    setHoverEntityId: (id) => set({ hoverEntityId: id } as any),
+    setHoverScopeId: (id) => set({ hoverScopeId: id } as any),
     setScrollTarget: (pageIndex, blockIndex) => set({ scrollTarget: { pageIndex, blockIndex, at: Date.now() } }),
     clearScrollTarget: () => set({ scrollTarget: null }),
+    setFocusBBox: (pageIndex, bboxPts) => set({ focusBBoxPts: { pageIndex, bboxPts, at: Date.now() } } as any),
+    clearFocusBBox: () => set({ focusBBoxPts: null } as any),
     addToast: ({ kind = 'info', message, timeoutMs = 5000 }) => {
         const id = Math.random().toString(36).slice(2);
         const toast = { id, kind, message, createdAt: Date.now(), timeoutMs };
@@ -716,5 +916,176 @@ export const useProjectStore = create<AppState>((set, get): AppState => ({
             }, timeoutMs);
         }
     },
-    dismissToast: (id: string) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) }))
+    dismissToast: (id: string) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) })),
+    // --- Simple history (undo/redo) for core actions ---
+    historyPast: [],
+    historyFuture: [],
+    pushHistory: (entry: any) => set(state => ({ historyPast: [...(state as any).historyPast, entry], historyFuture: [] } as any)),
+    historyIdMap: {},
+    promoteSelectionToNotePersist: async (pageIndex: number) => {
+        const { projectId, addToast, pageOcr, selectedBlocks, fetchEntities } = get() as any;
+        if (!projectId) return;
+        const ocr = pageOcr[pageIndex];
+        if (!ocr) return;
+        const selected = (selectedBlocks[pageIndex] || []).sort((a: number, b: number) => a - b);
+        if (!selected.length) { addToast({ kind: 'error', message: 'No OCR blocks selected' }); return; }
+        const blocks = ocr.blocks || [];
+        const chosen = selected.map((i: number) => blocks[i]).filter(Boolean);
+        if (!chosen.length) return;
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        const texts: string[] = [];
+        chosen.forEach((b: any) => {
+            const [bx1, by1, bx2, by2] = b.bbox;
+            if (bx1 < x1) x1 = bx1; if (by1 < y1) y1 = by1; if (bx2 > x2) x2 = bx2; if (by2 > y2) y2 = by2;
+            if (b.text) texts.push((b.text as string).trim());
+        });
+        const payload = { entity_type: 'note', source_sheet_number: pageIndex + 1, bounding_box: [x1, y1, x2, y2], text: texts.join('\n\n') } as any;
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!resp.ok) {
+                let msg = 'Create note failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            await fetchEntities();
+            // Auto-accept blocks used
+            const pageMeta = (get() as any).ocrBlockState[pageIndex];
+            if (pageMeta) {
+                const updatedMeta: Record<number, { status: 'unverified' | 'accepted' | 'flagged' | 'noise' }> = { ...pageMeta };
+                selected.forEach((i: number) => { if (updatedMeta[i]) updatedMeta[i] = { status: 'accepted' }; });
+                set((state) => ({ ocrBlockState: { ...state.ocrBlockState, [pageIndex]: updatedMeta }, selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] } }) as any);
+            } else {
+                set((state) => ({ selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] } }) as any);
+            }
+            addToast({ kind: 'success', message: 'Note created' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Create note failed' });
+        }
+    },
+    undo: async () => {
+        const st: any = get();
+        const past: any[] = st.historyPast || [];
+        if (!past.length) return;
+        const entry = past[past.length - 1];
+        set({ historyPast: past.slice(0, -1), historyFuture: [entry, ...(st.historyFuture || [])] } as any);
+        const projectId = st.projectId; if (!projectId) return;
+        try {
+            if (entry.type === 'create_entity') {
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.entity.id] || entry.entity.id;
+                // If the entity still exists, delete it; else no-op
+                const e = (get() as any).entities.find((x: any) => x.id === id);
+                if (e) await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
+                await st.fetchEntities();
+            } else if (entry.type === 'edit_entity') {
+                // Undo edit: apply `before` fields
+                const payload = { ...(entry.before || {}) };
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.id] || entry.id;
+                await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                await st.fetchEntities();
+            } else if (entry.type === 'delete_entity') {
+                const e = entry.entity;
+                const payload: any = { entity_type: e.entity_type, source_sheet_number: e.source_sheet_number, bounding_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] };
+                if (['drawing','legend','schedule'].includes(e.entity_type)) payload.title = e.title || null;
+                if (e.entity_type === 'note') payload.text = e.text || null;
+                if (['symbol_definition','component_definition'].includes(e.entity_type)) {
+                    payload.name = e.name || null; payload.description = e.description || null; payload.scope = e.scope || 'sheet'; payload.defined_in_id = e.defined_in_id || null;
+                    if (e.entity_type === 'symbol_definition') payload.visual_pattern_description = e.visual_pattern_description || null;
+                    if (e.entity_type === 'component_definition') payload.specifications = e.specifications || {};
+                }
+                if (e.entity_type === 'symbol_instance') payload.symbol_definition_id = e.symbol_definition_id;
+                if (e.entity_type === 'component_instance') payload.component_definition_id = e.component_definition_id;
+                const resp = await fetch(`/api/projects/${projectId}/entities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const recreated = await resp.json();
+                entry.currentId = recreated?.id;
+                const alias = (get() as any).historyIdMap || {};
+                set({ historyIdMap: { ...alias, [entry.entity.id]: recreated?.id } } as any);
+                await st.fetchEntities();
+            } else if (entry.type === 'create_links') {
+                for (const l of entry.links) {
+                    // If id known delete by id; else try to find by triple
+                    if (l.id) {
+                        await fetch(`/api/projects/${projectId}/links/${l.id}`, { method: 'DELETE' });
+                    } else {
+                        const match = (get() as any).links.find((x: any) => x.rel_type === l.rel_type && x.source_id === l.source_id && x.target_id === l.target_id);
+                        if (match) await fetch(`/api/projects/${projectId}/links/${match.id}`, { method: 'DELETE' });
+                    }
+                }
+                await st.fetchLinks();
+            } else if (entry.type === 'delete_links') {
+                const newIds: any[] = [];
+                for (const l of entry.links) {
+                    const resp = await fetch(`/api/projects/${projectId}/links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel_type: l.rel_type, source_id: l.source_id, target_id: l.target_id }) });
+                    const created = await resp.json();
+                    newIds.push(created?.id);
+                }
+                await st.fetchLinks();
+                // store current ids for redo delete (after links are fetched)
+                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
+            }
+        } catch (e) { console.error('Undo failed', e); }
+    },
+    redo: async () => {
+        const st: any = get();
+        const future: any[] = st.historyFuture || [];
+        if (!future.length) return;
+        const entry = future[0];
+        set({ historyFuture: future.slice(1), historyPast: [ ...(st.historyPast || []), entry ] } as any);
+        const projectId = st.projectId; if (!projectId) return;
+        try {
+            if (entry.type === 'create_entity') {
+                const e = entry.entity;
+                const payload: any = { entity_type: e.entity_type, source_sheet_number: e.source_sheet_number, bounding_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] };
+                if (['drawing','legend','schedule'].includes(e.entity_type)) payload.title = e.title || null;
+                if (e.entity_type === 'note') payload.text = e.text || null;
+                if (['symbol_definition','component_definition'].includes(e.entity_type)) {
+                    payload.name = e.name || null; payload.description = e.description || null; payload.scope = e.scope || 'sheet'; payload.defined_in_id = e.defined_in_id || null;
+                    if (e.entity_type === 'symbol_definition') payload.visual_pattern_description = e.visual_pattern_description || null;
+                    if (e.entity_type === 'component_definition') payload.specifications = e.specifications || {};
+                }
+                if (e.entity_type === 'symbol_instance') payload.symbol_definition_id = e.symbol_definition_id;
+                if (e.entity_type === 'component_instance') payload.component_definition_id = e.component_definition_id;
+                const resp = await fetch(`/api/projects/${projectId}/entities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const created = await resp.json();
+                entry.currentId = created?.id;
+                const alias = (get() as any).historyIdMap || {};
+                set({ historyIdMap: { ...alias, [entry.entity.id]: created?.id } } as any);
+                await st.fetchEntities();
+            } else if (entry.type === 'edit_entity') {
+                // Redo edit: apply `after` fields again
+                const payload = { ...(entry.after || {}) };
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.id] || entry.id;
+                await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                await st.fetchEntities();
+            } else if (entry.type === 'delete_entity') {
+                const alias = (get() as any).historyIdMap || {};
+                const id = entry.currentId || alias[entry.entity.id] || entry.entity.id;
+                const e = (get() as any).entities.find((x: any) => x.id === id);
+                if (e) await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'DELETE' });
+                await st.fetchEntities();
+            } else if (entry.type === 'create_links') {
+                const newIds: any[] = [];
+                for (const l of entry.links) {
+                    const resp = await fetch(`/api/projects/${projectId}/links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel_type: l.rel_type, source_id: l.source_id, target_id: l.target_id }) });
+                    const created = await resp.json();
+                    newIds.push(created?.id);
+                }
+                await st.fetchLinks();
+                entry.links = (get() as any).links.filter((x: any) => newIds.includes(x.id));
+            } else if (entry.type === 'delete_links') {
+                for (const l of entry.links) {
+                    // If link id known, delete by id; else search
+                    if (l.id) await fetch(`/api/projects/${projectId}/links/${l.id}`, { method: 'DELETE' });
+                    else {
+                        const match = (get() as any).links.find((x: any) => x.rel_type === l.rel_type && x.source_id === l.source_id && x.target_id === l.target_id);
+                        if (match) await fetch(`/api/projects/${projectId}/links/${match.id}`, { method: 'DELETE' });
+                    }
+                }
+                await st.fetchLinks();
+            }
+        } catch (e) { console.error('Redo failed', e); }
+    }
 }));

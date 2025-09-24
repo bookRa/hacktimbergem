@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
-    const { pageOcr, pagesMeta, showOcr, ocrBlockState, hoveredBlock, selectedBlocks, setHoveredBlock, toggleSelectBlock } = useProjectStore(s => ({
+    const { pageOcr, pagesMeta, showOcr, ocrBlockState, hoveredBlock, selectedBlocks, setHoveredBlock, toggleSelectBlock, layers } = useProjectStore(s => ({
         pageOcr: s.pageOcr,
         pagesMeta: s.pagesMeta,
         showOcr: s.showOcr,
@@ -16,7 +16,8 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
         hoveredBlock: (s as any).hoveredBlock || {},
         selectedBlocks: (s as any).selectedBlocks || {},
         setHoveredBlock: (s as any).setHoveredBlock,
-        toggleSelectBlock: (s as any).toggleSelectBlock
+        toggleSelectBlock: (s as any).toggleSelectBlock,
+        layers: (s as any).layers,
     }));
     const meta = pagesMeta[pageIndex];
     const ocr = pageOcr[pageIndex];
@@ -35,7 +36,7 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
         };
     }, [meta, ocr]);
 
-    if (!showOcr || !meta || !renderMeta) return null;
+    if (!layers.ocr || !meta || !renderMeta) return null;
 
     return (
         <svg style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} width={meta.nativeWidth * scale} height={meta.nativeHeight * scale} viewBox={`0 0 ${meta.nativeWidth} ${meta.nativeHeight}`}>

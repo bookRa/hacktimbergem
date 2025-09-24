@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { shallow } from 'zustand/shallow';
 import { useProjectStore } from '../state/store';
 import { pdfToCanvas } from '../utils/coords';
+import { buildIndex, queryRect } from '../utils/spatialIndex';
 
 declare global { interface Window { __TG_DEBUG_OCR_CLICK?: boolean; } }
 const dbg = (...args: any[]) => { if (window.__TG_DEBUG_OCR_CLICK) console.log('[OCRClick]', ...args); };
@@ -32,7 +34,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId, setHoverEntityId, hoverEntityId, layers } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -49,7 +51,11 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         linking: (s as any).linking,
         toggleLinkTarget: (s as any).toggleLinkTarget,
         cancelLinking: (s as any).cancelLinking,
-    }));
+        hoverScopeId: (s as any).hoverScopeId,
+        setHoverEntityId: (s as any).setHoverEntityId,
+        hoverEntityId: (s as any).hoverEntityId,
+        layers: (s as any).layers,
+    }), shallow);
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
     const passthroughRef = useRef(false);
@@ -76,6 +82,19 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     const [hoverDrawingId, setHoverDrawingId] = useState<string | null>(null);
     const pendingOcrClickRef = useRef<{ startX: number; startY: number; blockIndex: number; additive: boolean } | null>(null);
 
+    // Editing state must be declared before any conditional returns to avoid hook order discrepancies
+    const [editingBoxes, setEditingBoxes] = useState<Record<string, { x1: number; y1: number; x2: number; y2: number }>>({});
+    const setTempEdit = (id: string, box: { x1: number; y1: number; x2: number; y2: number }) => {
+        setEditingBoxes(b => ({ ...b, [id]: box }));
+    };
+    const commitEdit = async (id: string) => {
+        const box = editingBoxes[id];
+        if (box) {
+            await updateEntityBBox(id, [box.x1, box.y1, box.x2, box.y2]);
+            setEditingBoxes(b => { const { [id]: _, ...rest } = b; return rest; });
+        }
+    };
+
     useEffect(() => {
         const esc = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -87,31 +106,79 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         return () => window.removeEventListener('keydown', esc);
     }, [creatingEntity, cancelEntityCreation, linking, cancelLinking]);
 
-    if (pageIndex !== currentPageIndex) return null;
-
-    const pageEntitiesRaw = entities
-        .filter((e: any) => e.source_sheet_number === pageIndex + 1)
-        .slice()
-        .sort((a: any, b: any) => {
+    const pageEntitiesRaw = useMemo(() => {
+        const raw = (entities as any[]).filter((e: any) => e.source_sheet_number === pageIndex + 1);
+        // Apply layer visibility filters early
+        const isVisible = (e: any) => {
+            if (e.entity_type === 'drawing') return layers.drawings;
+            if (e.entity_type === 'legend') return layers.legends;
+            if (e.entity_type === 'schedule') return layers.schedules;
+            if (e.entity_type === 'symbol_definition' || e.entity_type === 'symbol_instance') return layers.symbols;
+            if (e.entity_type === 'component_definition' || e.entity_type === 'component_instance') return layers.components;
+            if (e.entity_type === 'note') return layers.notes;
+            return true;
+        };
+        const visible = raw.filter(isVisible);
+        const arr = visible.slice();
+        raw.sort((a: any, b: any) => {
             const za = TYPE_Z_ORDER[a.entity_type] ?? 1;
             const zb = TYPE_Z_ORDER[b.entity_type] ?? 1;
             if (za !== zb) return za - zb; // lower z drawn first, higher z on top
             return 0;
         });
+        return arr;
+    }, [entities, pageIndex, layers.drawings, layers.legends, layers.schedules, layers.symbols, layers.components, layers.notes]);
     // Convert all entity PDF-space boxes to canvas space for rendering and hit-testing
     const ocr = (pageOcr as any)?.[pageIndex];
     const meta = (pagesMeta as any)?.[pageIndex];
-    const renderMeta = ocr && meta ? {
-        pageWidthPts: ocr.width_pts,
-        pageHeightPts: ocr.height_pts,
-        rasterWidthPx: meta.nativeWidth,
-        rasterHeightPx: meta.nativeHeight,
-        rotation: 0 as 0
-    } : null;
-    const pageEntities = (renderMeta ? pageEntitiesRaw.map((e: any) => ({
-        ...e,
-        _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
-    })) : pageEntitiesRaw.map((e: any) => ({ ...e, _canvas_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] }))) as any[];
+    // Require reliable page dimensions before rendering. Avoid drawing with bogus defaults.
+    const pageWidthPts = (meta as any)?.pageWidthPts || ocr?.width_pts;
+    const pageHeightPts = (meta as any)?.pageHeightPts || ocr?.height_pts;
+    const pageEntities = useMemo(() => {
+        if (!meta || !pageWidthPts || !pageHeightPts) return [] as any[];
+        const renderMeta = {
+            pageWidthPts,
+            pageHeightPts,
+            rasterWidthPx: meta.nativeWidth,
+            rasterHeightPx: meta.nativeHeight,
+            rotation: 0 as 0
+        } as const;
+        return pageEntitiesRaw.map((e: any) => ({
+            ...e,
+            _canvas_box: pdfToCanvas([e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] as any, renderMeta as any)
+        }));
+    }, [pageEntitiesRaw, pageWidthPts, pageHeightPts, (meta as any)?.nativeWidth, (meta as any)?.nativeHeight]);
+    // Defer early-return until after all hooks above are declared (to preserve hook order)
+
+    // Spatial index + viewport virtualization
+    const [visibleIds, setVisibleIds] = useState<string[] | null>(null);
+    const prevIdsRef = useRef<string[] | null>(null);
+    useEffect(() => {
+        const target = wrapperRef.current;
+        if (!target || !meta) return;
+        const items = pageEntities.map((e: any) => ({ id: e.id, rect: { x1: e._canvas_box[0], y1: e._canvas_box[1], x2: e._canvas_box[2], y2: e._canvas_box[3] } }));
+        const localIndex = buildIndex(items, 96);
+        const update = () => {
+            const sl = target.scrollLeft; const st = target.scrollTop; const cw = target.clientWidth; const ch = target.clientHeight;
+            const rect = { x1: sl / scale, y1: st / scale, x2: (sl + cw) / scale, y2: (st + ch) / scale } as any;
+            const ids = queryRect(localIndex, rect);
+            const prev = prevIdsRef.current;
+            let changed = true;
+            if (prev && prev.length === ids.length) {
+                changed = false;
+                for (let i = 0; i < ids.length; i++) { if (ids[i] !== prev[i]) { changed = true; break; } }
+            }
+            if (changed) {
+                prevIdsRef.current = ids;
+                setVisibleIds(ids);
+            }
+        };
+        update();
+        const onScroll = () => { requestAnimationFrame(update); };
+        target.addEventListener('scroll', onScroll);
+        const ro = new ResizeObserver(() => requestAnimationFrame(update)); ro.observe(target);
+        return () => { target.removeEventListener('scroll', onScroll); ro.disconnect(); };
+    }, [wrapperRef, scale, pageEntities, (meta as any)?.nativeWidth, (meta as any)?.nativeHeight]);
 
     const linkingActive = !!linking;
     const isAllowedByLinking = (ent: any): boolean => {
@@ -353,36 +420,33 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             e.preventDefault();
             return;
         }
-        // Hover cursor logic when not editing/creating
-        if (!creatingEntity && !linkingActive && selectedEntityId) {
-            const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
-            if (ent) {
+        // Hover cursor logic when not editing/creating; also set hoverEntityId for Explorer highlighting
+        // If we are not editing/dragging, set hoverEntityId to the topmost entity under the pointer.
+        {
+            // set generic hover entity id (topmost under pointer) for Explorer list highlight
+            let topId: string | null = null;
+            for (let i = pageEntities.length - 1; i >= 0; i--) {
+                const ent = pageEntities[i];
                 const [bx1, by1, bx2, by2] = ent._canvas_box;
-                const tol = TOL_PX / scale;
-                if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
-                    const h = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
-                    if (h) {
-                        setHoverCursor(handleToCursor(h));
-                    } else {
-                        setHoverCursor('move');
-                    }
-                } else {
-                    if (hoverCursor) setHoverCursor(null);
-                }
+                if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) { topId = ent.id; break; }
             }
-        } else if (hoverCursor) {
-            setHoverCursor(null);
-        }
-    };
-    const [editingBoxes, setEditingBoxes] = useState<Record<string, { x1: number; y1: number; x2: number; y2: number }>>({});
-    const setTempEdit = (id: string, box: { x1: number; y1: number; x2: number; y2: number }) => {
-        setEditingBoxes(b => ({ ...b, [id]: box }));
-    };
-    const commitEdit = async (id: string) => {
-        const box = editingBoxes[id];
-        if (box) {
-            await updateEntityBBox(id, [box.x1, box.y1, box.x2, box.y2]);
-            setEditingBoxes(b => { const { [id]: _, ...rest } = b; return rest; });
+            if (topId !== hoverEntityId) setHoverEntityId(topId);
+            // Cursor affordance when a selected entity is under the pointer
+            if (selectedEntityId) {
+                const ent = pageEntities.find(e2 => e2.id === selectedEntityId);
+                if (ent) {
+                    const [bx1, by1, bx2, by2] = ent._canvas_box;
+                    const tol = TOL_PX / scale;
+                    if (x >= (bx1 - tol) && x <= (bx2 + tol) && y >= (by1 - tol) && y <= (by2 + tol)) {
+                        const h = hitHandle(x, y, { x1: bx1, y1: by1, x2: bx2, y2: by2 });
+                        setHoverCursor(h ? handleToCursor(h) : 'move');
+                    } else if (hoverCursor) {
+                        setHoverCursor(null);
+                    }
+                }
+            } else if (hoverCursor) {
+                setHoverCursor(null);
+            }
         }
     };
 
@@ -452,7 +516,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                         <rect key={`guide-${d.id}`} x={x1 * scale} y={y1 * scale} width={(x2 - x1) * scale} height={(y2 - y1) * scale} fill={isHover ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.05)'} stroke={isHover ? '#3b82f6' : '#93c5fd'} strokeDasharray="6 4" strokeWidth={isHover ? 2 : 1} />
                     );
                 })}
-                {pageEntities.map((e: any) => {
+                {(visibleIds ? pageEntities.filter((e: any) => visibleIds.includes(e.id)) : pageEntities).map((e: any) => {
                     const c = TYPE_COLORS[e.entity_type] || { stroke: '#64748b', fill: 'rgba(100,116,139,0.15)' };
                     const live = editingBoxes[e.id] || { x1: e._canvas_box[0], y1: e._canvas_box[1], x2: e._canvas_box[2], y2: e._canvas_box[3] };
                     const { x1, y1, x2, y2 } = live;
@@ -460,8 +524,14 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                     const selected = selectedEntityId === e.id;
                     const allowed = isAllowedByLinking(e);
                     const linkSelected = linkingActive && linking!.selectedTargetIds.includes(e.id);
-                    const stroke = linkingActive ? (linkSelected ? '#16a34a' : allowed ? '#64748b' : 'rgba(148,163,184,0.3)') : (selected ? c.stroke : 'rgba(148,163,184,0.6)');
-                    const fill = linkingActive ? (linkSelected ? 'rgba(22,163,74,0.18)' : allowed ? 'rgba(100,116,139,0.10)' : 'rgba(30,41,59,0.10)') : c.fill;
+                    const isScopeEvidence = hoverScopeId && (useProjectStore.getState() as any).links.some((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === hoverScopeId && l.target_id === e.id);
+                    const isHoverEntity = hoverEntityId && hoverEntityId === e.id;
+                    const stroke = linkingActive
+                        ? (linkSelected ? '#16a34a' : allowed ? '#64748b' : 'rgba(148,163,184,0.3)')
+                        : (selected ? c.stroke : isScopeEvidence ? '#06b6d4' : isHoverEntity ? '#1d4ed8' : 'rgba(148,163,184,0.6)');
+                    const fill = linkingActive
+                        ? (linkSelected ? 'rgba(22,163,74,0.18)' : allowed ? 'rgba(100,116,139,0.10)' : 'rgba(30,41,59,0.10)')
+                        : (isScopeEvidence ? 'rgba(6,182,212,0.18)' : isHoverEntity ? 'rgba(29,78,216,0.12)' : c.fill);
                     return (
                         <g key={e.id}>
                             <rect
