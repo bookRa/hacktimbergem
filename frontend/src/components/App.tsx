@@ -73,7 +73,6 @@ export const App: React.FC = () => {
                     </div>
                     <div className="center-pane">
                         {!leftPanel.collapsed && <div className="split-handle left" onMouseDown={onDragLeft} />}
-                        <ZoomControls />
                         <CanvasToolbar />
                         <PdfCanvas />
                         {!rightPanel.collapsed && <div className="split-handle right" onMouseDown={onDragRight} />}

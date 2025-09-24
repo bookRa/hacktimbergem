@@ -5,6 +5,7 @@ import 'pdfjs-dist/web/pdf_viewer.css';
 import { OcrOverlay } from './OcrOverlay';
 import { DragSelectOverlay } from './DragSelectOverlay';
 import { EntitiesOverlay } from './EntitiesOverlay';
+import { ZoomControls } from './ZoomControls';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -18,6 +19,7 @@ export const PdfCanvas: React.FC = () => {
     const pageWrapperRef = useRef<HTMLDivElement | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
     const renderTaskRef = useRef<any>(null);
+    const zoomOverlayRef = useRef<HTMLDivElement | null>(null);
 
     const { pdfDoc, currentPageIndex, pages, setPageMeta, pagesMeta, effectiveScale, updateFitScale, zoom, setManualScale, setZoomMode, pageImages, fetchPageImage, pageOcr, fetchPageOcr, showOcr, scrollTarget, setScrollTarget, clearScrollTarget, creatingEntity, manifestStatus, focusBBoxPts, clearFocusBBox } = useProjectStore((s: ProjectStore & any) => ({
         pdfDoc: s.pdfDoc,
@@ -129,6 +131,20 @@ export const PdfCanvas: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [zoom.mode, currentPageIndex]);
 
+    // When entering Fit mode, immediately center the page within the viewport (no animated scroll)
+    useEffect(() => {
+        if (zoom.mode !== 'fit') return;
+        const holder = containerRef.current;
+        const meta = pagesMeta[currentPageIndex];
+        if (!holder || !meta) return;
+        const scaleFit = meta.fitPageScale || effectiveScale(currentPageIndex);
+        const contentW = meta.nativeWidth * scaleFit;
+        const contentH = meta.nativeHeight * scaleFit;
+        const targetLeft = Math.max(0, (contentW - holder.clientWidth) / 2);
+        const targetTop = Math.max(0, (contentH - holder.clientHeight) / 2);
+        holder.scrollTo({ left: targetLeft, top: targetTop, behavior: 'auto' });
+    }, [zoom.mode, currentPageIndex, pagesMeta, effectiveScale]);
+
     // Resize observer to recompute fit width scale (debounced)
     useLayoutEffect(() => {
         if (!containerRef.current) return;
@@ -225,7 +241,7 @@ export const PdfCanvas: React.FC = () => {
             const maxTop = meta.nativeHeight * neededScale - containerRef.current.clientHeight;
             const targetScrollLeft = Math.max(0, Math.min(maxLeft, centerX * neededScale - containerRef.current.clientWidth / 2));
             const targetScrollTop = Math.max(0, Math.min(maxTop, centerY * neededScale - containerRef.current.clientHeight / 2));
-            containerRef.current.scrollTo({ left: targetScrollLeft, top: targetScrollTop, behavior: 'smooth' });
+            containerRef.current.scrollTo({ left: targetScrollLeft, top: targetScrollTop, behavior: 'auto' });
         });
         // Clear focus after applying
         setTimeout(() => { (clearFocusBBox as any)(); }, 150);
@@ -343,10 +359,31 @@ export const PdfCanvas: React.FC = () => {
         };
     }, [applyPointerZoom, scale, zoom.mode]);
 
+    // Keep zoom pill centered at bottom of visible viewport (accounts for both axes scroll)
+    useEffect(() => {
+        const holder = containerRef.current;
+        const overlay = zoomOverlayRef.current;
+        if (!holder || !overlay) return;
+        const update = () => {
+            const centerX = holder.scrollLeft + holder.clientWidth / 2;
+            const margin = 24; // keep above horizontal scrollbar and content
+            const pillH = overlay.offsetHeight || 0;
+            const topY = holder.scrollTop + holder.clientHeight - pillH - margin;
+            overlay.style.left = `${centerX}px`;
+            overlay.style.top = `${topY}px`;
+        };
+        update();
+        const onScroll = () => requestAnimationFrame(update);
+        holder.addEventListener('scroll', onScroll);
+        const ro = new ResizeObserver(() => requestAnimationFrame(update));
+        ro.observe(holder);
+        return () => { holder.removeEventListener('scroll', onScroll); ro.disconnect(); };
+    }, [currentPageIndex]);
+
     if (!pdfDoc) return null;
 
     return (
-        <div ref={containerRef} className="pdf-canvas-wrapper" style={{ padding: '8px' }}>
+        <div ref={containerRef} className="pdf-canvas-wrapper" style={{ padding: '8px', position: 'relative' }}>
             <div ref={pageWrapperRef} style={{ margin: '0 auto', position: 'relative', width: displayWidth, height: displayHeight }}>
                 {pageImages[currentPageIndex] ? (
                     <>
@@ -372,6 +409,13 @@ export const PdfCanvas: React.FC = () => {
                         <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 )}
+            </div>
+            {/* Bottom-centered zoom pill pinned inside the scroll viewport */}
+            {/* Bottom-center zoom pill: absolute overlay updated on scroll to stay centered in viewport */}
+            <div ref={zoomOverlayRef} style={{ position: 'absolute', transform: 'translateX(-50%)', zIndex: 50, pointerEvents: 'none' }}>
+                <div style={{ pointerEvents: 'auto' }}>
+                    <ZoomControls />
+                </div>
             </div>
         </div>
     );
