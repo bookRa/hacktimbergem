@@ -41,7 +41,7 @@ interface AppState {
     pollManifest: () => Promise<void>;
     fetchPageImage: (pageIndex: number) => Promise<void>;
     fetchPageOcr: (pageIndex: number) => Promise<void>;
-    toggleOcr: () => void;
+    toggleOcr: () => void; // deprecated from UI; kept for Right Panel switch
     loadPdf: (file: File) => Promise<void>;
     setCurrentPageIndex: (i: number) => void;
     setPageMeta: (meta: PageRenderMeta) => void;
@@ -121,8 +121,8 @@ interface AppState {
     toggleRightCollapsed: () => void;
     setLeftTab: (t: 'sheets' | 'search') => void;
     setExplorerTab: (t: 'scopes' | 'symbolsInst') => void;
-    // Layer visibility (skeleton for toolbar)
-    layers: { ocr: boolean; drawings: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
+    // Layer visibility (authoritative for overlays)
+    layers: { ocr: boolean; drawings: boolean; legends: boolean; schedules: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
     setLayer: (k: keyof AppState['layers'], v: boolean) => void;
     // Right inspector sizing
     rightInspectorHeightPx: number;
@@ -193,7 +193,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     leftTab: 'sheets',
     leftPanel: { widthPx: lsNum('ui:leftWidth', 240), collapsed: lsBool('ui:leftCollapsed', false) },
     rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
-    layers: { ocr: false, drawings: true, symbols: true, components: true, notes: true, scopes: true },
+    layers: { ocr: false, drawings: true, legends: true, schedules: true, symbols: true, components: true, notes: true, scopes: true },
     rightInspectorHeightPx: lsNum('ui:rightInspectorHeight', 260),
     explorerTab: 'scopes',
     scrollTarget: null,
@@ -313,15 +313,14 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         initBlocksForPage(pageIndex, blocks.length);
     },
     toggleOcr: () => set((state) => {
-        const turningOff = state.showOcr === true;
-        if (turningOff) {
-            const pageIndex = state.currentPageIndex;
-            return {
-                showOcr: false,
-                selectedBlocks: { ...state.selectedBlocks, [pageIndex]: [] }
-            } as Partial<AppState> as any;
-        }
-        return { showOcr: true } as Partial<AppState> as any;
+        const turningOff = state.layers.ocr === true;
+        const pageIndex = state.currentPageIndex;
+        const nextLayers = { ...state.layers, ocr: !state.layers.ocr } as any;
+        return {
+            layers: nextLayers,
+            showOcr: nextLayers.ocr,
+            selectedBlocks: turningOff ? { ...state.selectedBlocks, [pageIndex]: [] } : state.selectedBlocks
+        } as Partial<AppState> as any;
     }),
     loadPdf: async (file: File) => {
         const arrayBuf = await file.arrayBuffer();
@@ -620,7 +619,20 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         }
     },
     linking: null,
-    startLinking: (relType, anchor) => set({ linking: { relType, anchor, selectedTargetIds: [] } }),
+    startLinking: (relType, anchor) => set(state => {
+        const nextLayers = { ...state.layers } as any;
+        if (relType === 'DEPICTS' && !nextLayers.drawings) nextLayers.drawings = true;
+        if (relType === 'LOCATED_IN') {
+            if (!nextLayers.symbols) nextLayers.symbols = true;
+            if (!nextLayers.components) nextLayers.components = true;
+        }
+        if (relType === 'JUSTIFIED_BY') {
+            if (!nextLayers.symbols) nextLayers.symbols = true;
+            if (!nextLayers.components) nextLayers.components = true;
+            if (!nextLayers.notes) nextLayers.notes = true;
+        }
+        return { layers: nextLayers, linking: { relType, anchor, selectedTargetIds: [] } } as any;
+    }),
     toggleLinkTarget: (targetId) => set(state => {
         const linking = state.linking;
         if (!linking) return {} as any;
@@ -686,7 +698,19 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         set({ creatingEntity: { type, startX: -1, startY: -1 }, selectedEntityId: null });
     },
     startDefinitionCreation: (type, parentId, meta) => set({ creatingEntity: { type, startX: -1, startY: -1, parentId, meta } }),
-    startInstanceStamp: (kind, definitionId, opts) => set({ creatingEntity: { type: kind === 'symbol' ? 'symbol_instance' : 'component_instance', startX: -1, startY: -1, meta: { definitionId, ...opts } } }),
+    startInstanceStamp: (kind, definitionId, opts) => set(state => {
+        const nextLayers = { ...state.layers } as any;
+        if (!nextLayers.drawings) nextLayers.drawings = true;
+        if (kind === 'symbol' && !nextLayers.symbols) nextLayers.symbols = true;
+        if (kind === 'component' && !nextLayers.components) nextLayers.components = true;
+        return { layers: nextLayers, creatingEntity: { type: kind === 'symbol' ? 'symbol_instance' : 'component_instance', startX: -1, startY: -1, meta: { definitionId, ...opts } } } as any;
+    }),
+    // Guard: auto-enable required layers for stamping
+    // Drawings must be visible to place instances (containment feedback)
+    // Enable symbols/components layer for visual feedback
+    // Keep user toggles otherwise intact
+    // (No-op on disable; never auto-disable)
+    
     cancelEntityCreation: () => set({ creatingEntity: null }),
     finalizeEntityCreation: async (x1, y1, x2, y2) => {
         const { creatingEntity, projectId, currentPageIndex, addToast, fetchEntities, setSelectedEntityId, fetchPageOcr, pushHistory } = get() as any;
@@ -837,7 +861,12 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         const next = !state.rightPanel.collapsed; try { localStorage.setItem('ui:rightCollapsed', next ? '1' : '0'); } catch {}
         return { rightPanel: { ...state.rightPanel, collapsed: next } } as any;
     }),
-    setLayer: (k, v) => set(state => ({ layers: { ...state.layers, [k]: v } } as any)),
+    setLayer: (k, v) => set(state => {
+        const next = { ...state.layers, [k]: v } as any;
+        const extra: any = {};
+        if (k === 'ocr') extra.showOcr = v;
+        return { layers: next, ...extra } as any;
+    }),
     setRightInspectorHeight: (px) => set(state => {
         const h = Math.max(160, Math.min(600, Math.round(px)));
         try { localStorage.setItem('ui:rightInspectorHeight', String(h)); } catch {}

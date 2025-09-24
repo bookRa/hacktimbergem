@@ -75,8 +75,11 @@ This document specifies the UI/UX overhaul for the three‑pane Timbergem worksp
 
 ### 8. Canvas & Interactions
 - Toolbar: Pan/Select, Draw Box, Stamp, Link, Multi‑select, Undo/Redo, Layer toggles, AI buttons.
-- Layer toggles: Drawings, OCR, Symbols, Components, Notes, Scopes links. Visibility + opacity sliders.
-- Linking Mode: start from a source entity; click items on canvas or in lists to collect evidence chips; Finish commits links.
+- Layer toggles (single source of truth): Drawings, Legends, Schedules, OCR, Symbols, Components, Notes, Scopes links. Visibility + opacity sliders.
+  - OCR toggle is synchronized across the toolbar and Right Panel.
+  - Scopes controls only the evidence highlight effect; it does not draw standalone boxes.
+  - Interactions may auto‑enable minimal required layers (e.g., Drawings for stamping, Drawings/Symbols/Components/Notes for linking) and never auto‑disable layers.
+- Linking Mode: start from a source entity; click items on canvas or in lists to collect evidence chips; Finish commits links. Required layers are auto‑enabled for the session.
 - Cross‑highlighting on hover within 100ms. Selection shows handles; Shift multi‑select; Esc clears.
 
 ### 9. Accessibility & Keyboard

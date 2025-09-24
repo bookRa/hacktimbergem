@@ -34,7 +34,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
 };
 
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
-    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId, setHoverEntityId, hoverEntityId } = useProjectStore(s => ({
+    const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId, setHoverEntityId, hoverEntityId, layers } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
         finalizeEntityCreation: s.finalizeEntityCreation,
@@ -54,6 +54,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         hoverScopeId: (s as any).hoverScopeId,
         setHoverEntityId: (s as any).setHoverEntityId,
         hoverEntityId: (s as any).hoverEntityId,
+        layers: (s as any).layers,
     }), shallow);
     const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number; } | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -107,14 +108,26 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
 
     const pageEntitiesRaw = useMemo(() => {
         const raw = (entities as any[]).filter((e: any) => e.source_sheet_number === pageIndex + 1);
+        // Apply layer visibility filters early
+        const isVisible = (e: any) => {
+            if (e.entity_type === 'drawing') return layers.drawings;
+            if (e.entity_type === 'legend') return layers.legends;
+            if (e.entity_type === 'schedule') return layers.schedules;
+            if (e.entity_type === 'symbol_definition' || e.entity_type === 'symbol_instance') return layers.symbols;
+            if (e.entity_type === 'component_definition' || e.entity_type === 'component_instance') return layers.components;
+            if (e.entity_type === 'note') return layers.notes;
+            return true;
+        };
+        const visible = raw.filter(isVisible);
+        const arr = visible.slice();
         raw.sort((a: any, b: any) => {
             const za = TYPE_Z_ORDER[a.entity_type] ?? 1;
             const zb = TYPE_Z_ORDER[b.entity_type] ?? 1;
             if (za !== zb) return za - zb; // lower z drawn first, higher z on top
             return 0;
         });
-        return raw;
-    }, [entities, pageIndex]);
+        return arr;
+    }, [entities, pageIndex, layers.drawings, layers.legends, layers.schedules, layers.symbols, layers.components, layers.notes]);
     // Convert all entity PDF-space boxes to canvas space for rendering and hit-testing
     const ocr = (pageOcr as any)?.[pageIndex];
     const meta = (pagesMeta as any)?.[pageIndex];

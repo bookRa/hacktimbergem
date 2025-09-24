@@ -71,12 +71,16 @@ Acceptance (S2)
 - [ ] Stamping multiple symbol instances is fluid (<75ms input latency).
 
 ### Sprint 3 — Definitions, Components, Spaces, Notes + Overlay Perf
-- [ ] Symbols ▸ Definitions grouped by Legend and Scope; “Select in Legend” jump.
-- [ ] Components ▸ Definitions/Instances mirroring Symbols.
-- [ ] Spaces tab with sheet filtering and auto-zoom behavior.
-- [ ] Notes tab: OCR block preview; “Promote to Note” flow.
-- [ ] EntitiesOverlay virtualization + spatial index for hit testing.
-- [ ] Density setting (comfortable default) persisted.
+- [x] Symbols ▸ Definitions grouped by Legend and Scope; “Select in Legend” jump.
+- [x] Components ▸ Definitions/Instances mirroring Symbols.
+- [x] Spaces tab with sheet filtering and auto-zoom behavior.
+- [x] Notes tab: OCR block preview; “Promote to Note” flow (persisted to entities).
+- [x] EntitiesOverlay virtualization + spatial index for hit testing (baseline; tune next).
+- [~] Density setting (comfortable default) persisted (toggle UI pending).
+  - [x] Layer toggles are authoritative and wired to overlays and interactions.
+  - [x] OCR toggle synced 2-way between toolbar and Right Panel.
+  - [x] Added Drawings/Legends/Schedules toggles; Scopes toggle gates evidence highlight.
+  - [x] Auto-enable required layers when starting Stamping or Linking.
 
 Acceptance (S3)
 - [ ] Lists of 2,000 items scroll smoothly; main thread idle >60% when idle.
@@ -101,6 +105,7 @@ Acceptance (S4)
 - [ ] Unit tests for selection state reducers and panel size persistence.
 - [ ] Integration tests for Linking Mode (happy path + cancel).
 - [ ] Performance budget checks (FPS, list render time) in CI smoke.
+- [ ] Tests for layers: rendering/hit-testing respect toggles; OCR toggle sync.
 
 ### Design Artifacts
 - [ ] Wireframes for each Explorer tab + Inspector variants.
