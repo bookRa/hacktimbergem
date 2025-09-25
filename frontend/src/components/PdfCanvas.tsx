@@ -4,7 +4,7 @@ import { GlobalWorkerOptions } from 'pdfjs-dist';
 import 'pdfjs-dist/web/pdf_viewer.css';
 import { OcrOverlay } from './OcrOverlay';
 import { DragSelectOverlay } from './DragSelectOverlay';
-import { EntitiesOverlay } from './EntitiesOverlay';
+import { OverlayLayer } from '../ui_v2/OverlayLayer';
 import { ZoomControls } from './ZoomControls';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
@@ -397,7 +397,9 @@ export const PdfCanvas: React.FC = () => {
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
                             {!creatingEntity && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
-                        <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
+                        {/* Legacy overlay retained for fallback; UI V2 overlay mounted below */}
+                        {/* <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} /> */}
+                        <OverlayLayer pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 ) : (
                     <>
@@ -406,7 +408,9 @@ export const PdfCanvas: React.FC = () => {
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
                             {!creatingEntity && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
-                        <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
+                        {/* Legacy overlay retained for fallback; UI V2 overlay mounted below */}
+                        {/* <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} /> */}
+                        <OverlayLayer pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 )}
             </div>

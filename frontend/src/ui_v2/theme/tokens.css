@@ -1,0 +1,31 @@
+.tg-ui2 {
+  --tg-bg: #ffffff;
+  --tg-panel: #f8f9fa;
+  --tg-panel-elevated: #ffffff;
+  --tg-text: #1f2937;
+  --tg-muted: #6b7280;
+  --tg-border: #e5e7eb;
+  --tg-accent: #7c5cfc;
+  --tg-accent-contrast: #ffffff;
+  --tg-warn: #ef4444;
+  --tg-warn-contrast: #ffffff;
+  --tg-selection: #3b82f6;
+  --tg-hover: #f59e0b;
+  --tg-space-1: 4px;
+  --tg-space-2: 8px;
+  --tg-space-3: 12px;
+  --tg-space-4: 16px;
+  --tg-space-6: 24px;
+  --tg-radius-sm: 4px;
+  --tg-radius-md: 8px;
+  --tg-radius-lg: 12px;
+  --tg-font-xs: 12px;
+  --tg-font-sm: 14px;
+  --tg-font-md: 16px;
+  --tg-font-lg: 20px;
+  color: var(--tg-text);
+}
+
+.tg-ui2 a {
+  color: inherit;
+}
