@@ -1,7 +1,16 @@
 // API client for visual entities
 // Keeps type alignment with backend entities_models.py
 
-export type EntityType = 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance';
+export type EntityType =
+    | 'drawing'
+    | 'legend'
+    | 'schedule'
+    | 'note'
+    | 'scope'
+    | 'symbol_definition'
+    | 'component_definition'
+    | 'symbol_instance'
+    | 'component_instance';
 
 export type EntityStatus = 'incomplete' | 'complete';
 export type EntityValidation = {
@@ -31,6 +40,7 @@ export interface DrawingEntity extends BaseEntity { entity_type: 'drawing'; titl
 export interface LegendEntity extends BaseEntity { entity_type: 'legend'; title?: string | null; }
 export interface ScheduleEntity extends BaseEntity { entity_type: 'schedule'; title?: string | null; }
 export interface NoteEntity extends BaseEntity { entity_type: 'note'; text?: string | null; }
+export interface ScopeEntity extends BaseEntity { entity_type: 'scope'; name?: string | null; description?: string | null; }
 
 export interface SymbolDefinitionEntity extends BaseEntity { entity_type: 'symbol_definition'; name: string; description?: string | null; visual_pattern_description?: string | null; scope: 'project' | 'sheet'; defined_in_id?: string | null }
 export interface ComponentDefinitionEntity extends BaseEntity { entity_type: 'component_definition'; name: string; description?: string | null; specifications?: Record<string, any> | null; scope: 'project' | 'sheet'; defined_in_id?: string | null }
@@ -42,6 +52,7 @@ export type Entity =
     | LegendEntity
     | ScheduleEntity
     | NoteEntity
+    | ScopeEntity
     | SymbolDefinitionEntity
     | ComponentDefinitionEntity
     | SymbolInstanceEntity
@@ -52,6 +63,7 @@ export type CreateEntityInput =
     | ({ entity_type: 'legend'; source_sheet_number: number; bounding_box: number[]; title?: string | null } & EntityFlags)
     | ({ entity_type: 'schedule'; source_sheet_number: number; bounding_box: number[]; title?: string | null } & EntityFlags)
     | ({ entity_type: 'note'; source_sheet_number: number; bounding_box: number[]; text?: string | null } & EntityFlags)
+    | ({ entity_type: 'scope'; source_sheet_number: number; bounding_box: number[]; name?: string | null; description?: string | null } & EntityFlags)
     | ({ entity_type: 'symbol_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; visual_pattern_description?: string | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)
     | ({ entity_type: 'component_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; specifications?: Record<string, any> | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)
     | ({ entity_type: 'symbol_instance'; source_sheet_number: number; bounding_box: number[]; symbol_definition_id: string; recognized_text?: string | null } & EntityFlags)

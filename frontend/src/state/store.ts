@@ -5,7 +5,8 @@ import type { Concept } from '../api/concepts';
 import { fetchConcepts as apiFetchConcepts, createConcept as apiCreateConcept, patchConcept as apiPatchConcept, deleteConcept as apiDeleteConcept } from '../api/concepts';
 import type { Relationship, RelationshipType } from '../api/links';
 import { fetchLinks as apiFetchLinks, createLink as apiCreateLink, deleteLink as apiDeleteLink } from '../api/links';
-import type { EntityFlags, EntityType } from '../api/entities';
+import type { EntityType } from '../api/entities';
+import { deriveEntityFlags } from './entity_flags';
 
 // Page raster meta at 300 DPI baseline
 export interface PageRenderMeta {
@@ -170,52 +171,6 @@ const lsNum = (k: string, def: number) => {
 };
 const lsBool = (k: string, def: boolean) => {
     try { const v = localStorage.getItem(k); return v ? v === '1' : def; } catch { return def; }
-};
-
-const computeEntityFlags = (type: EntityType, payload: Record<string, any>): EntityFlags => {
-    const missing: Record<'drawing' | 'definition' | 'scope', boolean> = {
-        drawing: false,
-        definition: false,
-        scope: false,
-    };
-
-    if (type === 'drawing') {
-        const title = typeof payload.title === 'string' ? payload.title.trim() : '';
-        missing.drawing = title.length === 0;
-    }
-
-    if (type === 'legend' || type === 'schedule') {
-        const title = typeof payload.title === 'string' ? payload.title.trim() : '';
-        missing.drawing = title.length === 0;
-    }
-
-    if (type === 'symbol_definition' || type === 'component_definition') {
-        const name = typeof payload.name === 'string' ? payload.name.trim() : '';
-        missing.definition = name.length === 0;
-    }
-
-    if (type === 'symbol_instance') {
-        missing.definition = !payload.symbol_definition_id;
-    }
-
-    if (type === 'component_instance') {
-        missing.definition = !payload.component_definition_id;
-    }
-
-    const missingEntries = Object.entries(missing).filter(([, value]) => value) as [keyof typeof missing, boolean][];
-    if (!missingEntries.length) {
-        return { status: 'complete', validation: null };
-    }
-
-    const normalizedMissing = missingEntries.reduce((acc, [key]) => {
-        acc[key] = true;
-        return acc;
-    }, {} as Partial<Record<'drawing' | 'definition' | 'scope', true>>);
-
-    return {
-        status: 'incomplete',
-        validation: { missing: normalizedMissing },
-    };
 };
 
 export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppState => ({
@@ -805,7 +760,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 payload.component_definition_id = creatingEntity.meta?.definitionId;
             }
 
-            Object.assign(payload, computeEntityFlags(creatingEntity.type, payload));
+            Object.assign(payload, deriveEntityFlags(creatingEntity.type as EntityType, payload));
             const resp = await fetch(`/api/projects/${projectId}/entities`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });

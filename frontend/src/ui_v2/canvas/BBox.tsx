@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from 'react';
 import '../theme/tokens.css';
 import { cx } from '../utils/classNames';
 
@@ -12,9 +12,10 @@ interface BBoxProps {
   height: number;
   children?: ReactNode;
   className?: string;
-  onClick?: () => void;
+  onClick?: (event: ReactMouseEvent<HTMLDivElement>) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onMouseDown?: (event: ReactMouseEvent<HTMLDivElement>) => void;
 }
 
 const variantStyles: Record<BBoxVariant, CSSProperties> = {
@@ -49,6 +50,7 @@ export function BBox({
   onClick,
   onMouseEnter,
   onMouseLeave,
+  onMouseDown,
 }: BBoxProps) {
   return (
     <div
@@ -66,6 +68,7 @@ export function BBox({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      onMouseDown={onMouseDown}
     >
       {children}
     </div>

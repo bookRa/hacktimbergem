@@ -7,8 +7,10 @@
 [x] Zustand slice ui_v2.ts (mode, menus, forms, linking)
 
 ## Sprint B — Creation & edit
-[ ] Drag-to-bbox → ContextPicker → InlineEntityForm
+[x] Drag-to-bbox → ContextPicker → InlineEntityForm
 [x] Entity model additions (status, validation.missing) client+server
+[x] Scope entities persisted with proper entity_type + link support
+[x] Note creation wired through ContextPicker + inline form
 [ ] Right-click EntityMenu; Edit bbox/props wired
 [ ] BBox PDF→viewport integration
 

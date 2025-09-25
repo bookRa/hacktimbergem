@@ -17,6 +17,7 @@ from .entities_models import (
     Legend,
     Schedule,
     Note,
+    Scope,
     SymbolDefinition,
     ComponentDefinition,
     SymbolInstance,
@@ -45,6 +46,7 @@ def load_entities(project_id: str) -> List[EntityUnion]:
             "legend": Legend,
             "schedule": Schedule,
             "note": Note,
+            "scope": Scope,
             "symbol_definition": SymbolDefinition,
             "component_definition": ComponentDefinition,
             "symbol_instance": SymbolInstance,
@@ -109,6 +111,12 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
         ent = Schedule(**base_kwargs, title=getattr(payload, "title", None))
     elif payload.entity_type == "note":
         ent = Note(**base_kwargs, text=getattr(payload, "text", None))
+    elif payload.entity_type == "scope":
+        ent = Scope(
+            **base_kwargs,
+            name=getattr(payload, "name", None),
+            description=getattr(payload, "description", None),
+        )
     elif payload.entity_type == "symbol_definition":
         ent = SymbolDefinition(
             **base_kwargs,
@@ -259,11 +267,17 @@ def update_entity(
         "legend": Legend,
         "schedule": Schedule,
         "note": Note,
+        "scope": Scope,
         "symbol_definition": SymbolDefinition,
         "component_definition": ComponentDefinition,
         "symbol_instance": SymbolInstance,
         "component_instance": ComponentInstance,
     }
+    if data["entity_type"] == "scope":
+        if name is not None:
+            data["name"] = name
+        if description is not None:
+            data["description"] = description
     cls = cls_map[data["entity_type"]]
     updated = cls(**data)
     entities[idx] = updated

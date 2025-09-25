@@ -15,7 +15,7 @@ type ContextMenuState = {
 
 type InlineFormState = {
   open: boolean;
-  type: 'Drawing' | 'SymbolInst' | 'Scope' | null;
+  type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note' | null;
   entityId?: string;
   at?: { x: number; y: number } | null;
   pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } | null;
@@ -36,7 +36,7 @@ type UIActions = {
   setMode: (mode: Mode) => void;
   openContext: (payload: { at: { x: number; y: number }; target?: Selection; pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } }) => void;
   closeContext: () => void;
-  openForm: (payload: { type: 'Drawing' | 'SymbolInst' | 'Scope'; entityId?: string; at?: { x: number; y: number }; pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } }) => void;
+  openForm: (payload: { type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note'; entityId?: string; at?: { x: number; y: number }; pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } }) => void;
   closeForm: () => void;
   startLinking: (source: Selection) => void;
   addPending: (selection: Selection) => void;

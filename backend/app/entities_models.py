@@ -87,6 +87,12 @@ class Note(BaseVisualEntity):
     text: str | None = None
 
 
+class Scope(BaseVisualEntity):
+    entity_type: Literal["scope"] = "scope"
+    name: str | None = None
+    description: str | None = None
+
+
 class SymbolDefinition(BaseVisualEntity):
     entity_type: Literal["symbol_definition"] = "symbol_definition"
     name: str
@@ -123,6 +129,7 @@ EntityUnion = Union[
     Legend,
     Schedule,
     Note,
+    Scope,
     SymbolDefinition,
     ComponentDefinition,
     SymbolInstance,
@@ -161,6 +168,14 @@ class CreateNote(CreateEntityBase):
     source_sheet_number: int
     bounding_box: List[float]
     text: str | None = None
+
+
+class CreateScope(CreateEntityBase):
+    entity_type: Literal["scope"]
+    source_sheet_number: int
+    bounding_box: List[float]
+    name: str | None = None
+    description: str | None = None
 
 
 class CreateSymbolDefinition(CreateEntityBase):
@@ -205,6 +220,7 @@ CreateEntityUnion = Union[
     CreateLegend,
     CreateSchedule,
     CreateNote,
+    CreateScope,
     CreateSymbolDefinition,
     CreateComponentDefinition,
     CreateSymbolInstance,
@@ -221,6 +237,7 @@ __all__ = [
     "Legend",
     "Schedule",
     "Note",
+    "Scope",
     "SymbolDefinition",
     "ComponentDefinition",
     "SymbolInstance",
@@ -231,6 +248,7 @@ __all__ = [
     "CreateLegend",
     "CreateSchedule",
     "CreateNote",
+    "CreateScope",
     "CreateSymbolDefinition",
     "CreateComponentDefinition",
     "CreateSymbolInstance",

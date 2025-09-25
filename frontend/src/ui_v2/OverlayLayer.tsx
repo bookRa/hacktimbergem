@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { BBox, BBoxVariant } from './canvas/BBox';
 import { EntityTag, EntityType as TagEntityType } from './canvas/EntityTag';
 import { ContextPicker } from './menus/ContextPicker';
@@ -8,7 +9,11 @@ import { ChipsTray } from './linking/ChipsTray';
 import { OCRPicker } from './overlays/OCRPicker';
 import '../ui_v2/theme/tokens.css';
 import { useUIV2Actions, useUIV2ContextMenu, useUIV2InlineForm, useUIV2Linking, useUIV2Selection } from '../state/ui_v2';
+import type { Selection } from '../state/ui_v2';
 import { useProjectStore } from '../state/store';
+import { createEntity } from '../api/entities';
+import { createLink as apiCreateLink } from '../api/links';
+import { deriveEntityFlags } from '../state/entity_flags';
 import { pdfToCanvas } from '../utils/coords';
 import type { Entity } from '../api/entities';
 
@@ -32,6 +37,7 @@ const entityTypeMap: Record<Entity['entity_type'], TagEntityType> = {
   legend: 'Legend',
   schedule: 'Schedule',
   note: 'Note',
+  scope: 'Scope',
   symbol_definition: 'SymbolDef',
   component_definition: 'CompDef',
   symbol_instance: 'SymbolInst',
@@ -83,12 +89,22 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     closeContext,
     openForm,
     closeForm,
+    setSelection,
+    startLinking,
+    addPending,
+    finishLinking,
+    cancelLinking,
   } = useUIV2Actions();
 
-  const { entities, pagesMeta, pageOcr } = useProjectStore((state: any) => ({
+  const { entities, pagesMeta, pageOcr, projectId, addToast, fetchEntities, fetchLinks, pushHistory } = useProjectStore((state: any) => ({
     entities: state.entities as Entity[],
     pagesMeta: state.pagesMeta,
     pageOcr: state.pageOcr,
+    projectId: state.projectId,
+    addToast: state.addToast,
+    fetchEntities: state.fetchEntities,
+    fetchLinks: state.fetchLinks,
+    pushHistory: state.pushHistory,
   }));
 
   const pageEntities = useMemo<DisplayEntity[]>(() => {
@@ -112,6 +128,30 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }))
       .sort((a, b) => a.entity.created_at - b.entity.created_at);
   }, [entities, pageIndex, pageOcr, pagesMeta, scale]);
+
+  const entityMeta = useMemo(() => {
+    const map = new Map<string, Entity>();
+    entities.forEach((entity) => map.set(entity.id, entity));
+    return map;
+  }, [entities]);
+
+  const formatChipLabel = useCallback(
+    (selection: Selection) => {
+      const entity = entityMeta.get(selection.id);
+      const labelCandidates = [
+        (entity as any)?.title,
+        (entity as any)?.name,
+        (entity as any)?.text,
+        (entity as any)?.description,
+      ];
+      const label = labelCandidates.find((value) => typeof value === 'string' && value.trim().length > 0);
+      if (typeof label === 'string') {
+        return label.trim();
+      }
+      return `${selection.type} ${selection.id.slice(0, 4).toUpperCase()}`;
+    },
+    [entityMeta]
+  );
 
   const cancelDraftRaf = () => {
     if (rafRef.current != null) {
@@ -154,6 +194,120 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     },
     []
   );
+
+  const makeSelection = useCallback(
+    (item: DisplayEntity) => ({
+      id: item.entity.id,
+      type: item.tagType,
+      sheetId: String(item.entity.source_sheet_number),
+    }),
+    []
+  );
+
+  const handleEntityClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>, item: DisplayEntity) => {
+      event.stopPropagation();
+      if (linking.active) {
+        const target = makeSelection(item);
+        if (linking.source && target.id === linking.source.id) {
+          return;
+        }
+        const exists = selection.some((sel) => sel.id === target.id);
+        addPending(target);
+        if (exists) {
+          setSelection(selection.filter((sel) => sel.id !== target.id));
+        } else {
+          const base = linking.source ? [linking.source, ...linking.pending] : [...linking.pending];
+          const nextMap = new Map<string, Selection>();
+          [...base, target].forEach((sel) => {
+            if (sel) nextMap.set(sel.id, sel);
+          });
+          setSelection(Array.from(nextMap.values()));
+        }
+        return;
+      }
+      const allowMulti = event.shiftKey || event.metaKey || event.ctrlKey;
+      const target = makeSelection(item);
+      if (!allowMulti) {
+        setSelection([target]);
+        return;
+      }
+      const exists = selection.some((sel) => sel.id === target.id);
+      const next = exists ? selection.filter((sel) => sel.id !== target.id) : [...selection, target];
+      setSelection(next);
+    },
+    [addPending, linking.active, linking.pending, linking.source, makeSelection, selection, setSelection]
+  );
+
+  const handleEntityMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+  }, []);
+
+  const linkingChips = useMemo(() => {
+    if (!linking.active) return [] as { id: string; label: string; type: string }[];
+    const chips: { id: string; label: string; type: string }[] = [];
+    if (linking.source) {
+      chips.push({ id: linking.source.id, label: formatChipLabel(linking.source), type: linking.source.type });
+    }
+    linking.pending.forEach((sel) => {
+      chips.push({ id: sel.id, label: formatChipLabel(sel), type: sel.type });
+    });
+    return chips;
+  }, [formatChipLabel, linking.active, linking.pending, linking.source]);
+
+  const handleRemoveChip = useCallback(
+    (id: string) => {
+      if (linking.source && linking.source.id === id) {
+        cancelLinking();
+        return;
+      }
+      const match = linking.pending.find((sel) => sel.id === id);
+      if (match) {
+        addPending(match);
+      }
+    },
+    [addPending, cancelLinking, linking.pending, linking.source]
+  );
+
+  const handleFinishLinking = useCallback(async () => {
+    if (!projectId) {
+      addToast({ kind: 'error', message: 'No project loaded' });
+      cancelLinking();
+      return;
+    }
+    const { source, pending } = finishLinking();
+    if (!source) {
+      addToast({ kind: 'error', message: 'Select an entity to link from' });
+      return;
+    }
+    if (!pending.length) {
+      addToast({ kind: 'error', message: 'Add at least one entity to link' });
+      return;
+    }
+
+    if (source.type !== 'Scope') {
+      addToast({ kind: 'warning', message: 'Linking is currently available for scopes only' });
+      return;
+    }
+
+    try {
+      await Promise.all(
+        pending.map((sel) =>
+          apiCreateLink(projectId, {
+            rel_type: 'JUSTIFIED_BY',
+            source_id: source.id,
+            target_id: sel.id,
+          })
+        )
+      );
+      await fetchLinks();
+      addToast({ kind: 'success', message: 'Links created' });
+      setSelection([source, ...pending]);
+    } catch (error: any) {
+      console.error(error);
+      addToast({ kind: 'error', message: error?.message || 'Failed to create links' });
+    }
+  }, [addToast, cancelLinking, fetchLinks, finishLinking, projectId, setSelection]);
 
   const shouldIgnorePointer = useCallback((target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) return false;
@@ -288,14 +442,18 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         openContext({ at: pointerAt });
         return;
       }
-      const target = {
-        id: hit.entity.id,
-        type: hit.tagType,
-        sheetId: String(hit.entity.source_sheet_number),
-      } as const;
+      const target = makeSelection(hit);
+      const multi = event.shiftKey || event.metaKey || event.ctrlKey;
+      if (!multi) {
+        setSelection([target]);
+      } else {
+        const exists = selection.some((sel) => sel.id === target.id);
+        const next = exists ? selection.filter((sel) => sel.id !== target.id) : [...selection, target];
+        setSelection(next);
+      }
       openContext({ at: pointerAt, target });
     },
-    [computeContextPosition, openContext, pageEntities]
+    [computeContextPosition, makeSelection, openContext, pageEntities, selection, setSelection]
   );
 
   const handleContextSelect = useCallback(
@@ -303,16 +461,130 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const pending = pendingBBoxRef.current || inlineForm.pendingBBox;
       const openVariant = () => {
         if (!pending) return;
-        let type: 'Drawing' | 'SymbolInst' | 'Scope' | null = null;
+        let type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note' | null = null;
         if (entityType === 'Symbol Instance') type = 'SymbolInst';
         else if (entityType === 'Drawing') type = 'Drawing';
         else if (entityType === 'Scope') type = 'Scope';
+        else if (entityType === 'Note') type = 'Note';
         if (!type) return;
         openForm({ type, at: contextMenu.at ?? { x: 0, y: 0 }, pendingBBox: pending });
       };
       openVariant();
     },
     [contextMenu.at, inlineForm.pendingBBox, openForm]
+  );
+
+  const handleFormSave = useCallback(
+    async (formData: Record<string, any>) => {
+      const pending = inlineForm.pendingBBox || pendingBBoxRef.current;
+      if (!pending) {
+        closeForm();
+        return;
+      }
+      if (!projectId) {
+        closeForm();
+        return;
+      }
+
+      const sheetNumber = Number.parseInt(pending.sheetId, 10);
+      if (!Number.isFinite(sheetNumber)) {
+        addToast({ kind: 'error', message: 'Missing sheet number for new entity' });
+        closeForm();
+        return;
+      }
+
+      if (inlineForm.type === 'Drawing') {
+        const payload: any = {
+          entity_type: 'drawing',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          title: formData.title ?? '',
+        };
+        Object.assign(payload, deriveEntityFlags('drawing', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'Drawing',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Drawing created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create drawing' });
+        }
+      } else if (inlineForm.type === 'Scope') {
+        const payload: any = {
+          entity_type: 'scope',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          name: formData.name ?? '',
+          description: formData.description ?? '',
+        };
+        Object.assign(payload, deriveEntityFlags('scope', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'Scope',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Scope created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create scope' });
+        }
+      } else if (inlineForm.type === 'Note') {
+        const payload: any = {
+          entity_type: 'note',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          text: formData.text ?? '',
+        };
+        Object.assign(payload, deriveEntityFlags('note', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'Note',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Note created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create note' });
+        }
+      }
+
+      pendingBBoxRef.current = null;
+      closeForm();
+      closeContext();
+    },
+    [addToast, closeContext, closeForm, fetchEntities, inlineForm.pendingBBox, inlineForm.type, projectId, pushHistory, setSelection]
   );
 
   const renderVariant = (item: DisplayEntity): BBoxVariant => {
@@ -336,18 +608,21 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       onContextMenu={handleContextMenu}
     >
       {pageEntities.map((item) => (
-        <BBox
-          key={item.entity.id}
-          variant={renderVariant(item)}
-          x={item.bboxPx.x}
-          y={item.bboxPx.y}
-          width={item.bboxPx.width}
-          height={item.bboxPx.height}
-        >
-          <div style={{ position: 'absolute', top: -28, left: 0 }}>
-            <EntityTag type={item.tagType} id={item.entity.id.slice(0, 4).toUpperCase()} incomplete={item.isIncomplete} />
-          </div>
-        </BBox>
+        <div key={item.entity.id} data-ui2-overlay-ignore>
+          <BBox
+            variant={renderVariant(item)}
+            x={item.bboxPx.x}
+            y={item.bboxPx.y}
+            width={item.bboxPx.width}
+            height={item.bboxPx.height}
+            onClick={(event) => handleEntityClick(event, item)}
+            onMouseDown={handleEntityMouseDown}
+          >
+            <div style={{ position: 'absolute', top: -28, left: 0 }}>
+              <EntityTag type={item.tagType} id={item.entity.id.slice(0, 4).toUpperCase()} incomplete={item.isIncomplete} />
+            </div>
+          </BBox>
+        </div>
       ))}
 
       {isDrawing ? (
@@ -379,6 +654,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         onAction={(action) => {
           if (action === 'delete') {
             // TODO: Wire deletion
+          } else if (action === 'link' && contextMenu.target) {
+            const { target } = contextMenu;
+            if (target.type !== 'Scope') {
+              addToast({ kind: 'warning', message: 'Linking is currently available for scopes only' });
+              closeContext();
+              return;
+            }
+            startLinking(target);
+            setSelection([target]);
+            closeContext();
           }
         }}
         onClose={closeContext}
@@ -386,20 +671,31 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
       <InlineEntityForm
         open={inlineForm.open}
-        variant={inlineForm.type === 'SymbolInst' ? 'SymbolInstanceForm' : inlineForm.type === 'Scope' ? 'ScopeForm' : 'DrawingForm'}
+        variant={
+          inlineForm.type === 'SymbolInst'
+            ? 'SymbolInstanceForm'
+            : inlineForm.type === 'Scope'
+            ? 'ScopeForm'
+            : inlineForm.type === 'Note'
+            ? 'NoteForm'
+            : 'DrawingForm'
+        }
         x={inlineForm.at?.x ?? contextMenu.at?.x ?? 0}
         y={inlineForm.at?.y ?? contextMenu.at?.y ?? 0}
-        onSave={(data) => {
-          console.log('inline form save', data);
-          closeForm();
-        }}
+        onSave={handleFormSave}
         onCancel={closeForm}
         onCreateFromOCR={() => {
           // TODO: Wire OCR picker
         }}
       />
 
-      <ChipsTray open={linking.active} chips={linking.pending.map((sel) => ({ id: sel.id, label: sel.id, type: sel.type }))} />
+      <ChipsTray
+        open={linking.active}
+        chips={linkingChips}
+        onRemoveChip={handleRemoveChip}
+        onFinish={handleFinishLinking}
+        onCancel={cancelLinking}
+      />
 
       <OCRPicker open={false} />
     </div>

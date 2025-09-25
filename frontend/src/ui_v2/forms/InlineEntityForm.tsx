@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import '../theme/tokens.css';
 import { TGCard } from '../../ui_primitives/card';
 import { TGButton } from '../../ui_primitives/button';
@@ -6,7 +6,7 @@ import { TGInput } from '../../ui_primitives/input';
 import { TGSelect } from '../../ui_primitives/select';
 import { cx } from '../utils/classNames';
 
-export type FormVariant = 'DrawingForm' | 'SymbolInstanceForm' | 'ScopeForm';
+export type FormVariant = 'DrawingForm' | 'SymbolInstanceForm' | 'ScopeForm' | 'NoteForm';
 
 interface InlineEntityFormProps {
   variant: FormVariant;
@@ -58,6 +58,12 @@ export function InlineEntityForm({
   onCreateFromOCR,
 }: InlineEntityFormProps) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
+
+  useEffect(() => {
+    if (!open) {
+      setFormData({});
+    }
+  }, [open, variant]);
 
   if (!open) return null;
 
@@ -157,12 +163,20 @@ export function InlineEntityForm({
     </div>
   );
 
+  const renderNoteForm = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderTextarea('Note', 'text', 'Enter note text...')}
+    </div>
+  );
+
   const getIncompleteText = () => {
     switch (variant) {
       case 'SymbolInstanceForm':
         return 'Needs visual definition and semantic meaning to be complete';
       case 'ScopeForm':
         return 'Needs name and description to be complete';
+      case 'NoteForm':
+        return 'Needs text content to be complete';
       case 'DrawingForm':
         return 'Needs title to be complete';
       default:
@@ -192,6 +206,7 @@ export function InlineEntityForm({
           {variant === 'DrawingForm' && renderDrawingForm()}
           {variant === 'SymbolInstanceForm' && renderSymbolInstanceForm()}
           {variant === 'ScopeForm' && renderScopeForm()}
+          {variant === 'NoteForm' && renderNoteForm()}
 
           <div
             style={{
