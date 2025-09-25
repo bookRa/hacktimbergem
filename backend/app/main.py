@@ -142,6 +142,8 @@ async def patch_entity_endpoint(
     symbol_definition_id = body.get("symbol_definition_id")
     component_definition_id = body.get("component_definition_id")
     recognized_text = body.get("recognized_text")
+    status = body.get("status")
+    validation = body.get("validation")
     try:
         ent = update_entity(
             project_id,
@@ -158,6 +160,8 @@ async def patch_entity_endpoint(
             symbol_definition_id=symbol_definition_id,
             component_definition_id=component_definition_id,
             recognized_text=recognized_text,
+            status=status,
+            validation=validation,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

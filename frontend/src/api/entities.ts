@@ -3,9 +3,23 @@
 
 export type EntityType = 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance';
 
+export type EntityStatus = 'incomplete' | 'complete';
+export type EntityValidation = {
+    missing?: {
+        drawing?: boolean;
+        definition?: boolean;
+        scope?: boolean;
+    };
+} | null;
+
+export type EntityFlags = {
+    status?: EntityStatus;
+    validation?: EntityValidation;
+};
+
 export interface BoundingBox { x1: number; y1: number; x2: number; y2: number; }
 
-export interface BaseEntity {
+export interface BaseEntity extends EntityFlags {
     id: string;
     entity_type: EntityType;
     source_sheet_number: number; // 1-based sheet number
@@ -34,14 +48,31 @@ export type Entity =
     | ComponentInstanceEntity;
 
 export type CreateEntityInput =
-    | { entity_type: 'drawing'; source_sheet_number: number; bounding_box: number[]; title?: string | null }
-    | { entity_type: 'legend'; source_sheet_number: number; bounding_box: number[]; title?: string | null }
-    | { entity_type: 'schedule'; source_sheet_number: number; bounding_box: number[]; title?: string | null }
-    | { entity_type: 'note'; source_sheet_number: number; bounding_box: number[]; text?: string | null }
-    | { entity_type: 'symbol_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; visual_pattern_description?: string | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null }
-    | { entity_type: 'component_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; specifications?: Record<string, any> | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null }
-    | { entity_type: 'symbol_instance'; source_sheet_number: number; bounding_box: number[]; symbol_definition_id: string; recognized_text?: string | null }
-    | { entity_type: 'component_instance'; source_sheet_number: number; bounding_box: number[]; component_definition_id: string };
+    | ({ entity_type: 'drawing'; source_sheet_number: number; bounding_box: number[]; title?: string | null } & EntityFlags)
+    | ({ entity_type: 'legend'; source_sheet_number: number; bounding_box: number[]; title?: string | null } & EntityFlags)
+    | ({ entity_type: 'schedule'; source_sheet_number: number; bounding_box: number[]; title?: string | null } & EntityFlags)
+    | ({ entity_type: 'note'; source_sheet_number: number; bounding_box: number[]; text?: string | null } & EntityFlags)
+    | ({ entity_type: 'symbol_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; visual_pattern_description?: string | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)
+    | ({ entity_type: 'component_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; specifications?: Record<string, any> | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)
+    | ({ entity_type: 'symbol_instance'; source_sheet_number: number; bounding_box: number[]; symbol_definition_id: string; recognized_text?: string | null } & EntityFlags)
+    | ({ entity_type: 'component_instance'; source_sheet_number: number; bounding_box: number[]; component_definition_id: string } & EntityFlags);
+
+type PatchPayload = Partial<{
+    bounding_box: number[];
+    title: string | null;
+    text: string | null;
+    recognized_text?: string | null;
+    symbol_definition_id?: string;
+    component_definition_id?: string;
+    specifications?: Record<string, any>;
+    name?: string | null;
+    description?: string | null;
+    visual_pattern_description?: string | null;
+    scope?: 'project' | 'sheet';
+    defined_in_id?: string | null;
+    status?: EntityStatus;
+    validation?: EntityValidation;
+}>;
 
 export async function fetchEntities(projectId: string): Promise<Entity[]> {
     const r = await fetch(`/api/projects/${projectId}/entities`);
@@ -63,7 +94,7 @@ export async function createEntity(projectId: string, payload: CreateEntityInput
     return r.json();
 }
 
-export async function patchEntity(projectId: string, id: string, data: Partial<{ bounding_box: number[]; title: string | null; text: string | null; recognized_text?: string | null; symbol_definition_id?: string; component_definition_id?: string; specifications?: Record<string, any> }>): Promise<Entity> {
+export async function patchEntity(projectId: string, id: string, data: PatchPayload): Promise<Entity> {
     const r = await fetch(`/api/projects/${projectId}/entities/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

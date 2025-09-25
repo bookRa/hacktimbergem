@@ -8,7 +8,7 @@
 
 ## Sprint B — Creation & edit
 [ ] Drag-to-bbox → ContextPicker → InlineEntityForm
-[ ] Entity model additions (status, validation.missing) client+server
+[x] Entity model additions (status, validation.missing) client+server
 [ ] Right-click EntityMenu; Edit bbox/props wired
 [ ] BBox PDF→viewport integration
 

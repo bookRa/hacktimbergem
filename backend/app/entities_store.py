@@ -21,6 +21,7 @@ from .entities_models import (
     ComponentDefinition,
     SymbolInstance,
     ComponentInstance,
+    ValidationInfo,
 )
 
 ENTITIES_FILENAME = "entities.json"
@@ -86,10 +87,19 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
     if x2 <= x1 or y2 <= y1:
         raise ValueError("bounding_box must have x2>x1 and y2>y1")
     bbox = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    validation = getattr(payload, "validation", None)
+    if validation is not None and not isinstance(validation, ValidationInfo):
+        try:
+            validation = ValidationInfo.parse_obj(validation)
+        except Exception:
+            raise ValueError("Invalid validation payload")
+
     base_kwargs = {
         "id": new_id,
         "source_sheet_number": payload.source_sheet_number,
         "bounding_box": bbox,
+        "status": getattr(payload, "status", None),
+        "validation": validation,
     }
     if payload.entity_type == "drawing":
         ent = Drawing(**base_kwargs, title=getattr(payload, "title", None))
@@ -185,6 +195,8 @@ def update_entity(
     symbol_definition_id: str | None = None,
     component_definition_id: str | None = None,
     recognized_text: str | None = None,
+    status: str | None = None,
+    validation: dict | ValidationInfo | None = None,
 ) -> EntityUnion:
     entities = load_entities(project_id)
     found = None
@@ -206,6 +218,18 @@ def update_entity(
         if x2 <= x1 or y2 <= y1:
             raise ValueError("bounding_box must have x2>x1 and y2>y1")
         data["bounding_box"] = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    if status is not None:
+        if status not in {"incomplete", "complete"}:
+            raise ValueError("status must be 'incomplete' or 'complete'")
+        data["status"] = status
+    if validation is not None:
+        if isinstance(validation, ValidationInfo):
+            data["validation"] = validation
+        else:
+            try:
+                data["validation"] = ValidationInfo.parse_obj(validation)
+            except Exception:
+                raise ValueError("Invalid validation payload")
     # Title for drawing/legend/schedule; text for note
     if title is not None and data["entity_type"] in {"drawing", "legend", "schedule"}:
         data["title"] = title

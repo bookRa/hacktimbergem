@@ -41,12 +41,27 @@ class BoundingBox(BaseModel):
         return [self.x1, self.y1, self.x2, self.y2]
 
 
+StatusLiteral = Literal["incomplete", "complete"]
+
+
+class MissingValidation(BaseModel):
+    drawing: Optional[bool] = None
+    definition: Optional[bool] = None
+    scope: Optional[bool] = None
+
+
+class ValidationInfo(BaseModel):
+    missing: Optional[MissingValidation] = None
+
+
 class BaseVisualEntity(BaseModel):
     id: str = Field(..., description="Server-assigned unique id")
     entity_type: str
     source_sheet_number: int = Field(..., ge=1)
     bounding_box: BoundingBox
     created_at: float = Field(default_factory=lambda: time.time())
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
 
     class Config:
         orm_mode = True
@@ -115,35 +130,40 @@ EntityUnion = Union[
 ]
 
 
-class CreateDrawing(BaseModel):
+class CreateEntityBase(BaseModel):
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
+
+
+class CreateDrawing(CreateEntityBase):
     entity_type: Literal["drawing"]
     source_sheet_number: int
     bounding_box: List[float]
     title: str | None = None
 
 
-class CreateLegend(BaseModel):
+class CreateLegend(CreateEntityBase):
     entity_type: Literal["legend"]
     source_sheet_number: int
     bounding_box: List[float]
     title: str | None = None
 
 
-class CreateSchedule(BaseModel):
+class CreateSchedule(CreateEntityBase):
     entity_type: Literal["schedule"]
     source_sheet_number: int
     bounding_box: List[float]
     title: str | None = None
 
 
-class CreateNote(BaseModel):
+class CreateNote(CreateEntityBase):
     entity_type: Literal["note"]
     source_sheet_number: int
     bounding_box: List[float]
     text: str | None = None
 
 
-class CreateSymbolDefinition(BaseModel):
+class CreateSymbolDefinition(CreateEntityBase):
     entity_type: Literal["symbol_definition"]
     source_sheet_number: int
     bounding_box: List[float]
@@ -154,7 +174,7 @@ class CreateSymbolDefinition(BaseModel):
     defined_in_id: Optional[str] = None
 
 
-class CreateComponentDefinition(BaseModel):
+class CreateComponentDefinition(CreateEntityBase):
     entity_type: Literal["component_definition"]
     source_sheet_number: int
     bounding_box: List[float]
@@ -165,7 +185,7 @@ class CreateComponentDefinition(BaseModel):
     defined_in_id: Optional[str] = None
 
 
-class CreateSymbolInstance(BaseModel):
+class CreateSymbolInstance(CreateEntityBase):
     entity_type: Literal["symbol_instance"]
     source_sheet_number: int
     bounding_box: List[float]
@@ -173,7 +193,7 @@ class CreateSymbolInstance(BaseModel):
     recognized_text: Optional[str] = None
 
 
-class CreateComponentInstance(BaseModel):
+class CreateComponentInstance(CreateEntityBase):
     entity_type: Literal["component_instance"]
     source_sheet_number: int
     bounding_box: List[float]
@@ -194,6 +214,9 @@ CreateEntityUnion = Union[
 __all__ = [
     "BoundingBox",
     "BaseVisualEntity",
+    "ValidationInfo",
+    "MissingValidation",
+    "StatusLiteral",
     "Drawing",
     "Legend",
     "Schedule",
