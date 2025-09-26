@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import '../theme/tokens.css';
 import { cx } from '../utils/classNames';
 
@@ -12,10 +13,12 @@ interface BBoxProps {
   height: number;
   children?: ReactNode;
   className?: string;
+  style?: CSSProperties;
   onClick?: (event: ReactMouseEvent<HTMLDivElement>) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onMouseDown?: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }
 
 const variantStyles: Record<BBoxVariant, CSSProperties> = {
@@ -47,10 +50,12 @@ export function BBox({
   height,
   children,
   className,
+  style,
   onClick,
   onMouseEnter,
   onMouseLeave,
   onMouseDown,
+  onPointerDown,
 }: BBoxProps) {
   return (
     <div
@@ -64,11 +69,13 @@ export function BBox({
         width,
         height,
         ...variantStyles[variant],
+        ...style,
       }}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
     >
       {children}
     </div>

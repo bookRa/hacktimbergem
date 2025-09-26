@@ -11,7 +11,7 @@
 [x] Entity model additions (status, validation.missing) client+server
 [x] Scope entities persisted with proper entity_type + link support
 [x] Note creation wired through ContextPicker + inline form
-[ ] Right-click EntityMenu; Edit bbox/props wired
+[x] Right-click EntityMenu; Edit bbox/props wired
 [ ] BBox PDF→viewport integration
 
 ## Sprint C — Linking & OCR

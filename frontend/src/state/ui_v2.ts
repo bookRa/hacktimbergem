@@ -19,6 +19,8 @@ type InlineFormState = {
   entityId?: string;
   at?: { x: number; y: number } | null;
   pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } | null;
+  initialValues?: Record<string, any> | null;
+  mode?: 'create' | 'edit';
 };
 
 type LinkingState = {
@@ -36,9 +38,16 @@ type UIActions = {
   setMode: (mode: Mode) => void;
   openContext: (payload: { at: { x: number; y: number }; target?: Selection; pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } }) => void;
   closeContext: () => void;
-  openForm: (payload: { type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note'; entityId?: string; at?: { x: number; y: number }; pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } }) => void;
+  openForm: (payload: {
+    type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note';
+    entityId?: string;
+    at?: { x: number; y: number };
+    pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] };
+    initialValues?: Record<string, any> | null;
+    mode?: 'create' | 'edit';
+  }) => void;
   closeForm: () => void;
-  startLinking: (source: Selection) => void;
+  startLinking: (source: Selection, initialPending?: Selection[]) => void;
   addPending: (selection: Selection) => void;
   finishLinking: () => { source?: Selection; pending: Selection[] };
   cancelLinking: () => void;
@@ -62,7 +71,7 @@ export type UIState = {
 const initialState: Omit<UIState, keyof UIActions> = {
   mode: 'select',
   contextMenu: { open: false, at: null, target: undefined },
-  inlineForm: { open: false, type: null, at: null, pendingBBox: null, entityId: undefined },
+  inlineForm: { open: false, type: null, at: null, pendingBBox: null, entityId: undefined, initialValues: null, mode: 'create' },
   linking: { active: false, source: undefined, pending: [] },
   hover: undefined,
   selection: [],
@@ -87,7 +96,7 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   closeContext: () => {
     set({ contextMenu: { open: false, at: null, target: undefined } });
   },
-  openForm: ({ type, entityId, at, pendingBBox }) => {
+  openForm: ({ type, entityId, at, pendingBBox, initialValues = null, mode = 'create' }) => {
     set({
       inlineForm: {
         open: true,
@@ -95,14 +104,16 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
         entityId,
         at: at ?? null,
         pendingBBox: pendingBBox ?? get().inlineForm.pendingBBox ?? null,
+        initialValues,
+        mode,
       },
     });
   },
   closeForm: () => {
-    set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null } });
+    set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null, initialValues: null, mode: 'create' } });
   },
-  startLinking: (source) => {
-    set({ linking: { active: true, source, pending: [] }, mode: 'link' });
+  startLinking: (source, initialPending = []) => {
+    set({ linking: { active: true, source, pending: initialPending }, mode: 'link' });
   },
   addPending: (selection) => {
     set((state) => {

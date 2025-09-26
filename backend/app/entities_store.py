@@ -104,7 +104,11 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
         "validation": validation,
     }
     if payload.entity_type == "drawing":
-        ent = Drawing(**base_kwargs, title=getattr(payload, "title", None))
+        ent = Drawing(
+            **base_kwargs,
+            title=getattr(payload, "title", None),
+            description=getattr(payload, "description", None),
+        )
     elif payload.entity_type == "legend":
         ent = Legend(**base_kwargs, title=getattr(payload, "title", None))
     elif payload.entity_type == "schedule":

@@ -70,6 +70,7 @@ class BaseVisualEntity(BaseModel):
 class Drawing(BaseVisualEntity):
     entity_type: Literal["drawing"] = "drawing"
     title: str | None = None
+    description: str | None = None
 
 
 class Legend(BaseVisualEntity):
@@ -147,6 +148,7 @@ class CreateDrawing(CreateEntityBase):
     source_sheet_number: int
     bounding_box: List[float]
     title: str | None = None
+    description: str | None = None
 
 
 class CreateLegend(CreateEntityBase):

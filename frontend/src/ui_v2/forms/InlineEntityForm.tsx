@@ -16,6 +16,9 @@ interface InlineEntityFormProps {
   onSave?: (data: Record<string, unknown>) => void;
   onCancel?: () => void;
   onCreateFromOCR?: () => void;
+  initialValues?: Record<string, unknown> | null;
+  mode?: 'create' | 'edit';
+  symbolDefinitionOptions?: { label: string; value: string }[];
 }
 
 const PlusIcon = () => (
@@ -56,14 +59,19 @@ export function InlineEntityForm({
   onSave,
   onCancel,
   onCreateFromOCR,
+  initialValues = null,
+  mode = 'create',
+  symbolDefinitionOptions,
 }: InlineEntityFormProps) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
     if (!open) {
       setFormData({});
+      return;
     }
-  }, [open, variant]);
+    setFormData(() => ({ ...(initialValues ?? {}) }));
+  }, [open, variant, initialValues]);
 
   if (!open) return null;
 
@@ -111,50 +119,57 @@ export function InlineEntityForm({
     </div>
   );
 
-  const renderSymbolInstanceForm = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Visual Definition</label>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <TGSelect
-            value={(formData.visualDefinition as string) ?? ''}
-            onValueChange={(value) => updateField('visualDefinition', value)}
-            options={symbolDefinitionOptions}
-            placeholder="Select definition..."
-          />
-          <TGButton
-            variant="outline"
-            size="sm"
-            style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-          >
-            <PlusIcon />
-            New
-          </TGButton>
-        </div>
-      </div>
+  const renderSymbolInstanceForm = () => {
+    const definitionOptions = symbolDefinitionOptions && symbolDefinitionOptions.length > 0
+      ? symbolDefinitionOptions
+      : [];
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Semantic Meaning</label>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <TGSelect
-            value={(formData.semanticMeaning as string) ?? ''}
-            onValueChange={(value) => updateField('semanticMeaning', value)}
-            options={semanticMeaningOptions}
-            placeholder="Select meaning..."
-          />
-          <TGButton
-            variant="outline"
-            size="sm"
-            style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-            onClick={() => onCreateFromOCR?.()}
-          >
-            <SparkIcon />
-            OCR
-          </TGButton>
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Visual Definition</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <TGSelect
+              value={(formData.symbolDefinitionId as string) ?? ''}
+              onValueChange={(value) => updateField('symbolDefinitionId', value)}
+              options={definitionOptions.length ? definitionOptions : [{ label: 'No definitions available', value: '' }]}
+              placeholder="Select definition..."
+              disabled={!definitionOptions.length}
+            />
+            <TGButton
+              variant="outline"
+              size="sm"
+              style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            >
+              <PlusIcon />
+              New
+            </TGButton>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Semantic Meaning</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <TGSelect
+              value={(formData.recognizedText as string) ?? ''}
+              onValueChange={(value) => updateField('recognizedText', value)}
+              options={semanticMeaningOptions}
+              placeholder="Select meaning..."
+            />
+            <TGButton
+              variant="outline"
+              size="sm"
+              style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              onClick={() => onCreateFromOCR?.()}
+            >
+              <SparkIcon />
+              OCR
+            </TGButton>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderScopeForm = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -183,6 +198,8 @@ export function InlineEntityForm({
         return '';
     }
   };
+
+  const actionLabel = mode === 'edit' ? 'Update' : 'Save';
 
   return (
     <>
@@ -235,7 +252,7 @@ export function InlineEntityForm({
                 onSave?.(formData);
               }}
             >
-              Save
+              {actionLabel}
             </TGButton>
           </div>
         </div>
