@@ -247,7 +247,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         isIncomplete: isIncomplete(entity as any),
       }))
       .sort((a, b) => a.entity.created_at - b.entity.created_at);
-  }, [entities, pageIndex, pageOcr, pagesMeta, scale]);
+  }, [entities, pageIndex, pageOcr, pagesMeta, scale, layers]);
 
   const entityMeta = useMemo(() => {
     const map = new Map<string, Entity>();
