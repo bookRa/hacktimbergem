@@ -27,12 +27,6 @@ interface EntityMenuProps {
 
 const iconSize = 12;
 
-const EditIcon = () => (
-  <svg width={iconSize} height={iconSize} viewBox="0 0 12 12" fill="none" aria-hidden>
-    <path d="M7.6 2.1 9.9 4.4 4.1 10.2H1.8V7.9L7.6 2.1Z" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
-  </svg>
-);
-
 const SettingsIcon = () => (
   <svg width={iconSize} height={iconSize} viewBox="0 0 12 12" fill="none" aria-hidden>
     <circle cx="6" cy="6" r="2" stroke="currentColor" strokeWidth="1" />
@@ -88,7 +82,6 @@ interface ActionConfig {
 }
 
 const baseActions: ActionConfig[] = [
-  { id: 'edit-bbox', label: 'Edit bounding box', icon: EditIcon },
   { id: 'edit-properties', label: 'Edit properties', icon: SettingsIcon },
 ];
 

@@ -150,6 +150,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     null
   );
   const [editingDrafts, setEditingDrafts] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
+  const editingDraftPendingRef = useRef<Map<string, { x: number; y: number; width: number; height: number } | null>>(new Map());
+  const editingDraftRafRef = useRef<number | null>(null);
 
   const contextMenu = useUIV2ContextMenu();
   const inlineForm = useUIV2InlineForm();
@@ -182,6 +184,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     setSelectedEntityId,
     links,
     layers,
+    setHoverEntityId,
+    setHoverScopeId,
   } = useProjectStore((state: any) => ({
     entities: state.entities as Entity[],
     pagesMeta: state.pagesMeta,
@@ -196,6 +200,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     setSelectedEntityId: state.setSelectedEntityId,
     links: state.links,
     layers: state.layers,
+    setHoverEntityId: state.setHoverEntityId,
+    setHoverScopeId: state.setHoverScopeId,
   }));
 
   const pageEntities = useMemo<DisplayEntity[]>(() => {
@@ -258,28 +264,49 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }));
   }, [entities]);
 
+  const selectionSyncSourceRef = useRef<'idle' | 'ui' | 'store'>('idle');
+
   useEffect(() => {
-    if (selection.length === 1) {
-      const targetId = selection[0].id;
-      if (selectedEntityId !== targetId) {
-        setSelectedEntityId(targetId);
-      }
-    } else if (selection.length === 0 && selectedEntityId) {
-      setSelectedEntityId(null);
+    if (selectionSyncSourceRef.current === 'store') {
+      selectionSyncSourceRef.current = 'idle';
+      return;
     }
+
+    const storeId = selectedEntityId ?? null;
+    let nextId: string | null | undefined;
+    if (selection.length === 1) {
+      nextId = selection[0].id;
+    } else if (selection.length === 0) {
+      nextId = null;
+    }
+
+    if (typeof nextId === 'undefined') return;
+    if (nextId === storeId) return;
+
+    selectionSyncSourceRef.current = 'ui';
+    setSelectedEntityId(nextId);
   }, [selection, selectedEntityId, setSelectedEntityId]);
 
   useEffect(() => {
-    if (!selectedEntityId) {
+    if (selectionSyncSourceRef.current === 'ui') {
+      selectionSyncSourceRef.current = 'idle';
+      return;
+    }
+
+    const storeId = selectedEntityId ?? null;
+    if (!storeId) {
       if (selection.length > 0) {
+        selectionSyncSourceRef.current = 'store';
         setSelection([]);
       }
       return;
     }
-    const exists = selection.some((item) => item.id === selectedEntityId);
+
+    const exists = selection.some((item) => item.id === storeId);
     if (!exists) {
-      const entity = entityMeta.get(selectedEntityId);
+      const entity = entityMeta.get(storeId);
       if (entity) {
+        selectionSyncSourceRef.current = 'store';
         setSelection([
           {
             id: entity.id,
@@ -290,6 +317,56 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }
     }
   }, [entityMeta, selectedEntityId, selection, setSelection]);
+
+  const flushEditingDrafts = useCallback(() => {
+    editingDraftRafRef.current = null;
+    const pending = editingDraftPendingRef.current;
+    if (pending.size === 0) return;
+    const entries = Array.from(pending.entries());
+    pending.clear();
+    setEditingDrafts((prev) => {
+      let next = prev;
+      let mutated = false;
+      for (const [id, rect] of entries) {
+        if (rect === null) {
+          if (next[id]) {
+            if (!mutated) {
+              next = { ...next };
+              mutated = true;
+            }
+            delete next[id];
+          }
+        } else {
+          if (!mutated) {
+            next = { ...next };
+            mutated = true;
+          }
+          next[id] = rect;
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const queueEditingDraft = useCallback(
+    (id: string, rect: { x: number; y: number; width: number; height: number } | null) => {
+      editingDraftPendingRef.current.set(id, rect);
+      if (editingDraftRafRef.current != null) return;
+      editingDraftRafRef.current = requestAnimationFrame(flushEditingDrafts);
+    },
+    [flushEditingDrafts]
+  );
+
+  useEffect(
+    () => () => {
+      if (editingDraftRafRef.current != null) {
+        cancelAnimationFrame(editingDraftRafRef.current);
+        editingDraftRafRef.current = null;
+      }
+      editingDraftPendingRef.current.clear();
+    },
+    []
+  );
 
   const formatChipLabel = useCallback(
     (selection: Selection) => {
@@ -308,6 +385,20 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     },
     [entityMeta]
   );
+
+  const cancelEditSession = useCallback(() => {
+    const listeners = editingListenersRef.current;
+    if (listeners) {
+      window.removeEventListener('pointermove', listeners.move);
+      window.removeEventListener('pointerup', listeners.up);
+      editingListenersRef.current = null;
+    }
+    const session = editSessionRef.current;
+    if (session) {
+      editSessionRef.current = null;
+      queueEditingDraft(session.id, null);
+    }
+  }, [queueEditingDraft]);
 
   const openPropertiesForm = useCallback(
     (entity: Entity) => {
@@ -419,25 +510,6 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     [addToast, fetchEntities, pageIndex, pageOcr, pagesMeta, projectId, pushHistory, setSelection]
   );
 
-  const cancelEditSession = useCallback(() => {
-    const listeners = editingListenersRef.current;
-    if (listeners) {
-      window.removeEventListener('pointermove', listeners.move);
-      window.removeEventListener('pointerup', listeners.up);
-      editingListenersRef.current = null;
-    }
-    const session = editSessionRef.current;
-    if (session) {
-      editSessionRef.current = null;
-      setEditingDrafts((prev) => {
-        if (!prev[session.id]) return prev;
-        const next = { ...prev };
-        delete next[session.id];
-        return next;
-      });
-    }
-  }, []);
-
   const beginEditSession = useCallback(
     (
       entity: Entity,
@@ -466,7 +538,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       };
 
       editSessionRef.current = session;
-      setEditingDrafts((prev) => ({ ...prev, [session.id]: startRect }));
+      queueEditingDraft(session.id, startRect);
 
       const moveListener = (event: PointerEvent) => {
         event.preventDefault();
@@ -488,7 +560,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           nextRect = active.startRect;
         }
         active.currentRect = nextRect;
-        setEditingDrafts((prev) => ({ ...prev, [active.id]: nextRect }));
+        queueEditingDraft(active.id, nextRect);
       };
 
       const upListener = async (event: PointerEvent | KeyboardEvent) => {
@@ -498,12 +570,6 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         const active = editSessionRef.current;
         if (!active) return;
         editSessionRef.current = null;
-        setEditingDrafts((prev) => {
-          if (!prev[active.id]) return prev;
-          const next = { ...prev };
-          delete next[active.id];
-          return next;
-        });
 
         const beforeRect = active.startRect;
         const finalRect = active.currentRect;
@@ -512,7 +578,12 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           Math.abs(finalRect.y - beforeRect.y) +
           Math.abs(finalRect.width - beforeRect.width) +
           Math.abs(finalRect.height - beforeRect.height);
-        if (deltaTotal < 0.5) return;
+        if (deltaTotal < 0.5) {
+          queueEditingDraft(active.id, null);
+          return;
+        }
+
+        queueEditingDraft(active.id, finalRect);
 
         const meta = pagesMeta?.[pageIndex];
         const ocr = pageOcr?.[pageIndex];
@@ -555,9 +626,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               sheetId: String(updated.source_sheet_number),
             },
           ]);
+          queueEditingDraft(active.id, null);
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to update bounding box' });
+          queueEditingDraft(active.id, null);
         }
       };
 
@@ -616,7 +689,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   }, [cancelEditSession]);
 
   useEffect(() => () => cancelEditSession(), [cancelEditSession]);
-  useEffect(() => () => setHover(undefined), [setHover]);
+  useEffect(
+    () => () => {
+      setHover(undefined);
+      setHoverEntityId?.(null);
+      setHoverScopeId?.(null);
+    },
+    [setHover, setHoverEntityId, setHoverScopeId]
+  );
 
   const computeContextPosition = useCallback(
     (point: { x: number; y: number }) => {
@@ -682,14 +762,21 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
   const handleMouseEnter = useCallback(
     (item: DisplayEntity) => {
-      setHover(makeSelection(item));
+      const selection = makeSelection(item);
+      setHover(selection);
+      setHoverEntityId?.(item.entity.id);
+      if (selection.type === 'Scope') {
+        setHoverScopeId?.(item.entity.id);
+      }
     },
-    [makeSelection, setHover]
+    [makeSelection, setHover, setHoverEntityId, setHoverScopeId]
   );
 
   const handleMouseLeave = useCallback(() => {
     setHover(undefined);
-  }, [setHover]);
+    setHoverEntityId?.(null);
+    setHoverScopeId?.(null);
+  }, [setHover, setHoverEntityId, setHoverScopeId]);
 
   const handleMenuAction = useCallback(
     async (action: string) => {
@@ -698,11 +785,6 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const entity = entityMeta.get(targetSelection.id);
       if (!entity) {
         addToast({ kind: 'error', message: 'Entity not found' });
-        return;
-      }
-
-      if (action === 'edit-bbox') {
-        addToast({ kind: 'info', message: 'Drag the bounding box handles to adjust the selection.' });
         return;
       }
 
@@ -742,9 +824,9 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         }
         const existing = (links || [])
           .filter((linkObj: any) => linkObj.rel_type === 'JUSTIFIED_BY' && linkObj.source_id === entity.id)
-          .map((linkObj: any) => entityMeta.get(linkObj.target_id))
-          .filter((linkedEntity): linkedEntity is Entity => Boolean(linkedEntity))
-          .map((linkedEntity) => ({
+          .map((linkObj: any): Entity | undefined => entityMeta.get(linkObj.target_id))
+          .filter((linkedEntity: Entity | undefined): linkedEntity is Entity => Boolean(linkedEntity))
+          .map((linkedEntity: Entity) => ({
             id: linkedEntity.id,
             type: entityTypeMap[linkedEntity.entity_type],
             sheetId: String(linkedEntity.source_sheet_number),
@@ -887,6 +969,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         cancelEditSession();
       }
       setHover(undefined);
+      setHoverEntityId?.(null);
+      setHoverScopeId?.(null);
       const overlay = overlayRef.current;
       const rect = overlay?.getBoundingClientRect();
       if (!overlay || !rect) return;

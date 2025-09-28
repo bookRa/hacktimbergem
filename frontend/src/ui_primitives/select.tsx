@@ -13,9 +13,10 @@ type TGSelectProps = {
   options: SelectOption[];
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 };
 
-export function TGSelect({ value, onValueChange, options, placeholder, className }: TGSelectProps) {
+export function TGSelect({ value, onValueChange, options, placeholder, className, disabled = false }: TGSelectProps) {
   const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
     onValueChange(event.target.value);
   };
@@ -24,6 +25,7 @@ export function TGSelect({ value, onValueChange, options, placeholder, className
     <select
       value={value}
       onChange={handleChange}
+      disabled={disabled}
       className={cx('tg-ui2', className)}
       style={{
         width: '100%',
@@ -33,6 +35,8 @@ export function TGSelect({ value, onValueChange, options, placeholder, className
         backgroundColor: 'var(--tg-panel)',
         color: 'var(--tg-text)',
         fontSize: 'var(--tg-font-sm)',
+        opacity: disabled ? 0.6 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
       }}
     >
       {placeholder ? (

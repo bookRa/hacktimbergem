@@ -12,7 +12,7 @@
 [x] Scope entities persisted with proper entity_type + link support
 [x] Note creation wired through ContextPicker + inline form
 [x] Right-click EntityMenu; Edit bbox/props wired
-[ ] BBox PDF→viewport integration
+[x] BBox PDF→viewport integration
 
 ## Sprint C — Linking & OCR
 [ ] ChipsTray + linking controller; Finish/Cancel → API

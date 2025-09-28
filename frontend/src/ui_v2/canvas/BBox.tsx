@@ -63,7 +63,7 @@ export function BBox({
       style={{
         position: 'absolute',
         cursor: 'pointer',
-        transition: 'all 150ms ease',
+        transition: 'border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease',
         left: x,
         top: y,
         width,

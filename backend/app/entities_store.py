@@ -247,6 +247,8 @@ def update_entity(
         data["title"] = title
     if text is not None and data["entity_type"] == "note":
         data["text"] = text
+    if description is not None and data["entity_type"] in {"drawing", "scope", "symbol_definition", "component_definition"}:
+        data["description"] = description
     # Definitions metadata
     if data["entity_type"] in {"symbol_definition", "component_definition"}:
         if name is not None:

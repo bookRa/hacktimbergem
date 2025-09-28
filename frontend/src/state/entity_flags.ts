@@ -56,7 +56,7 @@ export function deriveEntityFlags(entityType: EntityType, attrs: Record<string, 
   }
 
   if (!Object.keys(activeMissing).length) {
-    return { status: 'complete', validation: null };
+    return { status: 'complete', validation: {} };
   }
 
   return {
