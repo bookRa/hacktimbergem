@@ -23,6 +23,11 @@ type InlineFormState = {
   mode?: 'create' | 'edit';
 };
 
+type DrawingState = {
+  active: boolean;
+  entityType?: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
+};
+
 type LinkingState = {
   active: boolean;
   source?: Selection;
@@ -47,6 +52,8 @@ type UIActions = {
     mode?: 'create' | 'edit';
   }) => void;
   closeForm: () => void;
+  startDrawing: (entityType: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef') => void;
+  cancelDrawing: () => void;
   startLinking: (source: Selection, initialPending?: Selection[]) => void;
   addPending: (selection: Selection) => void;
   finishLinking: () => { source?: Selection; pending: Selection[] };
@@ -62,6 +69,7 @@ export type UIState = {
   mode: Mode;
   contextMenu: ContextMenuState;
   inlineForm: InlineFormState;
+  drawing: DrawingState;
   linking: LinkingState;
   hover?: Selection;
   selection: Selection[];
@@ -72,6 +80,7 @@ const initialState: Omit<UIState, keyof UIActions> = {
   mode: 'select',
   contextMenu: { open: false, at: null, target: undefined },
   inlineForm: { open: false, type: null, at: null, pendingBBox: null, entityId: undefined, initialValues: null, mode: 'create' },
+  drawing: { active: false, entityType: null },
   linking: { active: false, source: undefined, pending: [] },
   hover: undefined,
   selection: [],
@@ -112,6 +121,12 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   closeForm: () => {
     set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null, initialValues: null, mode: 'create' } });
   },
+  startDrawing: (entityType) => {
+    set({ drawing: { active: true, entityType }, mode: 'draw' });
+  },
+  cancelDrawing: () => {
+    set({ drawing: { active: false, entityType: null }, mode: 'select' });
+  },
   startLinking: (source, initialPending = []) => {
     set({ linking: { active: true, source, pending: initialPending }, mode: 'link' });
   },
@@ -150,6 +165,8 @@ export const useUIV2Actions = () => {
     closeContext: state.closeContext,
     openForm: state.openForm,
     closeForm: state.closeForm,
+    startDrawing: state.startDrawing,
+    cancelDrawing: state.cancelDrawing,
     startLinking: state.startLinking,
     addPending: state.addPending,
     finishLinking: state.finishLinking,
@@ -162,6 +179,7 @@ export const useUIV2Actions = () => {
 
 export const useUIV2ContextMenu = () => useUIV2Store((state) => state.contextMenu, shallow);
 export const useUIV2InlineForm = () => useUIV2Store((state) => state.inlineForm, shallow);
+export const useUIV2Drawing = () => useUIV2Store((state) => state.drawing, shallow);
 export const useUIV2Mode = () => useUIV2Store((state) => state.mode);
 export const useUIV2Selection = () => useUIV2Store((state) => ({ selection: state.selection, hover: state.hover }), shallow);
 export const useUIV2Linking = () => useUIV2Store((state) => state.linking, shallow);

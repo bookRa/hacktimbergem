@@ -8,7 +8,7 @@ import { InlineEntityForm } from './forms/InlineEntityForm';
 import { ChipsTray } from './linking/ChipsTray';
 import { OCRPicker } from './overlays/OCRPicker';
 import '../ui_v2/theme/tokens.css';
-import { useUIV2Actions, useUIV2ContextMenu, useUIV2InlineForm, useUIV2Linking, useUIV2Selection } from '../state/ui_v2';
+import { useUIV2Actions, useUIV2ContextMenu, useUIV2Drawing, useUIV2InlineForm, useUIV2Linking, useUIV2Selection } from '../state/ui_v2';
 import type { Selection } from '../state/ui_v2';
 import { useProjectStore } from '../state/store';
 import { createEntity, patchEntity } from '../api/entities';
@@ -159,6 +159,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
   const contextMenu = useUIV2ContextMenu();
   const inlineForm = useUIV2InlineForm();
+  const drawing = useUIV2Drawing();
   const linking = useUIV2Linking();
   const { selection, hover } = useUIV2Selection();
   const {
@@ -166,6 +167,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     closeContext,
     openForm,
     closeForm,
+    startDrawing,
+    cancelDrawing,
     setSelection,
     setHover,
     startLinking,
@@ -724,10 +727,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         event.preventDefault();
         cancelEditSession();
       }
+      if (event.key === 'Escape' && drawing.active) {
+        event.preventDefault();
+        cancelDrawing();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cancelEditSession]);
+  }, [cancelEditSession, cancelDrawing, drawing.active]);
 
   useEffect(() => () => cancelEditSession(), [cancelEditSession]);
   useEffect(
@@ -735,8 +742,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       setHover(undefined);
       setHoverEntityId?.(null);
       setHoverScopeId?.(null);
+      if (drawing.active) {
+        cancelDrawing();
+      }
     },
-    [setHover, setHoverEntityId, setHoverScopeId]
+    [setHover, setHoverEntityId, setHoverScopeId, cancelDrawing, drawing.active]
   );
 
   const computeContextPosition = useCallback(
@@ -1012,6 +1022,27 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       setHover(undefined);
       setHoverEntityId?.(null);
       setHoverScopeId?.(null);
+
+      // If we're in drawing mode, start drawing
+      if (drawing.active) {
+        const overlay = overlayRef.current;
+        const rect = overlay?.getBoundingClientRect();
+        if (!overlay || !rect) return;
+        try {
+          overlay.setPointerCapture(event.pointerId);
+        } catch (_) {
+          /* ignore */
+        }
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        dragOriginRef.current = { x, y };
+        pendingBBoxRef.current = null;
+        setIsDrawing(true);
+        commitDraftRect({ x, y, width: 0, height: 0 });
+        return;
+      }
+
+      // Normal selection/drawing mode
       const overlay = overlayRef.current;
       const rect = overlay?.getBoundingClientRect();
       if (!overlay || !rect) return;
@@ -1029,7 +1060,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       setIsDrawing(true);
       commitDraftRect({ x, y, width: 0, height: 0 });
     },
-    [cancelEditSession, closeContext, closeForm, contextMenu.open, inlineForm.open, shouldIgnorePointer]
+    [cancelEditSession, closeContext, closeForm, contextMenu.open, drawing.active, inlineForm.open, shouldIgnorePointer]
   );
 
   const handlePointerMove = useCallback(
@@ -1082,13 +1113,22 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       };
       const threshold = 6;
       if (draftRect.width < threshold || draftRect.height < threshold) {
+        // If we're in drawing mode and the bbox is too small, cancel drawing
+        if (drawing.active) {
+          cancelDrawing();
+        }
         return;
       }
       const meta = pagesMeta?.[pageIndex];
       const ocr = pageOcr?.[pageIndex];
       const pageWidthPts = meta?.pageWidthPts || ocr?.width_pts;
       const pageHeightPts = meta?.pageHeightPts || ocr?.height_pts;
-      if (!meta || !pageWidthPts || !pageHeightPts) return;
+      if (!meta || !pageWidthPts || !pageHeightPts) {
+        if (drawing.active) {
+          cancelDrawing();
+        }
+        return;
+      }
 
       const sheetId = String(pageIndex + 1);
       const toPdf = (coord: { x: number; y: number }): [number, number] => {
@@ -1103,11 +1143,24 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const [px2, py2] = toPdf({ x: draftRect.x + draftRect.width, y: draftRect.y + draftRect.height });
       const bboxPdf: PdfBBox = [Math.min(px1, px2), Math.min(py1, py2), Math.max(px1, px2), Math.max(py1, py2)];
 
+      // If we're in drawing mode, complete the drawing and open the form
+      if (drawing.active) {
+        pendingBBoxRef.current = { sheetId, bboxPdf };
+        openForm({
+          type: drawing.entityType!,
+          at: { x, y },
+          pendingBBox: { sheetId, bboxPdf }
+        });
+        cancelDrawing();
+        return;
+      }
+
+      // Normal flow - open context menu
       pendingBBoxRef.current = { sheetId, bboxPdf };
       const pointerAt = computeContextPosition({ x, y });
       openContext({ at: pointerAt, pendingBBox: { sheetId, bboxPdf } });
     },
-    [computeContextPosition, openContext, pageIndex, pageOcr, pagesMeta, scale]
+    [cancelDrawing, computeContextPosition, drawing.active, drawing.entityType, openContext, openForm, pageIndex, pageOcr, pagesMeta, scale]
   );
 
   const handleContextMenu = useCallback(
@@ -1145,26 +1198,22 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   );
 
   const handleContextSelect = useCallback(
-    async (entityType: string) => {
-      const pending = pendingBBoxRef.current || inlineForm.pendingBBox;
-      const openVariant = () => {
-        if (!pending) return;
-        let type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
-        if (entityType === 'Symbol Instance') type = 'SymbolInst';
-        else if (entityType === 'Component Instance') type = 'CompInst';
-        else if (entityType === 'Drawing') type = 'Drawing';
-        else if (entityType === 'Legend') type = 'Legend';
-        else if (entityType === 'Schedule') type = 'Schedule';
-        else if (entityType === 'Scope') type = 'Scope';
-        else if (entityType === 'Note') type = 'Note';
-        else if (entityType === 'Symbol Definition') type = 'SymbolDef';
-        else if (entityType === 'Component Definition') type = 'CompDef';
-        if (!type) return;
-        openForm({ type, at: contextMenu.at ?? { x: 0, y: 0 }, pendingBBox: pending });
-      };
-      openVariant();
+    (entityType: string) => {
+      closeContext();
+      let type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
+      if (entityType === 'Symbol Instance') type = 'SymbolInst';
+      else if (entityType === 'Component Instance') type = 'CompInst';
+      else if (entityType === 'Drawing') type = 'Drawing';
+      else if (entityType === 'Legend') type = 'Legend';
+      else if (entityType === 'Schedule') type = 'Schedule';
+      else if (entityType === 'Scope') type = 'Scope';
+      else if (entityType === 'Note') type = 'Note';
+      else if (entityType === 'Symbol Definition') type = 'SymbolDef';
+      else if (entityType === 'Component Definition') type = 'CompDef';
+      if (!type) return;
+      startDrawing(type);
     },
-    [contextMenu.at, inlineForm.pendingBBox, openForm]
+    [closeContext, startDrawing]
   );
 
   const handleFormSave = useCallback(

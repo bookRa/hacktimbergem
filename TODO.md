@@ -24,6 +24,7 @@
 - [x] "New definition" workflow in Symbol Instance form (create + select newly created def before save)
 
 ## Sprint C — Linking & OCR
+- [x] Right-click → ContextPicker → Drawing mode → InlineEntityForm (all entity types)
 - [ ] ChipsTray + linking controller; Finish/Cancel → API (preload existing relations, prevent duplicate writes, support unlink)
 - [ ] Linking UX polish: chip removal `x`, canvas highlight of linked entities, Inspector controls for unlink/edit
 - [ ] OCRPicker overlay; prefill scope form; pipeline into inline form defaults
