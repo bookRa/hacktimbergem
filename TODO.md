@@ -20,8 +20,8 @@
 - [x] Note creation wired through ContextPicker + inline form
 - [x] Right-click EntityMenu; Edit bbox/props wired
 - [x] BBox PDF→viewport integration
-- [ ] Inline forms for Symbol Definition / Component Definition / Component Instance / Legend / Schedule (creation + edit)
-- [ ] “New definition” workflow in Symbol Instance form (create + select newly created def before save)
+- [x] Inline forms for Symbol Definition / Component Definition / Component Instance / Legend / Schedule (creation + edit)
+- [x] "New definition" workflow in Symbol Instance form (create + select newly created def before save)
 
 ## Sprint C — Linking & OCR
 - [ ] ChipsTray + linking controller; Finish/Cancel → API (preload existing relations, prevent duplicate writes, support unlink)

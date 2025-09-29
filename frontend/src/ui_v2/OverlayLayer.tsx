@@ -94,10 +94,14 @@ const entityTypeMap: Record<Entity['entity_type'], TagEntityType> = {
   component_instance: 'CompInst',
 };
 
-const formTypeByEntity: Partial<Record<Entity['entity_type'], 'Drawing' | 'Scope' | 'Note'>> = {
+const formTypeByEntity: Partial<Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef'>> = {
   drawing: 'Drawing',
+  legend: 'Legend',
+  schedule: 'Schedule',
   scope: 'Scope',
   note: 'Note',
+  symbol_definition: 'SymbolDef',
+  component_definition: 'CompDef',
 };
 
 function isIncomplete(entity: Entity & { status?: string; validation?: any }): boolean {
@@ -264,6 +268,15 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }));
   }, [entities]);
 
+  const componentDefinitionOptions = useMemo(() => {
+    return entities
+      .filter((entity) => entity.entity_type === 'component_definition')
+      .map((entity) => ({
+        label: (entity as any).name || `Component ${entity.id.slice(0, 4).toUpperCase()}`,
+        value: entity.id,
+      }));
+  }, [entities]);
+
   const selectionSyncSourceRef = useRef<'idle' | 'ui' | 'store'>('idle');
 
   useEffect(() => {
@@ -412,11 +425,25 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       if (entity.entity_type === 'drawing') {
         initialValues.title = (entity as any).title ?? '';
         initialValues.description = (entity as any).description ?? '';
+      } else if (entity.entity_type === 'legend') {
+        initialValues.title = (entity as any).title ?? '';
+      } else if (entity.entity_type === 'schedule') {
+        initialValues.title = (entity as any).title ?? '';
       } else if (entity.entity_type === 'scope') {
         initialValues.name = (entity as any).name ?? '';
         initialValues.description = (entity as any).description ?? '';
       } else if (entity.entity_type === 'note') {
         initialValues.text = (entity as any).text ?? '';
+      } else if (entity.entity_type === 'symbol_definition') {
+        initialValues.name = (entity as any).name ?? '';
+        initialValues.description = (entity as any).description ?? '';
+        initialValues.scope = (entity as any).scope ?? 'sheet';
+        initialValues.visualPatternDescription = (entity as any).visual_pattern_description ?? '';
+      } else if (entity.entity_type === 'component_definition') {
+        initialValues.name = (entity as any).name ?? '';
+        initialValues.description = (entity as any).description ?? '';
+        initialValues.scope = (entity as any).scope ?? 'sheet';
+        initialValues.specifications = JSON.stringify((entity as any).specifications ?? {}, null, 2);
       }
       const formAt = contextMenu.at ?? { x: 0, y: 0 };
       openForm({
@@ -445,7 +472,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         addToast({ kind: 'error', message: 'Missing page metadata for duplication' });
         return;
       }
-      const SUPPORTED: Entity['entity_type'][] = ['drawing', 'scope', 'note'];
+      const SUPPORTED: Entity['entity_type'][] = ['drawing', 'legend', 'schedule', 'scope', 'note', 'symbol_definition', 'component_definition'];
       if (!SUPPORTED.includes(entity.entity_type)) {
         addToast({ kind: 'warning', message: 'Duplicate is not yet supported for this entity type' });
         return;
@@ -477,11 +504,25 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       if (entity.entity_type === 'drawing') {
         payload.title = (entity as any).title ?? '';
         payload.description = (entity as any).description ?? '';
+      } else if (entity.entity_type === 'legend') {
+        payload.title = (entity as any).title ?? '';
+      } else if (entity.entity_type === 'schedule') {
+        payload.title = (entity as any).title ?? '';
       } else if (entity.entity_type === 'scope') {
         payload.name = (entity as any).name ?? '';
         payload.description = (entity as any).description ?? '';
       } else if (entity.entity_type === 'note') {
         payload.text = (entity as any).text ?? '';
+      } else if (entity.entity_type === 'symbol_definition') {
+        payload.name = (entity as any).name ?? '';
+        payload.description = (entity as any).description ?? '';
+        payload.scope = (entity as any).scope ?? 'sheet';
+        payload.visual_pattern_description = (entity as any).visual_pattern_description ?? '';
+      } else if (entity.entity_type === 'component_definition') {
+        payload.name = (entity as any).name ?? '';
+        payload.description = (entity as any).description ?? '';
+        payload.scope = (entity as any).scope ?? 'sheet';
+        payload.specifications = (entity as any).specifications ?? {};
       }
 
       Object.assign(payload, deriveEntityFlags(entity.entity_type, payload));
@@ -1108,11 +1149,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const pending = pendingBBoxRef.current || inlineForm.pendingBBox;
       const openVariant = () => {
         if (!pending) return;
-        let type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note' | null = null;
+        let type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
         if (entityType === 'Symbol Instance') type = 'SymbolInst';
+        else if (entityType === 'Component Instance') type = 'CompInst';
         else if (entityType === 'Drawing') type = 'Drawing';
+        else if (entityType === 'Legend') type = 'Legend';
+        else if (entityType === 'Schedule') type = 'Schedule';
         else if (entityType === 'Scope') type = 'Scope';
         else if (entityType === 'Note') type = 'Note';
+        else if (entityType === 'Symbol Definition') type = 'SymbolDef';
+        else if (entityType === 'Component Definition') type = 'CompDef';
         if (!type) return;
         openForm({ type, at: contextMenu.at ?? { x: 0, y: 0 }, pendingBBox: pending });
       };
@@ -1139,11 +1185,29 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         if (inlineForm.type === 'Drawing') {
           patch.title = formData.title ?? (entity as any).title ?? '';
           patch.description = formData.description ?? (entity as any).description ?? '';
+        } else if (inlineForm.type === 'Legend') {
+          patch.title = formData.title ?? (entity as any).title ?? '';
+        } else if (inlineForm.type === 'Schedule') {
+          patch.title = formData.title ?? (entity as any).title ?? '';
         } else if (inlineForm.type === 'Scope') {
           patch.name = formData.name ?? (entity as any).name ?? '';
           patch.description = formData.description ?? (entity as any).description ?? '';
         } else if (inlineForm.type === 'Note') {
           patch.text = formData.text ?? (entity as any).text ?? '';
+        } else if (inlineForm.type === 'SymbolDef') {
+          patch.name = formData.name ?? (entity as any).name ?? '';
+          patch.description = formData.description ?? (entity as any).description ?? '';
+          patch.scope = formData.scope ?? (entity as any).scope ?? 'sheet';
+          patch.visual_pattern_description = formData.visualPatternDescription ?? (entity as any).visual_pattern_description ?? '';
+        } else if (inlineForm.type === 'CompDef') {
+          patch.name = formData.name ?? (entity as any).name ?? '';
+          patch.description = formData.description ?? (entity as any).description ?? '';
+          patch.scope = formData.scope ?? (entity as any).scope ?? 'sheet';
+          try {
+            patch.specifications = formData.specifications ? JSON.parse(formData.specifications) : (entity as any).specifications ?? {};
+          } catch {
+            patch.specifications = (entity as any).specifications ?? {};
+          }
         } else {
           addToast({ kind: 'warning', message: 'Editing is not implemented for this entity type yet' });
           closeForm();
@@ -1224,6 +1288,62 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to create drawing' });
+        }
+      } else if (inlineForm.type === 'Legend') {
+        const payload: any = {
+          entity_type: 'legend',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          title: formData.title ?? '',
+        };
+        Object.assign(payload, deriveEntityFlags('legend', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'Legend',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Legend created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create legend' });
+        }
+      } else if (inlineForm.type === 'Schedule') {
+        const payload: any = {
+          entity_type: 'schedule',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          title: formData.title ?? '',
+        };
+        Object.assign(payload, deriveEntityFlags('schedule', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'Schedule',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Schedule created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create schedule' });
         }
       } else if (inlineForm.type === 'SymbolInst') {
         const symbolDefinitionId = typeof formData.symbolDefinitionId === 'string' ? formData.symbolDefinitionId : '';
@@ -1317,6 +1437,107 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to create note' });
+        }
+      } else if (inlineForm.type === 'SymbolDef') {
+        const payload: any = {
+          entity_type: 'symbol_definition',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          name: formData.name ?? '',
+          description: formData.description ?? '',
+          scope: formData.scope ?? 'sheet',
+          visual_pattern_description: formData.visualPatternDescription ?? '',
+        };
+        Object.assign(payload, deriveEntityFlags('symbol_definition', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'SymbolDef',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Symbol definition created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create symbol definition' });
+        }
+      } else if (inlineForm.type === 'CompDef') {
+        let specifications = {};
+        try {
+          specifications = formData.specifications ? JSON.parse(formData.specifications) : {};
+        } catch {
+          specifications = {};
+        }
+        const payload: any = {
+          entity_type: 'component_definition',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          name: formData.name ?? '',
+          description: formData.description ?? '',
+          scope: formData.scope ?? 'sheet',
+          specifications,
+        };
+        Object.assign(payload, deriveEntityFlags('component_definition', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'CompDef',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Component definition created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create component definition' });
+        }
+      } else if (inlineForm.type === 'CompInst') {
+        const componentDefinitionId = typeof formData.componentDefinitionId === 'string' ? formData.componentDefinitionId : '';
+        if (!componentDefinitionId) {
+          addToast({ kind: 'error', message: 'Select a component definition before saving' });
+          return;
+        }
+        const payload: any = {
+          entity_type: 'component_instance',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          component_definition_id: componentDefinitionId,
+        };
+        Object.assign(payload, deriveEntityFlags('component_instance', payload));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'CompInst',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Component instance created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create component instance' });
         }
       }
 
@@ -1462,10 +1683,20 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         variant={
           inlineForm.type === 'SymbolInst'
             ? 'SymbolInstanceForm'
+            : inlineForm.type === 'CompInst'
+            ? 'ComponentInstanceForm'
             : inlineForm.type === 'Scope'
             ? 'ScopeForm'
             : inlineForm.type === 'Note'
             ? 'NoteForm'
+            : inlineForm.type === 'SymbolDef'
+            ? 'SymbolDefinitionForm'
+            : inlineForm.type === 'CompDef'
+            ? 'ComponentDefinitionForm'
+            : inlineForm.type === 'Legend'
+            ? 'LegendForm'
+            : inlineForm.type === 'Schedule'
+            ? 'ScheduleForm'
             : 'DrawingForm'
         }
         x={inlineForm.at?.x ?? contextMenu.at?.x ?? 0}
@@ -1478,6 +1709,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         initialValues={inlineForm.initialValues ?? null}
         mode={inlineForm.mode ?? 'create'}
         symbolDefinitionOptions={symbolDefinitionOptions}
+        componentDefinitionOptions={componentDefinitionOptions}
       />
 
       <ChipsTray

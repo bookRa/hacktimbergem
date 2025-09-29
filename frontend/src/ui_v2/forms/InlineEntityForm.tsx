@@ -6,7 +6,16 @@ import { TGInput } from '../../ui_primitives/input';
 import { TGSelect } from '../../ui_primitives/select';
 import { cx } from '../utils/classNames';
 
-export type FormVariant = 'DrawingForm' | 'SymbolInstanceForm' | 'ScopeForm' | 'NoteForm';
+export type FormVariant =
+  | 'DrawingForm'
+  | 'LegendForm'
+  | 'ScheduleForm'
+  | 'ScopeForm'
+  | 'NoteForm'
+  | 'SymbolDefinitionForm'
+  | 'ComponentDefinitionForm'
+  | 'SymbolInstanceForm'
+  | 'ComponentInstanceForm';
 
 interface InlineEntityFormProps {
   variant: FormVariant;
@@ -19,6 +28,10 @@ interface InlineEntityFormProps {
   initialValues?: Record<string, unknown> | null;
   mode?: 'create' | 'edit';
   symbolDefinitionOptions?: { label: string; value: string }[];
+  componentDefinitionOptions?: { label: string; value: string }[];
+  onRequestDefinition?: (draft: Record<string, unknown>) => void;
+  onRequestComponentDefinition?: (draft: Record<string, unknown>) => void;
+  onDefinitionCreated?: (definitionId: string, definitionName: string) => void;
 }
 
 const PlusIcon = () => (
@@ -39,16 +52,15 @@ const SparkIcon = () => (
   </svg>
 );
 
-const symbolDefinitionOptions = [
-  { label: 'Door Symbol', value: 'door' },
-  { label: 'Window Symbol', value: 'window' },
-  { label: 'Electrical Outlet', value: 'electrical' },
-];
-
 const semanticMeaningOptions = [
   { label: 'Entry Door', value: 'entry' },
   { label: 'Fire Exit', value: 'fire-exit' },
   { label: 'Emergency Exit', value: 'emergency' },
+];
+
+const symbolScopeOptions = [
+  { label: 'Sheet', value: 'sheet' },
+  { label: 'Project', value: 'project' },
 ];
 
 export function InlineEntityForm({
@@ -62,12 +74,18 @@ export function InlineEntityForm({
   initialValues = null,
   mode = 'create',
   symbolDefinitionOptions,
+  componentDefinitionOptions,
+  onRequestDefinition,
+  onRequestComponentDefinition,
+  onDefinitionCreated,
 }: InlineEntityFormProps) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
+  const [showDefinitionForm, setShowDefinitionForm] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setFormData({});
+      setShowDefinitionForm(false);
       return;
     }
     setFormData(() => ({ ...(initialValues ?? {}) }));
@@ -140,6 +158,7 @@ export function InlineEntityForm({
               variant="outline"
               size="sm"
               style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              onClick={() => onRequestDefinition?.(formData)}
             >
               <PlusIcon />
               New
@@ -184,14 +203,102 @@ export function InlineEntityForm({
     </div>
   );
 
+  const renderSymbolDefinitionForm = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderTextField('Name', 'name', 'Enter symbol name...')}
+      {renderTextarea('Description', 'description', 'Describe the symbol...')}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Scope</label>
+        <TGSelect
+          value={(formData.scope as string) ?? 'sheet'}
+          onValueChange={(value) => updateField('scope', value)}
+          options={symbolScopeOptions}
+          placeholder="Select scope"
+        />
+      </div>
+      {renderTextarea('Visual Pattern Notes', 'visualPatternDescription', 'Describe the pattern/usage...')}
+    </div>
+  );
+
+  const renderLegendForm = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderTextField('Title', 'title', 'Enter legend title...')}
+    </div>
+  );
+
+  const renderScheduleForm = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderTextField('Title', 'title', 'Enter schedule title...')}
+    </div>
+  );
+
+  const renderComponentDefinitionForm = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderTextField('Name', 'name', 'Enter component name...')}
+      {renderTextarea('Description', 'description', 'Describe the component...')}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Scope</label>
+        <TGSelect
+          value={(formData.scope as string) ?? 'sheet'}
+          onValueChange={(value) => updateField('scope', value)}
+          options={symbolScopeOptions}
+          placeholder="Select scope"
+        />
+      </div>
+      {renderTextarea('Specifications (JSON)', 'specifications', 'Enter specifications as JSON...')}
+    </div>
+  );
+
+  const renderComponentInstanceForm = () => {
+    const definitionOptions = componentDefinitionOptions && componentDefinitionOptions.length > 0
+      ? componentDefinitionOptions
+      : [];
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Component Definition</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <TGSelect
+              value={(formData.componentDefinitionId as string) ?? ''}
+              onValueChange={(value) => updateField('componentDefinitionId', value)}
+              options={definitionOptions.length ? definitionOptions : [{ label: 'No definitions available', value: '' }]}
+              placeholder="Select definition..."
+              disabled={!definitionOptions.length}
+            />
+            <TGButton
+              variant="outline"
+              size="sm"
+              style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              onClick={() => onRequestComponentDefinition?.(formData)}
+            >
+              <PlusIcon />
+              New
+            </TGButton>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const getIncompleteText = () => {
     switch (variant) {
       case 'SymbolInstanceForm':
         return 'Needs visual definition and semantic meaning to be complete';
+      case 'ComponentInstanceForm':
+        return 'Needs component definition to be complete';
       case 'ScopeForm':
         return 'Needs name and description to be complete';
       case 'NoteForm':
         return 'Needs text content to be complete';
+      case 'SymbolDefinitionForm':
+        return 'Needs name to be complete';
+      case 'ComponentDefinitionForm':
+        return 'Needs name to be complete';
+      case 'LegendForm':
+        return 'Needs title to be complete';
+      case 'ScheduleForm':
+        return 'Needs title to be complete';
       case 'DrawingForm':
         return 'Needs title to be complete';
       default:
@@ -220,10 +327,37 @@ export function InlineEntityForm({
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {variant === 'DrawingForm' && renderDrawingForm()}
-          {variant === 'SymbolInstanceForm' && renderSymbolInstanceForm()}
-          {variant === 'ScopeForm' && renderScopeForm()}
-          {variant === 'NoteForm' && renderNoteForm()}
+          {showDefinitionForm ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <TGButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDefinitionForm(false)}
+                  style={{ color: 'var(--tg-muted)', padding: '4px' }}
+                >
+                  ← Back
+                </TGButton>
+                <span style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-sm)' }}>
+                  Create New Definition
+                </span>
+              </div>
+              {variant === 'SymbolInstanceForm' && renderSymbolDefinitionForm()}
+              {variant === 'ComponentInstanceForm' && renderComponentDefinitionForm()}
+            </>
+          ) : (
+            <>
+              {variant === 'DrawingForm' && renderDrawingForm()}
+              {variant === 'LegendForm' && renderLegendForm()}
+              {variant === 'ScheduleForm' && renderScheduleForm()}
+              {variant === 'SymbolInstanceForm' && renderSymbolInstanceForm()}
+              {variant === 'ComponentInstanceForm' && renderComponentInstanceForm()}
+              {variant === 'ScopeForm' && renderScopeForm()}
+              {variant === 'NoteForm' && renderNoteForm()}
+              {variant === 'SymbolDefinitionForm' && renderSymbolDefinitionForm()}
+              {variant === 'ComponentDefinitionForm' && renderComponentDefinitionForm()}
+            </>
+          )}
 
           <div
             style={{
@@ -249,10 +383,22 @@ export function InlineEntityForm({
             <TGButton
               size="sm"
               onClick={() => {
-                onSave?.(formData);
+                if (showDefinitionForm) {
+                  // Save the definition first
+                  const definitionData = { ...formData };
+                  if (variant === 'SymbolInstanceForm') {
+                    // Create symbol definition
+                    onRequestDefinition?.(definitionData);
+                  } else if (variant === 'ComponentInstanceForm') {
+                    // Create component definition
+                    onRequestComponentDefinition?.(definitionData);
+                  }
+                } else {
+                  onSave?.(formData);
+                }
               }}
             >
-              {actionLabel}
+              {showDefinitionForm ? 'Create Definition' : actionLabel}
             </TGButton>
           </div>
         </div>

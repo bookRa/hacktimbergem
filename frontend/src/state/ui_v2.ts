@@ -15,7 +15,7 @@ type ContextMenuState = {
 
 type InlineFormState = {
   open: boolean;
-  type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note' | null;
+  type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
   entityId?: string;
   at?: { x: number; y: number } | null;
   pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } | null;
@@ -39,7 +39,7 @@ type UIActions = {
   openContext: (payload: { at: { x: number; y: number }; target?: Selection; pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } }) => void;
   closeContext: () => void;
   openForm: (payload: {
-    type: 'Drawing' | 'SymbolInst' | 'Scope' | 'Note';
+    type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
     entityId?: string;
     at?: { x: number; y: number };
     pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] };
