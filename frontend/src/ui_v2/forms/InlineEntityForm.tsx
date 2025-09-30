@@ -81,11 +81,13 @@ export function InlineEntityForm({
 }: InlineEntityFormProps) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [showDefinitionForm, setShowDefinitionForm] = useState(false);
+  const [isWaitingForDefinition, setIsWaitingForDefinition] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setFormData({});
       setShowDefinitionForm(false);
+      setIsWaitingForDefinition(false);
       return;
     }
     setFormData(() => ({ ...(initialValues ?? {}) }));
@@ -158,10 +160,13 @@ export function InlineEntityForm({
               variant="outline"
               size="sm"
               style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              onClick={() => onRequestDefinition?.(formData)}
+              onClick={() => {
+                setIsWaitingForDefinition(true);
+                onRequestDefinition?.(formData);
+              }}
             >
               <PlusIcon />
-              New
+              {isWaitingForDefinition ? 'Drawing...' : 'New'}
             </TGButton>
           </div>
         </div>
@@ -270,10 +275,13 @@ export function InlineEntityForm({
               variant="outline"
               size="sm"
               style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              onClick={() => onRequestComponentDefinition?.(formData)}
+              onClick={() => {
+                setIsWaitingForDefinition(true);
+                onRequestComponentDefinition?.(formData);
+              }}
             >
               <PlusIcon />
-              New
+              {isWaitingForDefinition ? 'Drawing...' : 'New'}
             </TGButton>
           </div>
         </div>
@@ -307,6 +315,13 @@ export function InlineEntityForm({
   };
 
   const actionLabel = mode === 'edit' ? 'Update' : 'Save';
+
+  // Reset waiting state when form is cancelled or saved
+  useEffect(() => {
+    if (!open) {
+      setIsWaitingForDefinition(false);
+    }
+  }, [open]);
 
   return (
     <>

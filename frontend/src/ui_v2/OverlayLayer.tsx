@@ -469,12 +469,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     (window as any).__definitionType = 'SymbolDef';
     (window as any).__pendingInstanceForm = instanceFormState;
 
-    // Close the current instance form
-    closeForm();
-
-    // Start drawing mode for the definition
-    startDrawing('SymbolDef');
-  }, [inlineForm, closeForm, startDrawing]);
+    // Don't close the instance form - keep it visible but in a "waiting for definition" state
+    // Set a flag to indicate we're waiting for a definition
+    (window as any).__waitingForDefinition = true;
+  }, [inlineForm]);
 
   const handleRequestComponentDefinition = useCallback((draft: Record<string, unknown>) => {
     // Store the current instance form state for restoration
@@ -492,12 +490,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     (window as any).__definitionType = 'CompDef';
     (window as any).__pendingInstanceForm = instanceFormState;
 
-    // Close the current instance form
-    closeForm();
-
-    // Start drawing mode for the definition
-    startDrawing('CompDef');
-  }, [inlineForm, closeForm, startDrawing]);
+    // Don't close the instance form - keep it visible but in a "waiting for definition" state
+    // Set a flag to indicate we're waiting for a definition
+    (window as any).__waitingForDefinition = true;
+  }, [inlineForm]);
 
   const cancelEditSession = useCallback(() => {
     const listeners = editingListenersRef.current;
@@ -1738,12 +1734,13 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           const pendingInstanceForm = (window as any).__pendingInstanceForm;
 
           if (pendingInstanceForm) {
-            // Restore the instance form with the new definition selected
+            // Immediately restore the instance form with the new definition selected
             const updatedInitialValues = { ...pendingInstanceForm.initialValues };
             if (pendingInstanceForm.type === 'SymbolInst') {
               updatedInitialValues.symbolDefinitionId = created.id;
             }
 
+            // Open the instance form with the new definition selected
             openForm({
               type: pendingInstanceForm.type,
               entityId: pendingInstanceForm.entityId,
@@ -1753,10 +1750,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               mode: pendingInstanceForm.mode,
             });
 
-            // Clear the pending instance form
+            // Clear the flags
             delete (window as any).__pendingInstanceForm;
+            delete (window as any).__waitingForDefinition;
 
-            addToast({ kind: 'success', message: 'Symbol definition created and selected' });
+            addToast({ kind: 'success', message: 'Symbol definition created - complete the instance' });
           } else {
             // Regular definition creation
             setSelection([
@@ -1817,10 +1815,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               mode: pendingInstanceForm.mode,
             });
 
-            // Clear the pending instance form
+            // Clear the flags
             delete (window as any).__pendingInstanceForm;
+            delete (window as any).__waitingForDefinition;
 
-            addToast({ kind: 'success', message: 'Component definition created and selected' });
+            addToast({ kind: 'success', message: 'Component definition created - complete the instance' });
           } else {
             // Regular definition creation
             setSelection([

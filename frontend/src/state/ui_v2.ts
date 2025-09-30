@@ -132,7 +132,9 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   closeForm: () => {
     // Check if this was a definition form being cancelled during "new definition" workflow
     const pendingInstanceForm = (window as any).__pendingInstanceForm;
-    if (pendingInstanceForm) {
+    const isWaitingForDefinition = (window as any).__waitingForDefinition;
+
+    if (pendingInstanceForm && isWaitingForDefinition) {
       // Restore the instance form
       set({
         inlineForm: {
@@ -145,8 +147,9 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
           mode: pendingInstanceForm.mode,
         }
       });
-      // Clear the pending instance form
+      // Clear the flags
       delete (window as any).__pendingInstanceForm;
+      delete (window as any).__waitingForDefinition;
       return;
     }
 
@@ -159,7 +162,9 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   cancelDrawing: () => {
     // Check if this was drawing for a new definition
     const pendingInstanceForm = (window as any).__pendingInstanceForm;
-    if (pendingInstanceForm) {
+    const isWaitingForDefinition = (window as any).__waitingForDefinition;
+
+    if (pendingInstanceForm && isWaitingForDefinition) {
       // Restore the instance form
       set({
         drawing: { active: false, entityType: null },
@@ -174,8 +179,9 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
           mode: pendingInstanceForm.mode,
         }
       });
-      // Clear the pending instance form
+      // Clear the flags
       delete (window as any).__pendingInstanceForm;
+      delete (window as any).__waitingForDefinition;
       return;
     }
 
