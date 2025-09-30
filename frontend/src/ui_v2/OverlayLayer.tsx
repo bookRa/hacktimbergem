@@ -454,9 +454,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   }, [pageIndex, openOCRPicker, inlineForm, openForm]);
 
   const handleRequestDefinition = useCallback((draft: Record<string, unknown>) => {
-    // Set a flag to indicate this is a "new definition" creation
-    (window as any).__isNewDefinitionCreation = true;
-    (window as any).__pendingInstanceForm = {
+    // Store the current instance form state for restoration
+    const instanceFormState = {
       type: inlineForm.type,
       entityId: inlineForm.entityId,
       at: inlineForm.at,
@@ -465,19 +464,21 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       mode: inlineForm.mode,
     };
 
-    // Open a SymbolDefinitionForm for creating a new definition
-    openForm({
-      type: 'SymbolDef',
-      at: { x: inlineForm.at?.x ?? 0, y: (inlineForm.at?.y ?? 0) + 400 }, // Position below the instance form
-      initialValues: draft,
-      mode: 'create',
-    });
-  }, [inlineForm, openForm]);
+    // Set flags for definition creation workflow
+    (window as any).__isNewDefinitionCreation = true;
+    (window as any).__definitionType = 'SymbolDef';
+    (window as any).__pendingInstanceForm = instanceFormState;
+
+    // Close the current instance form
+    closeForm();
+
+    // Start drawing mode for the definition
+    startDrawing('SymbolDef');
+  }, [inlineForm, closeForm, startDrawing]);
 
   const handleRequestComponentDefinition = useCallback((draft: Record<string, unknown>) => {
-    // Set a flag to indicate this is a "new definition" creation
-    (window as any).__isNewDefinitionCreation = true;
-    (window as any).__pendingInstanceForm = {
+    // Store the current instance form state for restoration
+    const instanceFormState = {
       type: inlineForm.type,
       entityId: inlineForm.entityId,
       at: inlineForm.at,
@@ -486,14 +487,17 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       mode: inlineForm.mode,
     };
 
-    // Open a ComponentDefinitionForm for creating a new definition
-    openForm({
-      type: 'CompDef',
-      at: { x: inlineForm.at?.x ?? 0, y: (inlineForm.at?.y ?? 0) + 400 }, // Position below the instance form
-      initialValues: draft,
-      mode: 'create',
-    });
-  }, [inlineForm, openForm]);
+    // Set flags for definition creation workflow
+    (window as any).__isNewDefinitionCreation = true;
+    (window as any).__definitionType = 'CompDef';
+    (window as any).__pendingInstanceForm = instanceFormState;
+
+    // Close the current instance form
+    closeForm();
+
+    // Start drawing mode for the definition
+    startDrawing('CompDef');
+  }, [inlineForm, closeForm, startDrawing]);
 
   const cancelEditSession = useCallback(() => {
     const listeners = editingListenersRef.current;
@@ -1169,18 +1173,40 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       setHoverEntityId?.(null);
       setHoverScopeId?.(null);
 
+      // Clear selection when clicking on empty space (not over entities)
+      // But don't clear if we're in drawing mode or if this is the start of a drag operation
+      const overlayEl = overlayRef.current;
+      const rect = overlayEl?.getBoundingClientRect();
+      if (overlayEl && rect && !drawing.active) {
+        const x = event.clientX - rect!.left;
+        const y = event.clientY - rect!.top;
+
+        // Check if clicking over an entity
+        const hit = pageEntities.find((item) => {
+          return (
+            x >= item.bboxPx.x &&
+            y >= item.bboxPx.y &&
+            x <= item.bboxPx.x + item.bboxPx.width &&
+            y <= item.bboxPx.y + item.bboxPx.height
+          );
+        });
+
+        // If not clicking over an entity and not in drawing mode, clear selection
+        if (!hit) {
+          setSelection([]);
+        }
+      }
+
       // If we're in drawing mode, start drawing
       if (drawing.active) {
-        const overlay = overlayRef.current;
-        const rect = overlay?.getBoundingClientRect();
-        if (!overlay || !rect) return;
+        if (!overlayEl || !rect) return;
         try {
-          overlay.setPointerCapture(event.pointerId);
+          overlayEl.setPointerCapture(event.pointerId);
         } catch (_) {
           /* ignore */
         }
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        const x = event.clientX - rect!.left;
+        const y = event.clientY - rect!.top;
         dragOriginRef.current = { x, y };
         pendingBBoxRef.current = null;
         setIsDrawing(true);
@@ -1189,16 +1215,13 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }
 
       // Normal selection/drawing mode
-      const overlay = overlayRef.current;
-      const rect = overlay?.getBoundingClientRect();
-      if (!overlay || !rect) return;
       try {
-        overlay.setPointerCapture(event.pointerId);
+        overlayEl!.setPointerCapture(event.pointerId);
       } catch (_) {
         /* ignore */
       }
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
+      const x = event.clientX - rect!.left;
+      const y = event.clientY - rect!.top;
       dragOriginRef.current = { x, y };
       pendingBBoxRef.current = null;
       closeContext();
@@ -1261,7 +1284,15 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       if (draftRect.width < threshold || draftRect.height < threshold) {
         // If we're in drawing mode and the bbox is too small, cancel drawing
         if (drawing.active) {
-          cancelDrawing();
+          // Check if this was a new definition creation
+          const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+          if (isNewDefinitionCreation) {
+            // Cancel the new definition workflow and restore instance form
+            cancelDrawing();
+          } else {
+            // Regular drawing cancellation
+            cancelDrawing();
+          }
         }
         return;
       }
@@ -1271,7 +1302,15 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const pageHeightPts = meta?.pageHeightPts || ocr?.height_pts;
       if (!meta || !pageWidthPts || !pageHeightPts) {
         if (drawing.active) {
-          cancelDrawing();
+          // Check if this was a new definition creation
+          const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+          if (isNewDefinitionCreation) {
+            // Cancel the new definition workflow and restore instance form
+            cancelDrawing();
+          } else {
+            // Regular drawing cancellation
+            cancelDrawing();
+          }
         }
         return;
       }
@@ -1291,13 +1330,33 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
       // If we're in drawing mode, complete the drawing and open the form
       if (drawing.active) {
-        pendingBBoxRef.current = { sheetId, bboxPdf };
-        openForm({
-          type: drawing.entityType!,
-          at: { x, y },
-          pendingBBox: { sheetId, bboxPdf }
-        });
-        cancelDrawing();
+        const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+        const definitionType = (window as any).__definitionType;
+
+        if (isNewDefinitionCreation && definitionType) {
+          // This is a new definition creation - open the definition form
+          pendingBBoxRef.current = { sheetId, bboxPdf };
+          openForm({
+            type: definitionType,
+            at: { x, y },
+            pendingBBox: { sheetId, bboxPdf }
+          });
+
+          // Clear the new definition flags but don't cancel drawing mode yet
+          // (in case the user wants to draw another bbox)
+          delete (window as any).__isNewDefinitionCreation;
+          delete (window as any).__definitionType;
+          // Don't cancel drawing - keep it active for potential additional drawings
+        } else {
+          // Regular drawing mode - open the form for the entity type
+          pendingBBoxRef.current = { sheetId, bboxPdf };
+          openForm({
+            type: drawing.entityType!,
+            at: { x, y },
+            pendingBBox: { sheetId, bboxPdf }
+          });
+          cancelDrawing();
+        }
         return;
       }
 
@@ -1675,11 +1734,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           const created = await createEntity(projectId, payload);
           await fetchEntities();
 
-          // Check if this was a "new definition" creation from an instance form
-          const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+          // Check if this definition was created from an instance form
           const pendingInstanceForm = (window as any).__pendingInstanceForm;
 
-          if (isNewDefinitionCreation && pendingInstanceForm) {
+          if (pendingInstanceForm) {
             // Restore the instance form with the new definition selected
             const updatedInitialValues = { ...pendingInstanceForm.initialValues };
             if (pendingInstanceForm.type === 'SymbolInst') {
@@ -1695,8 +1753,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               mode: pendingInstanceForm.mode,
             });
 
-            // Clear the flags
-            delete (window as any).__isNewDefinitionCreation;
+            // Clear the pending instance form
             delete (window as any).__pendingInstanceForm;
 
             addToast({ kind: 'success', message: 'Symbol definition created and selected' });
@@ -1741,11 +1798,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           const created = await createEntity(projectId, payload);
           await fetchEntities();
 
-          // Check if this was a "new definition" creation from an instance form
-          const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+          // Check if this definition was created from an instance form
           const pendingInstanceForm = (window as any).__pendingInstanceForm;
 
-          if (isNewDefinitionCreation && pendingInstanceForm) {
+          if (pendingInstanceForm) {
             // Restore the instance form with the new definition selected
             const updatedInitialValues = { ...pendingInstanceForm.initialValues };
             if (pendingInstanceForm.type === 'CompInst') {
@@ -1761,8 +1817,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               mode: pendingInstanceForm.mode,
             });
 
-            // Clear the flags
-            delete (window as any).__isNewDefinitionCreation;
+            // Clear the pending instance form
             delete (window as any).__pendingInstanceForm;
 
             addToast({ kind: 'success', message: 'Component definition created and selected' });
@@ -1850,6 +1905,27 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     return 'normal';
   };
 
+  // Determine cursor based on current state
+  const getCursor = () => {
+    // If in linking mode, show default cursor
+    if (linking.active) return 'default';
+
+    // If editing an entity (resize handles visible), show move cursor for selected entity
+    if (selection.length === 1 && editingDrafts[selection[0].id]) return 'move';
+
+    // If hovering over an entity, show pointer for selection
+    if (hover) return 'pointer';
+
+    // If in drawing mode, show crosshair
+    if (drawing.active) return 'crosshair';
+
+    // Default: show crosshair when we can draw (not in forms, not editing)
+    if (!inlineForm.open && !contextMenu.open) return 'crosshair';
+
+    // Otherwise, default cursor
+    return 'default';
+  };
+
   return (
     <div
       ref={overlayRef}
@@ -1858,7 +1934,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         position: 'absolute',
         inset: 0,
         pointerEvents: 'auto',
-        cursor: drawing.active ? 'crosshair' : 'default'
+        cursor: getCursor()
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

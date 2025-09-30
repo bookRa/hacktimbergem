@@ -130,12 +130,56 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
     });
   },
   closeForm: () => {
+    // Check if this was a definition form being cancelled during "new definition" workflow
+    const pendingInstanceForm = (window as any).__pendingInstanceForm;
+    if (pendingInstanceForm) {
+      // Restore the instance form
+      set({
+        inlineForm: {
+          open: true,
+          type: pendingInstanceForm.type,
+          entityId: pendingInstanceForm.entityId,
+          at: pendingInstanceForm.at,
+          pendingBBox: pendingInstanceForm.pendingBBox,
+          initialValues: pendingInstanceForm.initialValues,
+          mode: pendingInstanceForm.mode,
+        }
+      });
+      // Clear the pending instance form
+      delete (window as any).__pendingInstanceForm;
+      return;
+    }
+
+    // Regular form close
     set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null, initialValues: null, mode: 'create' } });
   },
   startDrawing: (entityType) => {
     set({ drawing: { active: true, entityType }, mode: 'draw' });
   },
   cancelDrawing: () => {
+    // Check if this was drawing for a new definition
+    const pendingInstanceForm = (window as any).__pendingInstanceForm;
+    if (pendingInstanceForm) {
+      // Restore the instance form
+      set({
+        drawing: { active: false, entityType: null },
+        mode: 'select',
+        inlineForm: {
+          open: true,
+          type: pendingInstanceForm.type,
+          entityId: pendingInstanceForm.entityId,
+          at: pendingInstanceForm.at,
+          pendingBBox: pendingInstanceForm.pendingBBox,
+          initialValues: pendingInstanceForm.initialValues,
+          mode: pendingInstanceForm.mode,
+        }
+      });
+      // Clear the pending instance form
+      delete (window as any).__pendingInstanceForm;
+      return;
+    }
+
+    // Regular drawing cancel
     set({ drawing: { active: false, entityType: null }, mode: 'select' });
   },
   openOCRPicker: (pageIndex, onSelect) => {
