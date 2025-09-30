@@ -453,6 +453,48 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     });
   }, [pageIndex, openOCRPicker, inlineForm, openForm]);
 
+  const handleRequestDefinition = useCallback((draft: Record<string, unknown>) => {
+    // Set a flag to indicate this is a "new definition" creation
+    (window as any).__isNewDefinitionCreation = true;
+    (window as any).__pendingInstanceForm = {
+      type: inlineForm.type,
+      entityId: inlineForm.entityId,
+      at: inlineForm.at,
+      pendingBBox: inlineForm.pendingBBox,
+      initialValues: { ...inlineForm.initialValues },
+      mode: inlineForm.mode,
+    };
+
+    // Open a SymbolDefinitionForm for creating a new definition
+    openForm({
+      type: 'SymbolDef',
+      at: { x: inlineForm.at?.x ?? 0, y: (inlineForm.at?.y ?? 0) + 400 }, // Position below the instance form
+      initialValues: draft,
+      mode: 'create',
+    });
+  }, [inlineForm, openForm]);
+
+  const handleRequestComponentDefinition = useCallback((draft: Record<string, unknown>) => {
+    // Set a flag to indicate this is a "new definition" creation
+    (window as any).__isNewDefinitionCreation = true;
+    (window as any).__pendingInstanceForm = {
+      type: inlineForm.type,
+      entityId: inlineForm.entityId,
+      at: inlineForm.at,
+      pendingBBox: inlineForm.pendingBBox,
+      initialValues: { ...inlineForm.initialValues },
+      mode: inlineForm.mode,
+    };
+
+    // Open a ComponentDefinitionForm for creating a new definition
+    openForm({
+      type: 'CompDef',
+      at: { x: inlineForm.at?.x ?? 0, y: (inlineForm.at?.y ?? 0) + 400 }, // Position below the instance form
+      initialValues: draft,
+      mode: 'create',
+    });
+  }, [inlineForm, openForm]);
+
   const cancelEditSession = useCallback(() => {
     const listeners = editingListenersRef.current;
     if (listeners) {
@@ -1632,19 +1674,48 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
-          setSelection([
-            {
-              id: created.id,
-              type: 'SymbolDef',
-              sheetId: pending.sheetId,
-            },
-          ]);
-          try {
-            pushHistory({ type: 'create_entity', entity: created });
-          } catch (e) {
-            console.warn('history push failed', e);
+
+          // Check if this was a "new definition" creation from an instance form
+          const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+          const pendingInstanceForm = (window as any).__pendingInstanceForm;
+
+          if (isNewDefinitionCreation && pendingInstanceForm) {
+            // Restore the instance form with the new definition selected
+            const updatedInitialValues = { ...pendingInstanceForm.initialValues };
+            if (pendingInstanceForm.type === 'SymbolInst') {
+              updatedInitialValues.symbolDefinitionId = created.id;
+            }
+
+            openForm({
+              type: pendingInstanceForm.type,
+              entityId: pendingInstanceForm.entityId,
+              at: pendingInstanceForm.at,
+              pendingBBox: pendingInstanceForm.pendingBBox,
+              initialValues: updatedInitialValues,
+              mode: pendingInstanceForm.mode,
+            });
+
+            // Clear the flags
+            delete (window as any).__isNewDefinitionCreation;
+            delete (window as any).__pendingInstanceForm;
+
+            addToast({ kind: 'success', message: 'Symbol definition created and selected' });
+          } else {
+            // Regular definition creation
+            setSelection([
+              {
+                id: created.id,
+                type: 'SymbolDef',
+                sheetId: pending.sheetId,
+              },
+            ]);
+            try {
+              pushHistory({ type: 'create_entity', entity: created });
+            } catch (e) {
+              console.warn('history push failed', e);
+            }
+            addToast({ kind: 'success', message: 'Symbol definition created' });
           }
-          addToast({ kind: 'success', message: 'Symbol definition created' });
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to create symbol definition' });
@@ -1669,19 +1740,48 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
-          setSelection([
-            {
-              id: created.id,
-              type: 'CompDef',
-              sheetId: pending.sheetId,
-            },
-          ]);
-          try {
-            pushHistory({ type: 'create_entity', entity: created });
-          } catch (e) {
-            console.warn('history push failed', e);
+
+          // Check if this was a "new definition" creation from an instance form
+          const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+          const pendingInstanceForm = (window as any).__pendingInstanceForm;
+
+          if (isNewDefinitionCreation && pendingInstanceForm) {
+            // Restore the instance form with the new definition selected
+            const updatedInitialValues = { ...pendingInstanceForm.initialValues };
+            if (pendingInstanceForm.type === 'CompInst') {
+              updatedInitialValues.componentDefinitionId = created.id;
+            }
+
+            openForm({
+              type: pendingInstanceForm.type,
+              entityId: pendingInstanceForm.entityId,
+              at: pendingInstanceForm.at,
+              pendingBBox: pendingInstanceForm.pendingBBox,
+              initialValues: updatedInitialValues,
+              mode: pendingInstanceForm.mode,
+            });
+
+            // Clear the flags
+            delete (window as any).__isNewDefinitionCreation;
+            delete (window as any).__pendingInstanceForm;
+
+            addToast({ kind: 'success', message: 'Component definition created and selected' });
+          } else {
+            // Regular definition creation
+            setSelection([
+              {
+                id: created.id,
+                type: 'CompDef',
+                sheetId: pending.sheetId,
+              },
+            ]);
+            try {
+              pushHistory({ type: 'create_entity', entity: created });
+            } catch (e) {
+              console.warn('history push failed', e);
+            }
+            addToast({ kind: 'success', message: 'Component definition created' });
           }
-          addToast({ kind: 'success', message: 'Component definition created' });
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to create component definition' });
@@ -1754,7 +1854,12 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     <div
       ref={overlayRef}
       className="tg-ui2"
-      style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'auto',
+        cursor: drawing.active ? 'crosshair' : 'default'
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -1887,6 +1992,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         onSave={handleFormSave}
         onCancel={closeForm}
         onCreateFromOCR={handleOpenOCRPicker}
+        onRequestDefinition={handleRequestDefinition}
+        onRequestComponentDefinition={handleRequestComponentDefinition}
         initialValues={inlineForm.initialValues ?? null}
         mode={inlineForm.mode ?? 'create'}
         symbolDefinitionOptions={symbolDefinitionOptions}
