@@ -20,10 +20,11 @@ interface OCRPickerProps {
   y?: number;
   ocrBlocks?: OCRBlock[];
   onSelect?: (block: OCRBlock) => void;
+  onTextSelect?: (text: string) => void;
   onClose?: () => void;
 }
 
-export function OCRPicker({ open = false, x = 0, y = 0, ocrBlocks = [], onSelect, onClose }: OCRPickerProps) {
+export function OCRPicker({ open = false, x = 0, y = 0, ocrBlocks = [], onSelect, onTextSelect, onClose }: OCRPickerProps) {
   if (!open) return null;
 
   return (
@@ -76,6 +77,7 @@ export function OCRPicker({ open = false, x = 0, y = 0, ocrBlocks = [], onSelect
                     }}
                     onClick={() => {
                       onSelect?.(block);
+                      onTextSelect?.(block.text);
                       onClose?.();
                     }}
                     onMouseEnter={(event) => {
@@ -127,6 +129,7 @@ export function OCRPicker({ open = false, x = 0, y = 0, ocrBlocks = [], onSelect
                     }}
                     onClick={() => {
                       onSelect?.(block);
+                      onTextSelect?.(block.text);
                       onClose?.();
                     }}
                   >

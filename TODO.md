@@ -25,9 +25,9 @@
 
 ## Sprint C — Linking & OCR
 - [x] Right-click → ContextPicker → Drawing mode → InlineEntityForm (all entity types)
-- [ ] ChipsTray + linking controller; Finish/Cancel → API (preload existing relations, prevent duplicate writes, support unlink)
-- [ ] Linking UX polish: chip removal `x`, canvas highlight of linked entities, Inspector controls for unlink/edit
-- [ ] OCRPicker overlay; prefill scope form; pipeline into inline form defaults
+- [x] ChipsTray + linking controller; Finish/Cancel → API (preload existing relations, prevent duplicate writes, support unlink)
+- [x] Linking UX polish: chip removal `x`, canvas highlight of linked entities, Inspector controls for unlink/edit
+- [x] OCRPicker overlay; prefill scope form; pipeline into inline form defaults
 - [ ] Undo/Redo (create, edit, link add/remove)
 
 ## Sprint D — Explorer, Needs Attention & toolbar

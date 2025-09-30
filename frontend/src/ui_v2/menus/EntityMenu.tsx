@@ -23,6 +23,7 @@ interface EntityMenuProps {
   y?: number;
   onAction?: (action: string) => void;
   onClose?: () => void;
+  isLinked?: boolean;
 }
 
 const iconSize = 12;
@@ -87,7 +88,8 @@ const baseActions: ActionConfig[] = [
 
 const linkableKinds: EntityKind[] = ['SymbolInst', 'CompInst', 'Scope'];
 
-const trailingActions: ActionConfig[] = [
+const trailingActions = (isLinked?: boolean): ActionConfig[] => [
+  ...(isLinked ? [{ id: 'unlink', label: 'Unlink', icon: LinkIcon }] : []),
   { id: 'duplicate', label: 'Duplicate', icon: CopyIcon },
   { id: 'delete', label: 'Delete', icon: TrashIcon, destructive: true },
 ];
@@ -99,13 +101,14 @@ export function EntityMenu({
   y = 0,
   onAction,
   onClose,
+  isLinked = false,
 }: EntityMenuProps) {
   if (!open) return null;
 
   const actions: ActionConfig[] = [
     ...baseActions,
     ...(linkableKinds.includes(kind) ? [{ id: 'link', label: 'Link…', icon: LinkIcon }] : []),
-    ...trailingActions,
+    ...trailingActions(isLinked),
   ];
 
   return (

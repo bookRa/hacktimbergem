@@ -1,5 +1,6 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { shallow } from 'zustand/shallow';
+import type { OCRBlock } from '../ui_v2/overlays/OCRPicker';
 
 export type Selection = {
   type: 'Drawing' | 'Legend' | 'Schedule' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope';
@@ -28,6 +29,12 @@ type DrawingState = {
   entityType?: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
 };
 
+type OCRPickerState = {
+  open: boolean;
+  pageIndex?: number;
+  onSelect?: (block: OCRBlock) => void;
+};
+
 type LinkingState = {
   active: boolean;
   source?: Selection;
@@ -54,6 +61,8 @@ type UIActions = {
   closeForm: () => void;
   startDrawing: (entityType: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef') => void;
   cancelDrawing: () => void;
+  openOCRPicker: (pageIndex: number, onSelect: (block: OCRBlock) => void) => void;
+  closeOCRPicker: () => void;
   startLinking: (source: Selection, initialPending?: Selection[]) => void;
   addPending: (selection: Selection) => void;
   finishLinking: () => { source?: Selection; pending: Selection[] };
@@ -70,6 +79,7 @@ export type UIState = {
   contextMenu: ContextMenuState;
   inlineForm: InlineFormState;
   drawing: DrawingState;
+  ocrPicker: OCRPickerState;
   linking: LinkingState;
   hover?: Selection;
   selection: Selection[];
@@ -81,6 +91,7 @@ const initialState: Omit<UIState, keyof UIActions> = {
   contextMenu: { open: false, at: null, target: undefined },
   inlineForm: { open: false, type: null, at: null, pendingBBox: null, entityId: undefined, initialValues: null, mode: 'create' },
   drawing: { active: false, entityType: null },
+  ocrPicker: { open: false },
   linking: { active: false, source: undefined, pending: [] },
   hover: undefined,
   selection: [],
@@ -127,6 +138,12 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   cancelDrawing: () => {
     set({ drawing: { active: false, entityType: null }, mode: 'select' });
   },
+  openOCRPicker: (pageIndex, onSelect) => {
+    set({ ocrPicker: { open: true, pageIndex, onSelect } });
+  },
+  closeOCRPicker: () => {
+    set({ ocrPicker: { open: false } });
+  },
   startLinking: (source, initialPending = []) => {
     set({ linking: { active: true, source, pending: initialPending }, mode: 'link' });
   },
@@ -167,6 +184,8 @@ export const useUIV2Actions = () => {
     closeForm: state.closeForm,
     startDrawing: state.startDrawing,
     cancelDrawing: state.cancelDrawing,
+    openOCRPicker: state.openOCRPicker,
+    closeOCRPicker: state.closeOCRPicker,
     startLinking: state.startLinking,
     addPending: state.addPending,
     finishLinking: state.finishLinking,
@@ -180,6 +199,7 @@ export const useUIV2Actions = () => {
 export const useUIV2ContextMenu = () => useUIV2Store((state) => state.contextMenu, shallow);
 export const useUIV2InlineForm = () => useUIV2Store((state) => state.inlineForm, shallow);
 export const useUIV2Drawing = () => useUIV2Store((state) => state.drawing, shallow);
+export const useUIV2OCRPicker = () => useUIV2Store((state) => state.ocrPicker, shallow);
 export const useUIV2Mode = () => useUIV2Store((state) => state.mode);
 export const useUIV2Selection = () => useUIV2Store((state) => ({ selection: state.selection, hover: state.hover }), shallow);
 export const useUIV2Linking = () => useUIV2Store((state) => state.linking, shallow);

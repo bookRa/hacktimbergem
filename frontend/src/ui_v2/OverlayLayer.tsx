@@ -6,13 +6,13 @@ import { ContextPicker } from './menus/ContextPicker';
 import { EntityMenu } from './menus/EntityMenu';
 import { InlineEntityForm } from './forms/InlineEntityForm';
 import { ChipsTray } from './linking/ChipsTray';
-import { OCRPicker } from './overlays/OCRPicker';
+import { OCRPicker, OCRBlock } from './overlays/OCRPicker';
 import '../ui_v2/theme/tokens.css';
-import { useUIV2Actions, useUIV2ContextMenu, useUIV2Drawing, useUIV2InlineForm, useUIV2Linking, useUIV2Selection } from '../state/ui_v2';
+import { useUIV2Actions, useUIV2ContextMenu, useUIV2Drawing, useUIV2InlineForm, useUIV2Linking, useUIV2OCRPicker, useUIV2Selection } from '../state/ui_v2';
 import type { Selection } from '../state/ui_v2';
 import { useProjectStore } from '../state/store';
 import { createEntity, patchEntity } from '../api/entities';
-import { createLink as apiCreateLink } from '../api/links';
+import { createLink as apiCreateLink, deleteLink } from '../api/links';
 import { deriveEntityFlags } from '../state/entity_flags';
 import { pdfToCanvas } from '../utils/coords';
 import type { Entity } from '../api/entities';
@@ -160,6 +160,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   const contextMenu = useUIV2ContextMenu();
   const inlineForm = useUIV2InlineForm();
   const drawing = useUIV2Drawing();
+  const ocrPicker = useUIV2OCRPicker();
   const linking = useUIV2Linking();
   const { selection, hover } = useUIV2Selection();
   const {
@@ -169,6 +170,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     closeForm,
     startDrawing,
     cancelDrawing,
+    openOCRPicker,
+    closeOCRPicker,
     setSelection,
     setHover,
     startLinking,
@@ -401,6 +404,54 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     },
     [entityMeta]
   );
+
+  const getOCRBlocksForPage = useCallback((pageIndex: number) => {
+    const ocr = pageOcr?.[pageIndex];
+    if (!ocr?.blocks) return [];
+
+    return ocr.blocks.map((block: any, index: number) => ({
+      id: `${pageIndex}-${index}`,
+      text: block.text,
+      x: block.bbox[0],
+      y: block.bbox[1],
+      width: block.bbox[2] - block.bbox[0],
+      height: block.bbox[3] - block.bbox[1],
+      confidence: block.confidence || 0.9,
+    }));
+  }, [pageOcr]);
+
+  const handleOCRTextSelect = useCallback((block: OCRBlock) => {
+    if (ocrPicker.onSelect) {
+      ocrPicker.onSelect(block);
+    }
+    closeOCRPicker();
+  }, [ocrPicker.onSelect, closeOCRPicker]);
+
+  const handleOpenOCRPicker = useCallback(() => {
+    const currentPageIndex = pageIndex;
+    openOCRPicker(currentPageIndex, (block: OCRBlock) => {
+      // Update the form with the selected OCR text
+      const updatedValues = { ...inlineForm.initialValues };
+      if (inlineForm.type === 'Scope') {
+        updatedValues.name = block.text;
+        updatedValues.description = block.text;
+      } else if (inlineForm.type === 'SymbolDef') {
+        updatedValues.name = block.text;
+        updatedValues.description = block.text;
+      }
+      // Re-open the form with updated values
+      if (inlineForm.type) {
+        openForm({
+          type: inlineForm.type,
+          entityId: inlineForm.entityId,
+          at: inlineForm.at ?? undefined,
+          pendingBBox: inlineForm.pendingBBox ?? undefined,
+          initialValues: updatedValues,
+          mode: inlineForm.mode,
+        });
+      }
+    });
+  }, [pageIndex, openOCRPicker, inlineForm, openForm]);
 
   const cancelEditSession = useCallback(() => {
     const listeners = editingListenersRef.current;
@@ -886,6 +937,36 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         setSelection([target, ...existing]);
         closeContext();
       }
+
+      if (action === 'unlink') {
+        if (!projectId) {
+          addToast({ kind: 'error', message: 'No project loaded' });
+          return;
+        }
+        // Find links where this entity is the target
+        const linksToDelete = (links || [])
+          .filter((linkObj: { rel_type: string; target_id: string; id: string }) =>
+            linkObj.rel_type === 'JUSTIFIED_BY' &&
+            linkObj.target_id === entity.id
+          );
+
+        if (linksToDelete.length === 0) {
+          addToast({ kind: 'warning', message: 'No links to remove' });
+          closeContext();
+          return;
+        }
+
+        try {
+          await Promise.all(linksToDelete.map((link: { id: string }) => deleteLink(projectId, link.id)));
+          await fetchLinks();
+          addToast({ kind: 'success', message: `${linksToDelete.length} link${linksToDelete.length > 1 ? 's' : ''} removed` });
+          setSelection([makeSelection({ entity, tagType: entityTypeMap[entity.entity_type], bboxPx: { x: 0, y: 0, width: 0, height: 0 }, isIncomplete: false })]);
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to remove links' });
+        }
+        closeContext();
+      }
     },
     [
       addToast,
@@ -979,24 +1060,47 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       return;
     }
 
-    try {
-      await Promise.all(
-        pending.map((sel) =>
-          apiCreateLink(projectId, {
-            rel_type: 'JUSTIFIED_BY',
-            source_id: source.id,
-            target_id: sel.id,
-          })
-        )
+    // Check for existing links to prevent duplicates
+    const existingLinks = (links || [])
+      .filter((linkObj: { rel_type: string; source_id: string; target_id: string }) =>
+        linkObj.rel_type === 'JUSTIFIED_BY' &&
+        linkObj.source_id === source.id &&
+        pending.some(sel => sel.id === linkObj.target_id)
       );
+
+    const newTargets = pending.filter(sel =>
+      !existingLinks.some((link: { target_id: string }) => link.target_id === sel.id)
+    );
+
+    if (newTargets.length === 0) {
+      addToast({ kind: 'warning', message: 'All selected entities are already linked' });
+      cancelLinking();
+      return;
+    }
+
+    try {
+      const linkPromises = newTargets.map((sel) =>
+        apiCreateLink(projectId, {
+          rel_type: 'JUSTIFIED_BY',
+          source_id: source.id,
+          target_id: sel.id,
+        })
+      );
+
+      await Promise.all(linkPromises);
       await fetchLinks();
-      addToast({ kind: 'success', message: 'Links created' });
+      addToast({ kind: 'success', message: `${newTargets.length} link${newTargets.length > 1 ? 's' : ''} created` });
       setSelection([source, ...pending]);
     } catch (error: any) {
       console.error(error);
-      addToast({ kind: 'error', message: error?.message || 'Failed to create links' });
+      // Check if it's a duplicate link error
+      if (error.message && error.message.includes('already exists')) {
+        addToast({ kind: 'warning', message: 'Some links already exist' });
+      } else {
+        addToast({ kind: 'error', message: error?.message || 'Failed to create links' });
+      }
     }
-  }, [addToast, cancelLinking, fetchLinks, finishLinking, projectId, setSelection]);
+  }, [addToast, cancelLinking, fetchLinks, finishLinking, links, projectId, setSelection]);
 
   const shouldIgnorePointer = useCallback((target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) return false;
@@ -1725,6 +1829,9 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         y={contextMenu.at?.y}
         onAction={handleMenuAction}
         onClose={closeContext}
+        isLinked={contextMenu.target ? (links || []).some((linkObj: any) =>
+          linkObj.rel_type === 'JUSTIFIED_BY' && linkObj.target_id === contextMenu.target?.id
+        ) : false}
       />
 
       <InlineEntityForm
@@ -1752,9 +1859,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         y={inlineForm.at?.y ?? contextMenu.at?.y ?? 0}
         onSave={handleFormSave}
         onCancel={closeForm}
-        onCreateFromOCR={() => {
-          // TODO: Wire OCR picker
-        }}
+        onCreateFromOCR={handleOpenOCRPicker}
         initialValues={inlineForm.initialValues ?? null}
         mode={inlineForm.mode ?? 'create'}
         symbolDefinitionOptions={symbolDefinitionOptions}
@@ -1769,7 +1874,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         onCancel={cancelLinking}
       />
 
-      <OCRPicker open={false} />
+      <OCRPicker
+        open={ocrPicker.open}
+        x={contextMenu.at?.x ?? 0}
+        y={contextMenu.at?.y ?? 0}
+        ocrBlocks={ocrPicker.pageIndex !== undefined ? getOCRBlocksForPage(ocrPicker.pageIndex) : []}
+        onSelect={handleOCRTextSelect}
+        onClose={closeOCRPicker}
+      />
     </div>
   );
 }
