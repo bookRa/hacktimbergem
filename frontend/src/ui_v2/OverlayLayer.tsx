@@ -1303,6 +1303,26 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
   const handleContextSelect = useCallback(
     (entityType: string) => {
+      const pending = pendingBBoxRef.current || inlineForm.pendingBBox;
+      if (!pending) {
+        // If no pending bbox, start drawing mode (right-click workflow)
+        let type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
+        if (entityType === 'Symbol Instance') type = 'SymbolInst';
+        else if (entityType === 'Component Instance') type = 'CompInst';
+        else if (entityType === 'Drawing') type = 'Drawing';
+        else if (entityType === 'Legend') type = 'Legend';
+        else if (entityType === 'Schedule') type = 'Schedule';
+        else if (entityType === 'Scope') type = 'Scope';
+        else if (entityType === 'Note') type = 'Note';
+        else if (entityType === 'Symbol Definition') type = 'SymbolDef';
+        else if (entityType === 'Component Definition') type = 'CompDef';
+        if (!type) return;
+        startDrawing(type);
+        closeContext();
+        return;
+      }
+
+      // If we have a pending bbox, open the form directly (click-drag workflow)
       closeContext();
       let type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
       if (entityType === 'Symbol Instance') type = 'SymbolInst';
@@ -1315,9 +1335,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       else if (entityType === 'Symbol Definition') type = 'SymbolDef';
       else if (entityType === 'Component Definition') type = 'CompDef';
       if (!type) return;
-      startDrawing(type);
+
+      openForm({
+        type,
+        at: contextMenu.at ?? { x: 0, y: 0 },
+        pendingBBox: pending
+      });
+      // Clear the pending bbox after using it
+      pendingBBoxRef.current = null;
     },
-    [closeContext, startDrawing]
+    [closeContext, contextMenu.at, inlineForm.pendingBBox, openForm, startDrawing]
   );
 
   const handleFormSave = useCallback(
