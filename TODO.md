@@ -29,6 +29,7 @@
 - [x] Linking UX polish: chip removal `x`, canvas highlight of linked entities, Inspector controls for unlink/edit
 - [x] OCRPicker overlay; prefill scope form; pipeline into inline form defaults
 - [x] New symbol/component definition workflow from instance creation
+- [x] Proper state management and form restoration for definition creation workflow
 - [ ] Undo/Redo (create, edit, link add/remove)
 
 ## Sprint D — Explorer, Needs Attention & toolbar

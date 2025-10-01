@@ -1324,10 +1324,9 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const [px2, py2] = toPdf({ x: draftRect.x + draftRect.width, y: draftRect.y + draftRect.height });
       const bboxPdf: PdfBBox = [Math.min(px1, px2), Math.min(py1, py2), Math.max(px1, px2), Math.max(py1, py2)];
 
-      // If we're in drawing mode, complete the drawing and open the form
-      if (drawing.active) {
-        const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
-        const definitionType = (window as any).__definitionType;
+      // Check if this is a new definition creation first (before checking drawing.active)
+      const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+      const definitionType = (window as any).__definitionType;
 
         if (isNewDefinitionCreation && definitionType) {
           // This is a new definition creation - open the definition form
@@ -1338,21 +1337,25 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
             pendingBBox: { sheetId, bboxPdf }
           });
 
-          // Clear the new definition flags but don't cancel drawing mode yet
-          // (in case the user wants to draw another bbox)
+          // Clear the new definition flags
           delete (window as any).__isNewDefinitionCreation;
           delete (window as any).__definitionType;
-          // Don't cancel drawing - keep it active for potential additional drawings
-        } else {
-          // Regular drawing mode - open the form for the entity type
-          pendingBBoxRef.current = { sheetId, bboxPdf };
-          openForm({
-            type: drawing.entityType!,
-            at: { x, y },
-            pendingBBox: { sheetId, bboxPdf }
-          });
-          cancelDrawing();
+          delete (window as any).__waitingForDefinition;
+          return;
         }
+
+      // If we're in drawing mode, complete the drawing and open the form
+      if (drawing.active) {
+        // Regular drawing mode - open the form for the entity type
+        pendingBBoxRef.current = { sheetId, bboxPdf };
+        openForm({
+          type: drawing.entityType!,
+          at: { x, y },
+          pendingBBox: { sheetId, bboxPdf }
+        });
+        cancelDrawing();
+        // Clear any leftover flags
+        delete (window as any).__waitingForDefinition;
         return;
       }
 
@@ -1740,15 +1743,18 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               updatedInitialValues.symbolDefinitionId = created.id;
             }
 
-            // Open the instance form with the new definition selected
-            openForm({
-              type: pendingInstanceForm.type,
-              entityId: pendingInstanceForm.entityId,
-              at: pendingInstanceForm.at,
-              pendingBBox: pendingInstanceForm.pendingBBox,
-              initialValues: updatedInitialValues,
-              mode: pendingInstanceForm.mode,
-            });
+            // Close the current definition form first, then open the instance form
+            closeForm();
+            setTimeout(() => {
+              openForm({
+                type: pendingInstanceForm.type,
+                entityId: pendingInstanceForm.entityId,
+                at: pendingInstanceForm.at,
+                pendingBBox: pendingInstanceForm.pendingBBox,
+                initialValues: updatedInitialValues,
+                mode: pendingInstanceForm.mode,
+              });
+            }, 0);
 
             // Clear the flags
             delete (window as any).__pendingInstanceForm;
@@ -1806,14 +1812,18 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               updatedInitialValues.componentDefinitionId = created.id;
             }
 
-            openForm({
-              type: pendingInstanceForm.type,
-              entityId: pendingInstanceForm.entityId,
-              at: pendingInstanceForm.at,
-              pendingBBox: pendingInstanceForm.pendingBBox,
-              initialValues: updatedInitialValues,
-              mode: pendingInstanceForm.mode,
-            });
+            // Close the current definition form first, then open the instance form
+            closeForm();
+            setTimeout(() => {
+              openForm({
+                type: pendingInstanceForm.type,
+                entityId: pendingInstanceForm.entityId,
+                at: pendingInstanceForm.at,
+                pendingBBox: pendingInstanceForm.pendingBBox,
+                initialValues: updatedInitialValues,
+                mode: pendingInstanceForm.mode,
+              });
+            }, 0);
 
             // Clear the flags
             delete (window as any).__pendingInstanceForm;
