@@ -93,6 +93,13 @@ export function InlineEntityForm({
     setFormData(() => ({ ...(initialValues ?? {}) }));
   }, [open, variant, initialValues]);
 
+  // Reset waiting state when form is cancelled or saved
+  useEffect(() => {
+    if (!open) {
+      setIsWaitingForDefinition(false);
+    }
+  }, [open]);
+
   if (!open) return null;
 
   const updateField = (key: string, value: unknown) => {
@@ -315,13 +322,6 @@ export function InlineEntityForm({
   };
 
   const actionLabel = mode === 'edit' ? 'Update' : 'Save';
-
-  // Reset waiting state when form is cancelled or saved
-  useEffect(() => {
-    if (!open) {
-      setIsWaitingForDefinition(false);
-    }
-  }, [open]);
 
   return (
     <>
