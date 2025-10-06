@@ -130,45 +130,35 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
     });
   },
   closeForm: () => {
-    // Check if this was a definition form being cancelled during "new definition" workflow
-    const pendingInstanceForm = (window as any).__pendingInstanceForm;
-    const isWaitingForDefinition = (window as any).__waitingForDefinition;
-    const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
-
-    if (pendingInstanceForm && (isWaitingForDefinition || isNewDefinitionCreation)) {
-      // Restore the instance form
-      set({
-        inlineForm: {
-          open: true,
-          type: pendingInstanceForm.type,
-          entityId: pendingInstanceForm.entityId,
-          at: pendingInstanceForm.at,
-          pendingBBox: pendingInstanceForm.pendingBBox,
-          initialValues: pendingInstanceForm.initialValues,
-          mode: pendingInstanceForm.mode,
-        }
-      });
-      // Clear the flags
-      delete (window as any).__pendingInstanceForm;
-      delete (window as any).__waitingForDefinition;
-      delete (window as any).__isNewDefinitionCreation;
-      return;
-    }
-
-    // Regular form close
+    // Regular form close - don't restore during normal workflow
     set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null, initialValues: null, mode: 'create' } });
   },
   startDrawing: (entityType) => {
     set({ drawing: { active: true, entityType }, mode: 'draw' });
   },
   cancelDrawing: () => {
-    // Check if this was drawing for a new definition
+    // Check if we're completing a definition drawing (not canceling)
+    const isCompletingDefinitionDrawing = (window as any).__completingDefinitionDrawing;
     const pendingInstanceForm = (window as any).__pendingInstanceForm;
-    const isWaitingForDefinition = (window as any).__waitingForDefinition;
     const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+    
+    console.log('[DEBUG] cancelDrawing called', {
+      isCompletingDefinitionDrawing,
+      pendingInstanceForm: !!pendingInstanceForm,
+      isNewDefinitionCreation
+    });
+    
+    // If we're completing (not canceling), just exit drawing mode without restoration
+    if (isCompletingDefinitionDrawing) {
+      console.log('[DEBUG] cancelDrawing - completing definition, just exiting drawing mode');
+      set({ drawing: { active: false, entityType: null }, mode: 'select' });
+      return;
+    }
 
-    if (pendingInstanceForm && (isWaitingForDefinition || isNewDefinitionCreation)) {
-      // Restore the instance form
+    // Check if this was drawing for a new definition and user is actually canceling
+    if (pendingInstanceForm && isNewDefinitionCreation) {
+      console.log('[DEBUG] cancelDrawing - RESTORING instance form');
+      // Restore the instance form when user cancels definition drawing
       set({
         drawing: { active: false, entityType: null },
         mode: 'select',
@@ -184,11 +174,11 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
       });
       // Clear the flags
       delete (window as any).__pendingInstanceForm;
-      delete (window as any).__waitingForDefinition;
       delete (window as any).__isNewDefinitionCreation;
       return;
     }
 
+    console.log('[DEBUG] cancelDrawing - regular cancel');
     // Regular drawing cancel
     set({ drawing: { active: false, entityType: null }, mode: 'select' });
   },

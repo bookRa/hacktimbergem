@@ -81,24 +81,15 @@ export function InlineEntityForm({
 }: InlineEntityFormProps) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [showDefinitionForm, setShowDefinitionForm] = useState(false);
-  const [isWaitingForDefinition, setIsWaitingForDefinition] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setFormData({});
       setShowDefinitionForm(false);
-      setIsWaitingForDefinition(false);
       return;
     }
     setFormData(() => ({ ...(initialValues ?? {}) }));
   }, [open, variant, initialValues]);
-
-  // Reset waiting state when form is cancelled or saved
-  useEffect(() => {
-    if (!open) {
-      setIsWaitingForDefinition(false);
-    }
-  }, [open]);
 
   if (!open) return null;
 
@@ -168,12 +159,11 @@ export function InlineEntityForm({
               size="sm"
               style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               onClick={() => {
-                setIsWaitingForDefinition(true);
                 onRequestDefinition?.(formData);
               }}
             >
               <PlusIcon />
-              {isWaitingForDefinition ? 'Drawing...' : 'New'}
+              New
             </TGButton>
           </div>
         </div>
@@ -283,12 +273,11 @@ export function InlineEntityForm({
               size="sm"
               style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               onClick={() => {
-                setIsWaitingForDefinition(true);
                 onRequestComponentDefinition?.(formData);
               }}
             >
               <PlusIcon />
-              {isWaitingForDefinition ? 'Drawing...' : 'New'}
+              New
             </TGButton>
           </div>
         </div>

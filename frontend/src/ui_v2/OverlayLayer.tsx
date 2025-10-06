@@ -469,10 +469,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     (window as any).__definitionType = 'SymbolDef';
     (window as any).__pendingInstanceForm = instanceFormState;
 
-    // Don't close the instance form - keep it visible but in a "waiting for definition" state
-    // Set a flag to indicate we're waiting for a definition
-    (window as any).__waitingForDefinition = true;
-  }, [inlineForm]);
+    // Close the instance form and enter drawing mode for the definition
+    closeForm();
+    startDrawing('SymbolDef');
+  }, [inlineForm, closeForm, startDrawing]);
 
   const handleRequestComponentDefinition = useCallback((draft: Record<string, unknown>) => {
     // Store the current instance form state for restoration
@@ -490,10 +490,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     (window as any).__definitionType = 'CompDef';
     (window as any).__pendingInstanceForm = instanceFormState;
 
-    // Don't close the instance form - keep it visible but in a "waiting for definition" state
-    // Set a flag to indicate we're waiting for a definition
-    (window as any).__waitingForDefinition = true;
-  }, [inlineForm]);
+    // Close the instance form and enter drawing mode for the definition
+    closeForm();
+    startDrawing('CompDef');
+  }, [inlineForm, closeForm, startDrawing]);
 
   const cancelEditSession = useCallback(() => {
     const listeners = editingListenersRef.current;
@@ -1324,28 +1324,48 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const [px2, py2] = toPdf({ x: draftRect.x + draftRect.width, y: draftRect.y + draftRect.height });
       const bboxPdf: PdfBBox = [Math.min(px1, px2), Math.min(py1, py2), Math.max(px1, px2), Math.max(py1, py2)];
 
-      // Check if this is a new definition creation first (before checking drawing.active)
-      const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
-      const definitionType = (window as any).__definitionType;
+      // If we're in drawing mode, complete the drawing and open the form
+      if (drawing.active) {
+        // Check if this is a new definition creation
+        const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+        const definitionType = (window as any).__definitionType;
+        
+        console.log('[DEBUG] handlePointerUp - drawing.active=true', {
+          isNewDefinitionCreation,
+          definitionType,
+          drawingEntityType: drawing.entityType,
+          pendingInstanceForm: (window as any).__pendingInstanceForm
+        });
 
         if (isNewDefinitionCreation && definitionType) {
+          console.log('[DEBUG] Entering new definition creation branch');
           // This is a new definition creation - open the definition form
           pendingBBoxRef.current = { sheetId, bboxPdf };
+          
+          // CRITICAL: Clear __isNewDefinitionCreation BEFORE any state updates
+          // This prevents the cleanup useEffect from restoring the instance form
+          // But keep __pendingInstanceForm for later restoration
+          (window as any).__definitionFormOpen = true; // Mark that definition form is about to open
+          delete (window as any).__isNewDefinitionCreation;
+          delete (window as any).__definitionType;
+          console.log('[DEBUG] Cleared flags to prevent cleanup restoration');
+          
+          // Cancel drawing mode
+          cancelDrawing();
+          console.log('[DEBUG] Called cancelDrawing()');
+          
+          // Now open the definition form
+          console.log('[DEBUG] About to openForm with type:', definitionType);
           openForm({
             type: definitionType,
             at: { x, y },
             pendingBBox: { sheetId, bboxPdf }
           });
-
-          // Clear the new definition flags
-          delete (window as any).__isNewDefinitionCreation;
-          delete (window as any).__definitionType;
-          delete (window as any).__waitingForDefinition;
+          console.log('[DEBUG] Called openForm()');
+          
           return;
         }
 
-      // If we're in drawing mode, complete the drawing and open the form
-      if (drawing.active) {
         // Regular drawing mode - open the form for the entity type
         pendingBBoxRef.current = { sheetId, bboxPdf };
         openForm({
@@ -1354,8 +1374,6 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           pendingBBox: { sheetId, bboxPdf }
         });
         cancelDrawing();
-        // Clear any leftover flags
-        delete (window as any).__waitingForDefinition;
         return;
       }
 
@@ -1735,30 +1753,28 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
           // Check if this definition was created from an instance form
           const pendingInstanceForm = (window as any).__pendingInstanceForm;
+          const definitionFormOpen = (window as any).__definitionFormOpen;
 
-          if (pendingInstanceForm) {
+          if (pendingInstanceForm && definitionFormOpen) {
             // Immediately restore the instance form with the new definition selected
             const updatedInitialValues = { ...pendingInstanceForm.initialValues };
             if (pendingInstanceForm.type === 'SymbolInst') {
               updatedInitialValues.symbolDefinitionId = created.id;
             }
 
-            // Close the current definition form first, then open the instance form
-            closeForm();
-            setTimeout(() => {
-              openForm({
-                type: pendingInstanceForm.type,
-                entityId: pendingInstanceForm.entityId,
-                at: pendingInstanceForm.at,
-                pendingBBox: pendingInstanceForm.pendingBBox,
-                initialValues: updatedInitialValues,
-                mode: pendingInstanceForm.mode,
-              });
-            }, 0);
+            // Restore the instance form with the new definition pre-selected
+            openForm({
+              type: pendingInstanceForm.type as any,
+              entityId: pendingInstanceForm.entityId,
+              at: pendingInstanceForm.at ?? undefined,
+              pendingBBox: pendingInstanceForm.pendingBBox ?? undefined,
+              initialValues: updatedInitialValues,
+              mode: pendingInstanceForm.mode,
+            });
 
             // Clear the flags
             delete (window as any).__pendingInstanceForm;
-            delete (window as any).__waitingForDefinition;
+            delete (window as any).__definitionFormOpen;
 
             addToast({ kind: 'success', message: 'Symbol definition created - complete the instance' });
           } else {
@@ -1804,30 +1820,28 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
           // Check if this definition was created from an instance form
           const pendingInstanceForm = (window as any).__pendingInstanceForm;
+          const definitionFormOpen = (window as any).__definitionFormOpen;
 
-          if (pendingInstanceForm) {
+          if (pendingInstanceForm && definitionFormOpen) {
             // Restore the instance form with the new definition selected
             const updatedInitialValues = { ...pendingInstanceForm.initialValues };
             if (pendingInstanceForm.type === 'CompInst') {
               updatedInitialValues.componentDefinitionId = created.id;
             }
 
-            // Close the current definition form first, then open the instance form
-            closeForm();
-            setTimeout(() => {
-              openForm({
-                type: pendingInstanceForm.type,
-                entityId: pendingInstanceForm.entityId,
-                at: pendingInstanceForm.at,
-                pendingBBox: pendingInstanceForm.pendingBBox,
-                initialValues: updatedInitialValues,
-                mode: pendingInstanceForm.mode,
-              });
-            }, 0);
+            // Restore the instance form with the new definition pre-selected
+            openForm({
+              type: pendingInstanceForm.type as any,
+              entityId: pendingInstanceForm.entityId,
+              at: pendingInstanceForm.at ?? undefined,
+              pendingBBox: pendingInstanceForm.pendingBBox ?? undefined,
+              initialValues: updatedInitialValues,
+              mode: pendingInstanceForm.mode,
+            });
 
             // Clear the flags
             delete (window as any).__pendingInstanceForm;
-            delete (window as any).__waitingForDefinition;
+            delete (window as any).__definitionFormOpen;
 
             addToast({ kind: 'success', message: 'Component definition created - complete the instance' });
           } else {
