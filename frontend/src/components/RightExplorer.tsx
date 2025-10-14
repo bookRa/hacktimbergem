@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore } from '../state/store';
 
 export const RightExplorer: React.FC = () => {
-    const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId, hoverEntityId, explorerTab, setExplorerTab, selectSpace } = useProjectStore((s: any) => ({
+    const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId, hoverEntityId, explorerTab, setExplorerTab, selectSpace, links, setSelectedEntityId, setRightPanelTab } = useProjectStore((s: any) => ({
         concepts: s.concepts,
         entities: s.entities,
         selectedScopeId: s.selectedScopeId,
@@ -12,6 +12,9 @@ export const RightExplorer: React.FC = () => {
         explorerTab: s.explorerTab,
         setExplorerTab: s.setExplorerTab,
         selectSpace: s.selectSpace,
+        links: s.links,
+        setSelectedEntityId: s.setSelectedEntityId,
+        setRightPanelTab: s.setRightPanelTab,
     }));
     const tab = explorerTab;
     const setTab = setExplorerTab;
@@ -39,35 +42,65 @@ export const RightExplorer: React.FC = () => {
 
 const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; setSelectedScopeId: (id: string | null) => void; entities: any[]; setHover: (id: string | null) => void; }> = ({ concepts, selectedScopeId, setSelectedScopeId, entities, setHover }) => {
     const scopes = concepts.filter(c => c.kind === 'scope');
+    const { links, setSelectedEntityId, setRightPanelTab, setCurrentPageIndex } = useProjectStore((s: any) => ({
+        links: s.links,
+        setSelectedEntityId: s.setSelectedEntityId,
+        setRightPanelTab: s.setRightPanelTab,
+        setCurrentPageIndex: s.setCurrentPageIndex,
+    }));
+    
+    // Count total scopes with evidence
+    const scopesWithEvidence = scopes.filter(s => 
+        links.some((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id)
+    ).length;
+    
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, paddingLeft: 4 }}>
+                {scopes.length} scopes • {scopesWithEvidence} with evidence
+            </div>
             {scopes.map(s => {
-                const evidenceCount = (useProjectStore.getState() as any).links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id).length;
+                const evidenceLinks = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id);
+                const evidenceCount = evidenceLinks.length;
                 const sel = selectedScopeId === s.id;
+                const hasEvidence = evidenceCount > 0;
+                
                 return (
                     <div
                         key={s.id}
-                        onClick={() => setSelectedScopeId(sel ? null : s.id)}
-                        onDoubleClick={() => {
-                            // Jump to first evidence entity
-                            const st = useProjectStore.getState() as any;
-                            const links = st.links as any[];
-                            const ev = links.find(l => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id);
-                            if (ev) {
-                                const ent = (st.entities as any[]).find(e => e.id === ev.target_id);
-                                if (ent) {
-                                    st.setCurrentPageIndex?.(ent.source_sheet_number - 1);
-                                    st.setSelectedEntityId(ent.id);
-                                    st.setRightPanelTab('entities');
-                                }
-                            }
-                        }}
                         onMouseEnter={() => setHover(s.id)}
                         onMouseLeave={() => setHover(null)}
-                        style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', cursor: 'pointer', marginBottom: 6 }}
+                        style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', marginBottom: 6 }}
                     >
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{s.description || s.id.slice(0,6)}</div>
-                        <div style={{ fontSize: 11, opacity: .7 }}>Evidence: {evidenceCount}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setSelectedScopeId(sel ? null : s.id)}>
+                                <div style={{ fontSize: 12, fontWeight: 600 }}>{s.description || s.id.slice(0,6)}</div>
+                                <div style={{ fontSize: 10, color: hasEvidence ? '#10b981' : '#f59e0b', marginTop: 2 }}>
+                                    {hasEvidence ? `✓ ${evidenceCount} evidence` : '⚠ No evidence'}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Jump to first evidence
+                                        if (evidenceLinks.length > 0) {
+                                            const ent = entities.find((e: any) => e.id === evidenceLinks[0].target_id);
+                                            if (ent) {
+                                                setCurrentPageIndex(ent.source_sheet_number - 1);
+                                                setSelectedEntityId(ent.id);
+                                                setRightPanelTab('entities');
+                                            }
+                                        }
+                                    }}
+                                    disabled={!hasEvidence}
+                                    style={btn(false)}
+                                    title="Jump to first evidence"
+                                >
+                                    Jump
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 );
             })}
@@ -77,12 +110,15 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
 };
 
 const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | null }> = ({ entities, hoverEntityId }) => {
-    const { setHoverEntityId, currentPageIndex, creatingEntity, startInstanceStamp, cancelEntityCreation } = useProjectStore((s: any) => ({
+    const { setHoverEntityId, currentPageIndex, creatingEntity, startInstanceStamp, cancelEntityCreation, setSelectedEntityId, setRightPanelTab, links } = useProjectStore((s: any) => ({
         setHoverEntityId: s.setHoverEntityId,
         currentPageIndex: s.currentPageIndex,
         creatingEntity: s.creatingEntity,
         startInstanceStamp: s.startInstanceStamp,
         cancelEntityCreation: s.cancelEntityCreation,
+        setSelectedEntityId: s.setSelectedEntityId,
+        setRightPanelTab: s.setRightPanelTab,
+        links: s.links,
     }));
     const defs = entities.filter((e: any) => e.entity_type === 'symbol_definition' && (e.scope === 'project' || e.source_sheet_number === currentPageIndex + 1));
     // Keyboard shortcuts 1..9 to pick def
@@ -142,14 +178,38 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
                         })()}
                     </div>
                     <div style={{ padding: '0 8px 8px', display: 'grid', gap: 6 }}>
-                        {grouped[key].map(i => (
-                            <div key={i.id} onMouseEnter={() => setHoverEntityId(i.id)} onMouseLeave={() => setHoverEntityId(null)} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb', background: hoverEntityId === i.id ? '#eff6ff' : '#fff' }}>
-                                <div style={{ fontSize: 12 }}>#{i.id.slice(0,6)} • def {(() => {
-                                    const def = entities.find((e: any) => e.id === i.symbol_definition_id);
-                                    return def?.name || i.symbol_definition_id?.slice?.(0,6);
-                                })()}</div>
-                            </div>
-                        ))}
+                        {grouped[key].map(i => {
+                            const def = entities.find((e: any) => e.id === i.symbol_definition_id);
+                            const linkedToSpace = links.some((l: any) => l.rel_type === 'LOCATED_IN' && l.source_id === i.id);
+                            const linkedToScope = links.some((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.target_id === i.id);
+                            
+                            return (
+                                <div key={i.id} onMouseEnter={() => setHoverEntityId(i.id)} onMouseLeave={() => setHoverEntityId(null)} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb', background: hoverEntityId === i.id ? '#eff6ff' : '#fff' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: 12, fontWeight: 600 }}>#{i.id.slice(0,6)}</div>
+                                            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                                                {def?.name || 'No definition'} 
+                                                {(linkedToSpace || linkedToScope) && (
+                                                    <span style={{ color: '#10b981', marginLeft: 4 }}>
+                                                        {linkedToSpace && '📍'} {linkedToScope && '✓'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                setSelectedEntityId(i.id);
+                                                setRightPanelTab('entities');
+                                            }}
+                                            style={btn(false)}
+                                        >
+                                            Edit
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             ))}
@@ -159,7 +219,7 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
 };
 
 const SymbolsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
-    const { setSelectedEntityId, setRightPanelTab, currentPageIndex, setCurrentPageIndex, setFocusBBox } = useProjectStore((s: any) => ({ setSelectedEntityId: s.setSelectedEntityId, setRightPanelTab: s.setRightPanelTab, currentPageIndex: s.currentPageIndex, setCurrentPageIndex: s.setCurrentPageIndex, setFocusBBox: s.setFocusBBox }));
+    const { setSelectedEntityId, setRightPanelTab, currentPageIndex, setCurrentPageIndex, setFocusBBox, links } = useProjectStore((s: any) => ({ setSelectedEntityId: s.setSelectedEntityId, setRightPanelTab: s.setRightPanelTab, currentPageIndex: s.currentPageIndex, setCurrentPageIndex: s.setCurrentPageIndex, setFocusBBox: s.setFocusBBox, links: s.links }));
     const defs = entities.filter((e: any) => e.entity_type === 'symbol_definition');
     const legends = entities.filter((e: any) => e.entity_type === 'legend');
     const groups: Record<string, any[]> = {};
@@ -173,24 +233,23 @@ const SymbolsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
                 <div key={k} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
                     <div style={{ padding: '6px 8px', fontSize: 12, fontWeight: 600 }}>{k.startsWith('Sheet') || k==='Project' ? k : `Legend ${k.slice(0,6)}`}</div>
                     <div style={{ padding: '0 8px 8px', display: 'grid', gap: 6 }}>
-                        {groups[k].map((d: any) => (
-                            <div key={d.id} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div>
-                                    <div style={{ fontSize: 12, fontWeight: 600 }}>{d.name || d.id.slice(0,6)}</div>
-                                    <div style={{ fontSize: 10, opacity: .7 }}>{d.scope}</div>
+                        {groups[k].map((d: any) => {
+                            const instanceCount = entities.filter((e: any) => e.entity_type === 'symbol_instance' && e.symbol_definition_id === d.id).length;
+                            
+                            return (
+                                <div key={d.id} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 600 }}>{d.name || d.id.slice(0,6)}</div>
+                                        <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                                            {d.scope} • {instanceCount} instance{instanceCount !== 1 ? 's' : ''}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button onClick={() => { setSelectedEntityId(d.id); setRightPanelTab('entities'); }} style={btn(false)}>Edit</button>
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    <button onClick={() => { setSelectedEntityId(d.id); setRightPanelTab('entities'); }} style={btn(false)}>Open</button>
-                                    {d.defined_in_id && (() => {
-                                        const parent = legends.find((l: any) => l.id === d.defined_in_id);
-                                        if (!parent) return null;
-                                        return (
-                                            <button onClick={() => { const idx = parent.source_sheet_number - 1; if (idx !== currentPageIndex) setCurrentPageIndex(idx); setFocusBBox(idx, [parent.bounding_box.x1, parent.bounding_box.y1, parent.bounding_box.x2, parent.bounding_box.y2]); }} style={btn(false)}>Select in Legend</button>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             ))}

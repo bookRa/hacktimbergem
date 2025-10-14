@@ -196,6 +196,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     layers,
     setHoverEntityId,
     setHoverScopeId,
+    creatingEntity,
+    cancelEntityCreation,
   } = useProjectStore((state: any) => ({
     entities: state.entities as Entity[],
     pagesMeta: state.pagesMeta,
@@ -212,6 +214,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     layers: state.layers,
     setHoverEntityId: state.setHoverEntityId,
     setHoverScopeId: state.setHoverScopeId,
+    creatingEntity: state.creatingEntity,
+    cancelEntityCreation: state.cancelEntityCreation,
   }));
 
   const pageEntities = useMemo<DisplayEntity[]>(() => {
@@ -842,6 +846,27 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     [setHover, setHoverEntityId, setHoverScopeId, cancelDrawing, drawing.active]
   );
 
+  // Bridge legacy stamp mode (creatingEntity) to UI V2 drawing state
+  useEffect(() => {
+    if (!creatingEntity) {
+      // If legacy stamp mode was cancelled, sync to UI V2
+      if (drawing.active && (drawing.entityType === 'SymbolInst' || drawing.entityType === 'CompInst')) {
+        cancelDrawing();
+      }
+      return;
+    }
+
+    // Only bridge for instance stamping (symbol_instance, component_instance)
+    if (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance') {
+      const targetType = creatingEntity.type === 'symbol_instance' ? 'SymbolInst' : 'CompInst';
+      
+      // Activate UI V2 drawing mode if not already active for this type
+      if (!drawing.active || drawing.entityType !== targetType) {
+        startDrawing(targetType);
+      }
+    }
+  }, [creatingEntity, drawing.active, drawing.entityType, startDrawing, cancelDrawing]);
+
   const computeContextPosition = useCallback(
     (point: { x: number; y: number }) => {
       const overlay = overlayRef.current;
@@ -1366,14 +1391,35 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           return;
         }
 
+        // Check if we're in stamp mode (instance creation with pre-selected definition)
+        const isStampMode = creatingEntity && 
+                           (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance') &&
+                           creatingEntity.meta?.definitionId;
+
         // Regular drawing mode - open the form for the entity type
         pendingBBoxRef.current = { sheetId, bboxPdf };
+        
+        const initialValues: Record<string, any> = {};
+        if (isStampMode) {
+          // Pre-fill the definition ID for stamp mode
+          if (creatingEntity.type === 'symbol_instance') {
+            initialValues.symbolDefinitionId = creatingEntity.meta.definitionId;
+          } else if (creatingEntity.type === 'component_instance') {
+            initialValues.componentDefinitionId = creatingEntity.meta.definitionId;
+          }
+        }
+        
         openForm({
           type: drawing.entityType!,
           at: { x, y },
-          pendingBBox: { sheetId, bboxPdf }
+          pendingBBox: { sheetId, bboxPdf },
+          initialValues: Object.keys(initialValues).length > 0 ? initialValues : undefined,
         });
-        cancelDrawing();
+        
+        // Don't cancel drawing if in stamp mode - we want to keep stamping
+        if (!isStampMode) {
+          cancelDrawing();
+        }
         return;
       }
 
@@ -1675,6 +1721,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
             console.warn('history push failed', e);
           }
           addToast({ kind: 'success', message: 'Symbol instance created' });
+          
+          // Multi-stamp mode: keep drawing active if we're in stamp mode
+          // Check if legacy creatingEntity indicates stamp mode
+          if (creatingEntity?.type === 'symbol_instance' && creatingEntity.meta?.definitionId === symbolDefinitionId) {
+            // Keep drawing mode active for next stamp
+            pendingBBoxRef.current = null;
+            closeForm();
+            // Don't call closeContext - keep ready for next placement
+            return;
+          }
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to create symbol instance' });
@@ -1893,6 +1949,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
             console.warn('history push failed', e);
           }
           addToast({ kind: 'success', message: 'Component instance created' });
+          
+          // Multi-stamp mode: keep drawing active if we're in stamp mode
+          // Check if legacy creatingEntity indicates stamp mode
+          if (creatingEntity?.type === 'component_instance' && creatingEntity.meta?.definitionId === componentDefinitionId) {
+            // Keep drawing mode active for next stamp
+            pendingBBoxRef.current = null;
+            closeForm();
+            // Don't call closeContext - keep ready for next placement
+            return;
+          }
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to create component instance' });
