@@ -135,9 +135,9 @@ export const RightPanel: React.FC = () => {
                         </div>
                         {blocks.length === 0 && <p style={{ fontSize: 12, color: '#94a3b8', margin: 0, textAlign: 'center', marginTop: 20 }}>(No OCR yet)</p>}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {blocks.slice(0, 300).map((b: any, i: number) => {
+                        {blocks.slice(0, 300).map((b: any, i: number) => {
                                 const status = (meta[i]?.status || 'unverified') as 'unverified' | 'accepted' | 'flagged' | 'noise';
-                                const isSel = selected.includes(i);
+                            const isSel = selected.includes(i);
                                 
                                 const statusColor: Record<typeof status, string> = {
                                     unverified: '#64748b',
@@ -147,7 +147,7 @@ export const RightPanel: React.FC = () => {
                                 };
                                 const color = statusColor[status];
                                 
-                                return (
+                            return (
                                     <div 
                                         key={i} 
                                         style={{ 
@@ -158,13 +158,13 @@ export const RightPanel: React.FC = () => {
                                             cursor: 'pointer',
                                             transition: 'all 0.15s ease'
                                         }}
-                                        onClick={(e) => {
-                                            toggleSelectBlock(currentPageIndex, i, e.metaKey || e.ctrlKey || e.shiftKey);
-                                            if (!(e.metaKey || e.ctrlKey || e.shiftKey)) {
-                                                setScrollTarget(currentPageIndex, i);
-                                            }
-                                        }}
-                                    >
+                                    onClick={(e) => {
+                                        toggleSelectBlock(currentPageIndex, i, e.metaKey || e.ctrlKey || e.shiftKey);
+                                        if (!(e.metaKey || e.ctrlKey || e.shiftKey)) {
+                                            setScrollTarget(currentPageIndex, i);
+                                        }
+                                    }}
+                                >
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <input
@@ -260,10 +260,10 @@ export const RightPanel: React.FC = () => {
                                             >
                                                 ✕ Noise
                                             </button>
-                                        </div>
                                     </div>
-                                );
-                            })}
+                                </div>
+                            );
+                        })}
                         </div>
                         {blocks.length > 300 && (
                             <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', marginTop: 12, padding: 8 }}>
@@ -317,35 +317,39 @@ export const RightPanel: React.FC = () => {
             )}
             {rightPanelTab === 'explorer' && (
                 <section className="kp-section scrollable">
-                    {/* Linking banner for Explorer context */}
-                    {linking && linking.relType === 'JUSTIFIED_BY' && (
-                        <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 10, color: '#e2e8f0' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontWeight: 600, fontSize: 12 }}>Linking Evidence • Scope #{linking.anchor.id.slice(0,6)}</div>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    <button onClick={() => finishLinking()} style={miniBtn(false)}>Finish ({linking.selectedTargetIds.length})</button>
-                                    <button onClick={() => cancelLinking()} style={miniBtn(false)}>Cancel</button>
+                        {/* Linking banner for Explorer context */}
+                        {linking && linking.relType === 'JUSTIFIED_BY' && (
+                            <div style={{ border: '1px solid #1e3a8a', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 10, color: '#e2e8f0' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12 }}>Linking Evidence • Scope #{linking.anchor.id.slice(0,6)}</div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button onClick={() => finishLinking()} style={miniBtn(false)}>Finish ({linking.selectedTargetIds.length})</button>
+                                        <button onClick={() => cancelLinking()} style={miniBtn(false)}>Cancel</button>
+                                    </div>
                                 </div>
+                                <div style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>Click instances or notes on the canvas (or in lists) to add evidence.</div>
                             </div>
-                            <div style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>Click instances or notes on the canvas (or in lists) to add evidence.</div>
-                        </div>
-                    )}
+                        )}
                     <RightExplorer />
-                </section>
+                    </section>
             )}
             {rightPanelTab === 'entities' && (
                 <section className="kp-section scrollable" style={{ display: 'flex', flexDirection: 'column' }}>
                     {selectedEntityId ? (
                         <EntityEditor 
                             entityId={selectedEntityId} 
-                            onClose={() => setSelectedEntityId(null)}
+                            onClose={() => {
+                                setSelectedEntityId(null);
+                                // Clear explicit selection flag to allow canvas to resume normal selection
+                                useProjectStore.setState({ _explicitSelection: false } as any);
+                            }}
                         />
                     ) : (
                         <div style={{ padding: 16, overflow: 'auto' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                                 <div style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0' }}>Entity Editor</div>
-                                <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
-                            </div>
+                        <button onClick={() => fetchEntities()} style={miniBtn(false)}>↻</button>
+                    </div>
                             <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', marginTop: 40 }}>
                                 Select an entity from the canvas or Explorer tab to edit
                             </div>

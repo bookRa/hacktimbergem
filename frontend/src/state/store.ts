@@ -105,6 +105,7 @@ interface AppState {
     cancelEntityCreation: () => void;
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
+    _explicitSelection: boolean;
     setSelectedEntityId: (id: string | null) => void;
     selectEntity: (id: string | null) => void;
     updateEntityBBox: (id: string, bbox: [number, number, number, number]) => Promise<void>;
@@ -208,6 +209,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     uiDensity: (() => { try { return (localStorage.getItem('ui:density') as any) || 'comfortable'; } catch { return 'comfortable'; } })(),
     creatingEntity: null,
     selectedEntityId: null,
+    _explicitSelection: false,
     selectedSpaceId: null,
     activeSheetFilter: null,
     focusBBoxPts: null,
@@ -787,7 +789,18 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         }
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
-    selectEntity: (id) => set({ selectedEntityId: id, rightPanelTab: 'entities' } as any),
+    selectEntity: (id) => {
+        // When explicitly selecting from UI (e.g., Explorer), mark it with a flag
+        // to prevent canvas sync from overriding it
+        set({ selectedEntityId: id, rightPanelTab: 'entities', _explicitSelection: true } as any);
+        // Clear the flag after a brief moment to allow normal sync to resume
+        setTimeout(() => {
+            const current = (get() as any).selectedEntityId;
+            if (current === id) {
+                set({ _explicitSelection: false } as any);
+            }
+        }, 100);
+    },
     updateEntityBBox: async (id, bbox) => {
         const { projectId, addToast, fetchEntities, fetchPageOcr, pushHistory } = get() as any;
         if (!projectId) return;

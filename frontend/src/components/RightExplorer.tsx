@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore } from '../state/store';
 
 export const RightExplorer: React.FC = () => {
-    const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId, hoverEntityId, explorerTab, setExplorerTab, selectSpace, links, setSelectedEntityId, setRightPanelTab } = useProjectStore((s: any) => ({
+    const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId, hoverEntityId, explorerTab, setExplorerTab, selectSpace, links } = useProjectStore((s: any) => ({
         concepts: s.concepts,
         entities: s.entities,
         selectedScopeId: s.selectedScopeId,
@@ -13,8 +13,6 @@ export const RightExplorer: React.FC = () => {
         setExplorerTab: s.setExplorerTab,
         selectSpace: s.selectSpace,
         links: s.links,
-        setSelectedEntityId: s.setSelectedEntityId,
-        setRightPanelTab: s.setRightPanelTab,
     }));
     const tab = explorerTab;
     const setTab = setExplorerTab;
@@ -42,10 +40,9 @@ export const RightExplorer: React.FC = () => {
 
 const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; setSelectedScopeId: (id: string | null) => void; entities: any[]; setHover: (id: string | null) => void; }> = ({ concepts, selectedScopeId, setSelectedScopeId, entities, setHover }) => {
     const scopes = concepts.filter(c => c.kind === 'scope');
-    const { links, setSelectedEntityId, setRightPanelTab, setCurrentPageIndex } = useProjectStore((s: any) => ({
+    const { links, selectEntity, setCurrentPageIndex } = useProjectStore((s: any) => ({
         links: s.links,
-        setSelectedEntityId: s.setSelectedEntityId,
-        setRightPanelTab: s.setRightPanelTab,
+        selectEntity: s.selectEntity,
         setCurrentPageIndex: s.setCurrentPageIndex,
     }));
     
@@ -88,8 +85,7 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
                                             const ent = entities.find((e: any) => e.id === evidenceLinks[0].target_id);
                                             if (ent) {
                                                 setCurrentPageIndex(ent.source_sheet_number - 1);
-                                                setSelectedEntityId(ent.id);
-                                                setRightPanelTab('entities');
+                                                selectEntity(ent.id);
                                             }
                                         }
                                     }}
@@ -110,14 +106,13 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
 };
 
 const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | null }> = ({ entities, hoverEntityId }) => {
-    const { setHoverEntityId, currentPageIndex, creatingEntity, startInstanceStamp, cancelEntityCreation, setSelectedEntityId, setRightPanelTab, links } = useProjectStore((s: any) => ({
+    const { setHoverEntityId, currentPageIndex, creatingEntity, startInstanceStamp, cancelEntityCreation, selectEntity, links } = useProjectStore((s: any) => ({
         setHoverEntityId: s.setHoverEntityId,
         currentPageIndex: s.currentPageIndex,
         creatingEntity: s.creatingEntity,
         startInstanceStamp: s.startInstanceStamp,
         cancelEntityCreation: s.cancelEntityCreation,
-        setSelectedEntityId: s.setSelectedEntityId,
-        setRightPanelTab: s.setRightPanelTab,
+        selectEntity: s.selectEntity,
         links: s.links,
     }));
     const defs = entities.filter((e: any) => e.entity_type === 'symbol_definition' && (e.scope === 'project' || e.source_sheet_number === currentPageIndex + 1));
@@ -199,8 +194,7 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
                                         </div>
                                         <button
                                             onClick={() => {
-                                                setSelectedEntityId(i.id);
-                                                setRightPanelTab('entities');
+                                                selectEntity(i.id);
                                             }}
                                             style={btn(false)}
                                         >
@@ -219,7 +213,7 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
 };
 
 const SymbolsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
-    const { setSelectedEntityId, setRightPanelTab, currentPageIndex, setCurrentPageIndex, setFocusBBox, links } = useProjectStore((s: any) => ({ setSelectedEntityId: s.setSelectedEntityId, setRightPanelTab: s.setRightPanelTab, currentPageIndex: s.currentPageIndex, setCurrentPageIndex: s.setCurrentPageIndex, setFocusBBox: s.setFocusBBox, links: s.links }));
+    const { selectEntity, currentPageIndex, setCurrentPageIndex, setFocusBBox, links } = useProjectStore((s: any) => ({ selectEntity: s.selectEntity, currentPageIndex: s.currentPageIndex, setCurrentPageIndex: s.setCurrentPageIndex, setFocusBBox: s.setFocusBBox, links: s.links }));
     const defs = entities.filter((e: any) => e.entity_type === 'symbol_definition');
     const legends = entities.filter((e: any) => e.entity_type === 'legend');
     const groups: Record<string, any[]> = {};
@@ -245,7 +239,9 @@ const SymbolsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: 6 }}>
-                                        <button onClick={() => { setSelectedEntityId(d.id); setRightPanelTab('entities'); }} style={btn(false)}>Edit</button>
+                                        <button onClick={() => { 
+                                            selectEntity(d.id); 
+                                        }} style={btn(false)}>Edit</button>
                                     </div>
                                 </div>
                             );
@@ -259,7 +255,7 @@ const SymbolsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
 };
 
 const ComponentsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
-    const { setSelectedEntityId, setRightPanelTab, currentPageIndex, setCurrentPageIndex, setFocusBBox } = useProjectStore((s: any) => ({ setSelectedEntityId: s.setSelectedEntityId, setRightPanelTab: s.setRightPanelTab, currentPageIndex: s.currentPageIndex, setCurrentPageIndex: s.setCurrentPageIndex, setFocusBBox: s.setFocusBBox }));
+    const { selectEntity, currentPageIndex, setCurrentPageIndex, setFocusBBox } = useProjectStore((s: any) => ({ selectEntity: s.selectEntity, currentPageIndex: s.currentPageIndex, setCurrentPageIndex: s.setCurrentPageIndex, setFocusBBox: s.setFocusBBox }));
     const defs = entities.filter((e: any) => e.entity_type === 'component_definition');
     const schedules = entities.filter((e: any) => e.entity_type === 'schedule');
     const groups: Record<string, any[]> = {};
@@ -280,7 +276,7 @@ const ComponentsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
                                     <div style={{ fontSize: 10, opacity: .7 }}>{d.scope}</div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6 }}>
-                                    <button onClick={() => { setSelectedEntityId(d.id); setRightPanelTab('entities'); }} style={btn(false)}>Open</button>
+                                    <button onClick={() => { selectEntity(d.id); }} style={btn(false)}>Edit</button>
                                     {d.defined_in_id && (() => {
                                         const parent = schedules.find((l: any) => l.id === d.defined_in_id);
                                         if (!parent) return null;
@@ -355,7 +351,7 @@ const SpacesList: React.FC<{ concepts: any[]; onSelectSpace: (id: string | null)
 };
 
 const NotesList: React.FC<{ entities: any[] }> = ({ entities }) => {
-    const { currentPageIndex, setSelectedEntityId, setRightPanelTab, promoteSelectionToNotePersist, selectedBlocks } = useProjectStore((s: any) => ({ currentPageIndex: s.currentPageIndex, setSelectedEntityId: s.setSelectedEntityId, setRightPanelTab: s.setRightPanelTab, promoteSelectionToNotePersist: s.promoteSelectionToNotePersist, selectedBlocks: s.selectedBlocks }));
+    const { currentPageIndex, selectEntity, promoteSelectionToNotePersist, selectedBlocks } = useProjectStore((s: any) => ({ currentPageIndex: s.currentPageIndex, selectEntity: s.selectEntity, promoteSelectionToNotePersist: s.promoteSelectionToNotePersist, selectedBlocks: s.selectedBlocks }));
     const notes = entities.filter((e: any) => e.entity_type === 'note' && e.source_sheet_number === currentPageIndex + 1);
     const selectedCount = (selectedBlocks?.[currentPageIndex] || []).length;
     return (
@@ -365,7 +361,7 @@ const NotesList: React.FC<{ entities: any[] }> = ({ entities }) => {
                 <span style={{ fontSize: 11, opacity: .7, alignSelf: 'center' }}>Selected OCR: {selectedCount}</span>
             </div>
             {notes.map(n => (
-                <div key={n.id} onClick={() => { setSelectedEntityId(n.id); setRightPanelTab('entities'); }} style={{ padding: 8, borderRadius: 6, border: '1px solid #e1e6eb', background: '#fff', cursor: 'pointer', marginBottom: 6 }}>
+                <div key={n.id} onClick={() => { selectEntity(n.id); }} style={{ padding: 8, borderRadius: 6, border: '1px solid #e1e6eb', background: '#fff', cursor: 'pointer', marginBottom: 6 }}>
                     <div style={{ fontSize: 12, fontWeight: 600 }}>Note #{n.id.slice(0,6)}</div>
                     <div style={{ fontSize: 11, opacity: .8 }}>{(n.text || '').slice(0, 140) || '(empty)'}</div>
                 </div>

@@ -192,6 +192,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     deleteEntity,
     selectedEntityId,
     setSelectedEntityId,
+    _explicitSelection,
     links,
     layers,
     setHoverEntityId,
@@ -210,6 +211,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     deleteEntity: state.deleteEntity,
     selectedEntityId: state.selectedEntityId,
     setSelectedEntityId: state.setSelectedEntityId,
+    _explicitSelection: state._explicitSelection,
     links: state.links,
     layers: state.layers,
     setHoverEntityId: state.setHoverEntityId,
@@ -295,6 +297,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       return;
     }
 
+    // Don't override explicit selections from Explorer/UI
+    if (_explicitSelection) {
+      return;
+    }
+
     const storeId = selectedEntityId ?? null;
     let nextId: string | null | undefined;
     if (selection.length === 1) {
@@ -308,7 +315,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
     selectionSyncSourceRef.current = 'ui';
     setSelectedEntityId(nextId);
-  }, [selection, selectedEntityId, setSelectedEntityId]);
+  }, [selection, selectedEntityId, setSelectedEntityId, _explicitSelection]);
 
   useEffect(() => {
     if (selectionSyncSourceRef.current === 'ui') {
