@@ -231,7 +231,6 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
       },
       mode: 'select',
     });
-    console.log('[ui_v2] startOCRSelection → ocrSelectionMode.active = TRUE');
   },
   toggleOCRBlock: (pageIndex, blockIndex, text, bbox) => {
     set((state) => {
@@ -268,7 +267,6 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
     set({
       ocrSelectionMode: { active: false, selectedBlocks: [], targetField: 'recognizedText' },
     });
-    console.log('[ui_v2] applyOCRSelection → ocrSelectionMode.active = FALSE');
     
     return { text: concatenatedText, formContext };
   },
@@ -276,7 +274,6 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
     set({
       ocrSelectionMode: { active: false, selectedBlocks: [], targetField: 'recognizedText' },
     });
-    console.log('[ui_v2] cancelOCRSelection → ocrSelectionMode.active = FALSE');
   },
   startLinking: (source, initialPending = []) => {
     set({ linking: { active: true, source, pending: initialPending }, mode: 'link' });

@@ -23,17 +23,6 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
     const ocrSelectionMode = useUIV2OCRSelection();
     const { toggleOCRBlock: toggleUIV2OCRBlock } = useUIV2Actions();
     
-    // Debug: log OCR selection mode and pointer events state
-    useEffect(() => {
-        console.log('[OcrOverlay] State update:', {
-            active: ocrSelectionMode.active,
-            selectedCount: ocrSelectionMode.selectedBlocks.length,
-            pageIndex,
-            svgPointerEvents: ocrSelectionMode.active ? 'auto' : 'none',
-            rectPointerEvents: ocrSelectionMode.active ? 'auto' : 'none'
-        });
-    }, [ocrSelectionMode.active, ocrSelectionMode.selectedBlocks.length, pageIndex]);
-    
     const meta = pagesMeta[pageIndex];
     const ocr = pageOcr[pageIndex];
     const blocks = ocr?.blocks || [];
@@ -109,27 +98,15 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
                             onMouseEnter={() => setHoveredBlock(pageIndex, i)}
                             onMouseLeave={() => setHoveredBlock(pageIndex, hoveredBlock?.[pageIndex] === i ? null : hoveredBlock?.[pageIndex] || null)}
                             onPointerDown={(e) => {
-                                console.log('[OcrOverlay] ⚠️ POINTER DOWN EVENT CAPTURED', {
-                                    pageIndex,
-                                    blockIndex: i,
-                                    ocrSelectionModeActive: ocrSelectionMode.active,
-                                    currentPointerEvents: e.currentTarget.style.pointerEvents,
-                                    text: b.text.slice(0, 30)
-                                });
-                                
-                                // This should NEVER fire when ocrSelectionMode.active is false
+                                // Only process events in OCR selection mode
                                 if (!ocrSelectionMode.active) {
-                                    console.error('[OcrOverlay] ❌ BUG: Event captured when OCR mode is inactive!');
-                                    return; // Don't process
+                                    return;
                                 }
                                 
                                 e.stopPropagation();
                                 e.preventDefault();
                                 
-                                // If in OCR selection mode, use the new system
-                                if (ocrSelectionMode.active) {
-                                    toggleUIV2OCRBlock(pageIndex, i, b.text, [x1, y1, x2, y2]);
-                                }
+                                toggleUIV2OCRBlock(pageIndex, i, b.text, [x1, y1, x2, y2]);
                             }}
                         />
                         {/* Show checkmark for selected blocks in OCR selection mode */}

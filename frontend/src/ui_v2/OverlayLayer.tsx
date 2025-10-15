@@ -452,16 +452,12 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   }, [ocrPicker.onSelect, closeOCRPicker]);
 
   const handleOpenOCRPicker = useCallback(() => {
-    console.log('[handleOpenOCRPicker] Starting OCR selection mode');
-    
     // Enable OCR layer if not already visible
     if (!layers.ocr) {
-      console.log('[handleOpenOCRPicker] Enabling OCR layer');
       setLayer('ocr', true);
     }
     
     // Minimize the form
-    console.log('[handleOpenOCRPicker] Minimizing form');
     minimizeForm();
     
     // Start OCR selection mode
@@ -473,14 +469,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       mode: inlineForm.mode,
       entityId: inlineForm.entityId,
     };
-    console.log('[handleOpenOCRPicker] Starting OCR selection with context:', formContext);
     startOCRSelection('recognizedText', formContext);
-    
-    console.log('[handleOpenOCRPicker] OCR selection mode started');
   }, [layers.ocr, setLayer, minimizeForm, startOCRSelection, inlineForm]);
 
   const handleApplyOCRSelection = useCallback(() => {
-    console.log('[OverlayLayer] Apply OCR Selection - BEFORE applyOCRSelection()');
     const result = applyOCRSelection();
     if (!result) {
       addToast({ kind: 'error', message: 'No OCR blocks selected' });
@@ -488,13 +480,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     }
 
     const { text } = result;
-    console.log('[OverlayLayer] Apply OCR Selection - AFTER applyOCRSelection(), text:', text.slice(0, 50));
     
     // Restore form from minimized state and inject OCR text without resetting
     restoreForm();
     setOcrTextToMerge(text);
-    
-    console.log('[OverlayLayer] OCR selection mode ENDED - form restored');
     
     // Clear the merge text after a moment to allow for re-triggering if needed
     setTimeout(() => setOcrTextToMerge(null), 100);
@@ -1241,24 +1230,13 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      console.log('[OverlayLayer] handlePointerDown called', {
-        target: event.target,
-        shouldIgnore: shouldIgnorePointer(event.target),
-        ocrSelectionActive: ocrSelectionMode.active,
-        inlineFormOpen: inlineForm.open
-      });
-      
       if (shouldIgnorePointer(event.target)) {
-        console.log('[OverlayLayer] ✅ Ignoring pointer (data-ui2-overlay-ignore) - letting event pass through naturally');
         // Don't call preventDefault or stopPropagation - let the event reach the target naturally
         return;
       }
       
-      console.log('[OverlayLayer] ⚠️ NOT ignoring pointer - will process event');
-      
       // Don't close form if we're in OCR selection mode - user is selecting blocks
       if (contextMenu.open || (inlineForm.open && !ocrSelectionMode.active)) {
-        console.log('[OverlayLayer] Closing context/form');
         closeContext();
         closeForm();
         return;
@@ -2105,12 +2083,24 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   };
 
   const overlayPointerEvents = (ocrSelectionMode.active || inlineForm.open) ? 'none' : 'auto';
-  
-  console.log('[OverlayLayer] Render - pointer events:', {
-    ocrSelectionActive: ocrSelectionMode.active,
-    inlineFormOpen: inlineForm.open,
-    overlayPointerEvents
-  });
+
+  // Convert canvas-relative coordinates to viewport coordinates for portaled form
+  const formViewportPosition = useMemo(() => {
+    const canvasX = inlineForm.at?.x ?? contextMenu.at?.x ?? 0;
+    const canvasY = inlineForm.at?.y ?? contextMenu.at?.y ?? 0;
+    
+    // Get the canvas wrapper's position in viewport
+    const wrapperRect = wrapperRef?.current?.getBoundingClientRect();
+    if (!wrapperRect) {
+      return { x: canvasX, y: canvasY };
+    }
+    
+    // Convert canvas-relative to viewport coordinates
+    const viewportX = wrapperRect.left + canvasX;
+    const viewportY = wrapperRect.top + canvasY;
+    
+    return { x: viewportX, y: viewportY };
+  }, [inlineForm.at, contextMenu.at, wrapperRef]);
 
   return (
     <div
@@ -2254,8 +2244,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               ? 'ScheduleForm'
               : 'DrawingForm'
           }
-          x={inlineForm.at?.x ?? contextMenu.at?.x ?? 0}
-          y={inlineForm.at?.y ?? contextMenu.at?.y ?? 0}
+          x={formViewportPosition.x}
+          y={formViewportPosition.y}
           onSave={handleFormSave}
           onCancel={ocrSelectionMode.active ? handleCancelOCRSelection : closeForm}
           onCreateFromOCR={handleOpenOCRPicker}

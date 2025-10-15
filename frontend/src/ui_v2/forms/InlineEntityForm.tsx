@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import '../theme/tokens.css';
 import { TGCard } from '../../ui_primitives/card';
 import { TGButton } from '../../ui_primitives/button';
@@ -103,6 +103,38 @@ export function InlineEntityForm({
       }));
     }
   }, [ocrTextToMerge, open]);
+
+  // Add escape key handler to close form
+  useEffect(() => {
+    if (!open) return;
+    
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel?.();
+      }
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open, onCancel]);
+
+  // Calculate safe position within viewport
+  const safePosition = useMemo(() => {
+    const FORM_WIDTH = 320;
+    const FORM_HEIGHT = 500; // approximate max height
+    const PADDING = 16;
+    
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Clamp x to keep form within viewport horizontally
+    let safeX = Math.max(PADDING, Math.min(x, viewportWidth - FORM_WIDTH - PADDING));
+    
+    // Clamp y to keep form within viewport vertically
+    let safeY = Math.max(PADDING, Math.min(y, viewportHeight - FORM_HEIGHT - PADDING));
+    
+    return { x: safeX, y: safeY };
+  }, [x, y]);
 
   if (!open) return null;
 
@@ -382,11 +414,13 @@ export function InlineEntityForm({
         data-ui2-overlay-ignore
         className={cx('tg-ui2')}
         style={{
-          position: 'absolute',
+          position: 'fixed', // Fixed to viewport for consistent positioning
           zIndex: 50,
-          left: x,
-          top: y,
+          left: safePosition.x,
+          top: safePosition.y,
           width: '320px',
+          maxHeight: 'calc(100vh - 32px)', // Prevent overflow
+          overflowY: 'auto', // Allow scrolling if content is tall
           padding: '16px',
           borderColor: 'var(--tg-border)',
           boxShadow: '0 16px 32px rgba(15, 23, 42, 0.18)',
