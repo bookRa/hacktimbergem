@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import type { CSSProperties, MouseEvent } from 'react';
 import { BBox, BBoxVariant } from './canvas/BBox';
 import { EntityTag, EntityType as TagEntityType } from './canvas/EntityTag';
@@ -6,9 +7,9 @@ import { ContextPicker } from './menus/ContextPicker';
 import { EntityMenu } from './menus/EntityMenu';
 import { InlineEntityForm } from './forms/InlineEntityForm';
 import { ChipsTray } from './linking/ChipsTray';
-import { OCRPicker, OCRBlock } from './overlays/OCRPicker';
+import type { OCRBlock } from './overlays/OCRPicker';
 import '../ui_v2/theme/tokens.css';
-import { useUIV2Actions, useUIV2ContextMenu, useUIV2Drawing, useUIV2InlineForm, useUIV2Linking, useUIV2OCRPicker, useUIV2Selection } from '../state/ui_v2';
+import { useUIV2Actions, useUIV2ContextMenu, useUIV2Drawing, useUIV2InlineForm, useUIV2Linking, useUIV2OCRPicker, useUIV2OCRSelection, useUIV2Selection } from '../state/ui_v2';
 import type { Selection } from '../state/ui_v2';
 import { useProjectStore } from '../state/store';
 import { createEntity, patchEntity } from '../api/entities';
@@ -156,11 +157,13 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   const [editingDrafts, setEditingDrafts] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
   const editingDraftPendingRef = useRef<Map<string, { x: number; y: number; width: number; height: number } | null>>(new Map());
   const editingDraftRafRef = useRef<number | null>(null);
+  const [ocrTextToMerge, setOcrTextToMerge] = useState<string | null>(null);
 
   const contextMenu = useUIV2ContextMenu();
   const inlineForm = useUIV2InlineForm();
   const drawing = useUIV2Drawing();
   const ocrPicker = useUIV2OCRPicker();
+  const ocrSelectionMode = useUIV2OCRSelection();
   const linking = useUIV2Linking();
   const { selection, hover } = useUIV2Selection();
   const {
@@ -168,10 +171,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     closeContext,
     openForm,
     closeForm,
+    minimizeForm,
+    restoreForm,
     startDrawing,
     cancelDrawing,
     openOCRPicker,
     closeOCRPicker,
+    startOCRSelection,
+    toggleOCRBlock,
+    applyOCRSelection,
+    cancelOCRSelection,
     setSelection,
     setHover,
     startLinking,
@@ -195,6 +204,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     _explicitSelection,
     links,
     layers,
+    setLayer,
     setHoverEntityId,
     setHoverScopeId,
     creatingEntity,
@@ -214,6 +224,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     _explicitSelection: state._explicitSelection,
     links: state.links,
     layers: state.layers,
+    setLayer: state.setLayer,
     setHoverEntityId: state.setHoverEntityId,
     setHoverScopeId: state.setHoverScopeId,
     creatingEntity: state.creatingEntity,
@@ -416,6 +427,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     [entityMeta]
   );
 
+  // Legacy OCR picker functions - no longer used with new canvas selection mode
+  // Kept for backward compatibility if needed
   const getOCRBlocksForPage = useCallback((pageIndex: number) => {
     const ocr = pageOcr?.[pageIndex];
     if (!ocr?.blocks) return [];
@@ -439,30 +452,72 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   }, [ocrPicker.onSelect, closeOCRPicker]);
 
   const handleOpenOCRPicker = useCallback(() => {
-    const currentPageIndex = pageIndex;
-    openOCRPicker(currentPageIndex, (block: OCRBlock) => {
-      // Update the form with the selected OCR text
-      const updatedValues = { ...inlineForm.initialValues };
-      if (inlineForm.type === 'Scope') {
-        updatedValues.name = block.text;
-        updatedValues.description = block.text;
-      } else if (inlineForm.type === 'SymbolDef') {
-        updatedValues.name = block.text;
-        updatedValues.description = block.text;
-      }
-      // Re-open the form with updated values
-      if (inlineForm.type) {
-        openForm({
-          type: inlineForm.type,
-          entityId: inlineForm.entityId,
-          at: inlineForm.at ?? undefined,
-          pendingBBox: inlineForm.pendingBBox ?? undefined,
-          initialValues: updatedValues,
-          mode: inlineForm.mode,
-        });
-      }
-    });
-  }, [pageIndex, openOCRPicker, inlineForm, openForm]);
+    console.log('[handleOpenOCRPicker] Starting OCR selection mode');
+    
+    // Enable OCR layer if not already visible
+    if (!layers.ocr) {
+      console.log('[handleOpenOCRPicker] Enabling OCR layer');
+      setLayer('ocr', true);
+    }
+    
+    // Minimize the form
+    console.log('[handleOpenOCRPicker] Minimizing form');
+    minimizeForm();
+    
+    // Start OCR selection mode
+    const formContext = {
+      type: inlineForm.type!,
+      at: inlineForm.at ?? undefined,
+      pendingBBox: inlineForm.pendingBBox ?? undefined,
+      initialValues: inlineForm.initialValues ?? {},
+      mode: inlineForm.mode,
+      entityId: inlineForm.entityId,
+    };
+    console.log('[handleOpenOCRPicker] Starting OCR selection with context:', formContext);
+    startOCRSelection('recognizedText', formContext);
+    
+    console.log('[handleOpenOCRPicker] OCR selection mode started');
+  }, [layers.ocr, setLayer, minimizeForm, startOCRSelection, inlineForm]);
+
+  const handleApplyOCRSelection = useCallback(() => {
+    console.log('[OverlayLayer] Apply OCR Selection - BEFORE applyOCRSelection()');
+    const result = applyOCRSelection();
+    if (!result) {
+      addToast({ kind: 'error', message: 'No OCR blocks selected' });
+      return;
+    }
+
+    const { text } = result;
+    console.log('[OverlayLayer] Apply OCR Selection - AFTER applyOCRSelection(), text:', text.slice(0, 50));
+    
+    // Restore form from minimized state and inject OCR text without resetting
+    restoreForm();
+    setOcrTextToMerge(text);
+    
+    console.log('[OverlayLayer] OCR selection mode ENDED - form restored');
+    
+    // Clear the merge text after a moment to allow for re-triggering if needed
+    setTimeout(() => setOcrTextToMerge(null), 100);
+  }, [applyOCRSelection, restoreForm, addToast]);
+
+  const handleCancelOCRSelection = useCallback(() => {
+    cancelOCRSelection();
+    
+    // Restore the form to its previous state
+    if (ocrSelectionMode.formContext) {
+      const ctx = ocrSelectionMode.formContext;
+      openForm({
+        type: ctx.type,
+        entityId: ctx.entityId,
+        at: ctx.at,
+        pendingBBox: ctx.pendingBBox,
+        initialValues: ctx.initialValues ?? {},
+        mode: ctx.mode,
+      });
+    } else {
+      closeForm();
+    }
+  }, [cancelOCRSelection, ocrSelectionMode.formContext, openForm, closeForm]);
 
   const handleRequestDefinition = useCallback((draft: Record<string, unknown>) => {
     // Store the current instance form state for restoration
@@ -1177,7 +1232,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
   }, [addToast, cancelLinking, fetchLinks, finishLinking, links, projectId, setSelection]);
 
   const shouldIgnorePointer = useCallback((target: EventTarget | null) => {
-    if (!(target instanceof HTMLElement)) return false;
+    if (!(target instanceof HTMLElement) && !(target instanceof SVGElement)) return false;
     return Boolean(
       target.closest('[data-ui2-overlay-ignore]') ||
       target.closest('[data-ui2-overlay-floating]')
@@ -1186,10 +1241,32 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (shouldIgnorePointer(event.target)) return;
-      if (contextMenu.open || inlineForm.open) {
+      console.log('[OverlayLayer] handlePointerDown called', {
+        target: event.target,
+        shouldIgnore: shouldIgnorePointer(event.target),
+        ocrSelectionActive: ocrSelectionMode.active,
+        inlineFormOpen: inlineForm.open
+      });
+      
+      if (shouldIgnorePointer(event.target)) {
+        console.log('[OverlayLayer] ✅ Ignoring pointer (data-ui2-overlay-ignore) - letting event pass through naturally');
+        // Don't call preventDefault or stopPropagation - let the event reach the target naturally
+        return;
+      }
+      
+      console.log('[OverlayLayer] ⚠️ NOT ignoring pointer - will process event');
+      
+      // Don't close form if we're in OCR selection mode - user is selecting blocks
+      if (contextMenu.open || (inlineForm.open && !ocrSelectionMode.active)) {
+        console.log('[OverlayLayer] Closing context/form');
         closeContext();
         closeForm();
+        return;
+      }
+      
+      // If in OCR selection mode, just close context menu but keep form open
+      if (contextMenu.open) {
+        closeContext();
         return;
       }
       if (event.button !== 0) return;
@@ -1242,7 +1319,12 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         return;
       }
 
-      // Normal selection/drawing mode
+      // Normal selection/drawing mode (but not OCR selection mode)
+      if (ocrSelectionMode.active) {
+        // In OCR selection mode, don't start drag selection
+        return;
+      }
+      
       try {
         overlayEl!.setPointerCapture(event.pointerId);
       } catch (_) {
@@ -1257,7 +1339,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       setIsDrawing(true);
       commitDraftRect({ x, y, width: 0, height: 0 });
     },
-    [cancelEditSession, closeContext, closeForm, contextMenu.open, drawing.active, inlineForm.open, shouldIgnorePointer]
+    [cancelEditSession, closeContext, closeForm, contextMenu.open, drawing.active, inlineForm.open, ocrSelectionMode.active, shouldIgnorePointer]
   );
 
   const handlePointerMove = useCallback(
@@ -2022,6 +2104,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     return 'default';
   };
 
+  const overlayPointerEvents = (ocrSelectionMode.active || inlineForm.open) ? 'none' : 'auto';
+  
+  console.log('[OverlayLayer] Render - pointer events:', {
+    ocrSelectionActive: ocrSelectionMode.active,
+    inlineFormOpen: inlineForm.open,
+    overlayPointerEvents
+  });
+
   return (
     <div
       ref={overlayRef}
@@ -2029,14 +2119,17 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       style={{
         position: 'absolute',
         inset: 0,
-        pointerEvents: 'auto',
+        // When in OCR selection mode, let clicks pass through to OCR blocks below
+        // When form is open, also let clicks pass through so form elements are interactive
+        pointerEvents: overlayPointerEvents,
         cursor: getCursor()
       }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onContextMenu={handleContextMenu}
+      // Only attach handlers when overlay is interactive (not pass-through)
+      onPointerDown={overlayPointerEvents === 'auto' ? handlePointerDown : undefined}
+      onPointerMove={overlayPointerEvents === 'auto' ? handlePointerMove : undefined}
+      onPointerUp={overlayPointerEvents === 'auto' ? handlePointerUp : undefined}
+      onPointerCancel={overlayPointerEvents === 'auto' ? handlePointerUp : undefined}
+      onContextMenu={overlayPointerEvents === 'auto' ? handleContextMenu : undefined}
     >
       {pageEntities.map((item) => (
         <div key={item.entity.id} data-ui2-overlay-ignore>
@@ -2138,39 +2231,47 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         ) : false}
       />
 
-      <InlineEntityForm
-        open={inlineForm.open}
-        variant={
-          inlineForm.type === 'SymbolInst'
-            ? 'SymbolInstanceForm'
-            : inlineForm.type === 'CompInst'
-            ? 'ComponentInstanceForm'
-            : inlineForm.type === 'Scope'
-            ? 'ScopeForm'
-            : inlineForm.type === 'Note'
-            ? 'NoteForm'
-            : inlineForm.type === 'SymbolDef'
-            ? 'SymbolDefinitionForm'
-            : inlineForm.type === 'CompDef'
-            ? 'ComponentDefinitionForm'
-            : inlineForm.type === 'Legend'
-            ? 'LegendForm'
-            : inlineForm.type === 'Schedule'
-            ? 'ScheduleForm'
-            : 'DrawingForm'
-        }
-        x={inlineForm.at?.x ?? contextMenu.at?.x ?? 0}
-        y={inlineForm.at?.y ?? contextMenu.at?.y ?? 0}
-        onSave={handleFormSave}
-        onCancel={closeForm}
-        onCreateFromOCR={handleOpenOCRPicker}
-        onRequestDefinition={handleRequestDefinition}
-        onRequestComponentDefinition={handleRequestComponentDefinition}
-        initialValues={inlineForm.initialValues ?? null}
-        mode={inlineForm.mode ?? 'create'}
-        symbolDefinitionOptions={symbolDefinitionOptions}
-        componentDefinitionOptions={componentDefinitionOptions}
-      />
+      {/* Render InlineEntityForm as a Portal outside OverlayLayer to prevent event interference */}
+      {ReactDOM.createPortal(
+        <InlineEntityForm
+          open={inlineForm.open}
+          variant={
+            inlineForm.type === 'SymbolInst'
+              ? 'SymbolInstanceForm'
+              : inlineForm.type === 'CompInst'
+              ? 'ComponentInstanceForm'
+              : inlineForm.type === 'Scope'
+              ? 'ScopeForm'
+              : inlineForm.type === 'Note'
+              ? 'NoteForm'
+              : inlineForm.type === 'SymbolDef'
+              ? 'SymbolDefinitionForm'
+              : inlineForm.type === 'CompDef'
+              ? 'ComponentDefinitionForm'
+              : inlineForm.type === 'Legend'
+              ? 'LegendForm'
+              : inlineForm.type === 'Schedule'
+              ? 'ScheduleForm'
+              : 'DrawingForm'
+          }
+          x={inlineForm.at?.x ?? contextMenu.at?.x ?? 0}
+          y={inlineForm.at?.y ?? contextMenu.at?.y ?? 0}
+          onSave={handleFormSave}
+          onCancel={ocrSelectionMode.active ? handleCancelOCRSelection : closeForm}
+          onCreateFromOCR={handleOpenOCRPicker}
+          onApplyOCRSelection={handleApplyOCRSelection}
+          ocrSelectionCount={ocrSelectionMode.selectedBlocks.length}
+          ocrTextToMerge={ocrTextToMerge}
+          onRequestDefinition={handleRequestDefinition}
+          onRequestComponentDefinition={handleRequestComponentDefinition}
+          initialValues={inlineForm.initialValues ?? null}
+          mode={inlineForm.mode ?? 'create'}
+          minimized={inlineForm.minimized}
+          symbolDefinitionOptions={symbolDefinitionOptions}
+          componentDefinitionOptions={componentDefinitionOptions}
+        />,
+        document.body
+      )}
 
       <ChipsTray
         open={linking.active}
@@ -2180,14 +2281,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         onCancel={cancelLinking}
       />
 
-      <OCRPicker
-        open={ocrPicker.open}
-        x={contextMenu.at?.x ?? 0}
-        y={contextMenu.at?.y ?? 0}
-        ocrBlocks={ocrPicker.pageIndex !== undefined ? getOCRBlocksForPage(ocrPicker.pageIndex) : []}
-        onSelect={handleOCRTextSelect}
-        onClose={closeOCRPicker}
-      />
+      {/* OCRPicker modal removed - replaced with inline canvas selection mode */}
     </div>
   );
 }

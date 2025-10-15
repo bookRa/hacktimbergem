@@ -6,6 +6,7 @@ import { OcrOverlay } from './OcrOverlay';
 import { DragSelectOverlay } from './DragSelectOverlay';
 import { OverlayLayer } from '../ui_v2/OverlayLayer';
 import { ZoomControls } from './ZoomControls';
+import { useUIV2OCRSelection } from '../state/ui_v2';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -45,6 +46,8 @@ export const PdfCanvas: React.FC = () => {
         focusBBoxPts: (s as any).focusBBoxPts,
         clearFocusBBox: (s as any).clearFocusBBox,
     }));
+    
+    const ocrSelectionMode = useUIV2OCRSelection();
 
     // Render page and compute fit scale (only if backend image not yet present)
     useEffect(() => {
@@ -395,7 +398,7 @@ export const PdfCanvas: React.FC = () => {
                         />
                         {showOcr && <>
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
-                            {!creatingEntity && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
+                            {!creatingEntity && !ocrSelectionMode.active && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
                         {/* Legacy overlay retained for fallback; UI V2 overlay mounted below */}
                         {/* <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} /> */}
@@ -406,7 +409,7 @@ export const PdfCanvas: React.FC = () => {
                         <canvas ref={canvasRef} className="pdf-canvas" style={{ width: displayWidth, height: displayHeight, background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.4)' }} />
                         {showOcr && <>
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
-                            {!creatingEntity && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
+                            {!creatingEntity && !ocrSelectionMode.active && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
                         {/* Legacy overlay retained for fallback; UI V2 overlay mounted below */}
                         {/* <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} /> */}

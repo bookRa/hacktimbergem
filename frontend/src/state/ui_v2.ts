@@ -22,6 +22,7 @@ type InlineFormState = {
   pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } | null;
   initialValues?: Record<string, any> | null;
   mode?: 'create' | 'edit';
+  minimized?: boolean;
 };
 
 type DrawingState = {
@@ -33,6 +34,20 @@ type OCRPickerState = {
   open: boolean;
   pageIndex?: number;
   onSelect?: (block: OCRBlock) => void;
+};
+
+type OCRSelectionMode = {
+  active: boolean;
+  selectedBlocks: Array<{ pageIndex: number; blockIndex: number; text: string; bbox: [number, number, number, number] }>;
+  targetField: 'recognizedText' | 'name' | 'description';
+  formContext?: {
+    type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
+    at?: { x: number; y: number };
+    pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] };
+    initialValues?: Record<string, any>;
+    mode?: 'create' | 'edit';
+    entityId?: string;
+  };
 };
 
 type LinkingState = {
@@ -59,10 +74,16 @@ type UIActions = {
     mode?: 'create' | 'edit';
   }) => void;
   closeForm: () => void;
+  minimizeForm: () => void;
+  restoreForm: () => void;
   startDrawing: (entityType: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef') => void;
   cancelDrawing: () => void;
   openOCRPicker: (pageIndex: number, onSelect: (block: OCRBlock) => void) => void;
   closeOCRPicker: () => void;
+  startOCRSelection: (targetField: 'recognizedText' | 'name' | 'description', formContext: OCRSelectionMode['formContext']) => void;
+  toggleOCRBlock: (pageIndex: number, blockIndex: number, text: string, bbox: [number, number, number, number]) => void;
+  applyOCRSelection: () => { text: string; formContext: OCRSelectionMode['formContext'] } | null;
+  cancelOCRSelection: () => void;
   startLinking: (source: Selection, initialPending?: Selection[]) => void;
   addPending: (selection: Selection) => void;
   finishLinking: () => { source?: Selection; pending: Selection[] };
@@ -80,6 +101,7 @@ export type UIState = {
   inlineForm: InlineFormState;
   drawing: DrawingState;
   ocrPicker: OCRPickerState;
+  ocrSelectionMode: OCRSelectionMode;
   linking: LinkingState;
   hover?: Selection;
   selection: Selection[];
@@ -89,9 +111,10 @@ export type UIState = {
 const initialState: Omit<UIState, keyof UIActions> = {
   mode: 'select',
   contextMenu: { open: false, at: null, target: undefined },
-  inlineForm: { open: false, type: null, at: null, pendingBBox: null, entityId: undefined, initialValues: null, mode: 'create' },
+  inlineForm: { open: false, type: null, at: null, pendingBBox: null, entityId: undefined, initialValues: null, mode: 'create', minimized: false },
   drawing: { active: false, entityType: null },
   ocrPicker: { open: false },
+  ocrSelectionMode: { active: false, selectedBlocks: [], targetField: 'recognizedText' },
   linking: { active: false, source: undefined, pending: [] },
   hover: undefined,
   selection: [],
@@ -131,7 +154,17 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   },
   closeForm: () => {
     // Regular form close - don't restore during normal workflow
-    set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null, initialValues: null, mode: 'create' } });
+    set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null, initialValues: null, mode: 'create', minimized: false } });
+  },
+  minimizeForm: () => {
+    set((state) => ({
+      inlineForm: { ...state.inlineForm, minimized: true },
+    }));
+  },
+  restoreForm: () => {
+    set((state) => ({
+      inlineForm: { ...state.inlineForm, minimized: false },
+    }));
   },
   startDrawing: (entityType) => {
     set({ drawing: { active: true, entityType }, mode: 'draw' });
@@ -188,6 +221,63 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   closeOCRPicker: () => {
     set({ ocrPicker: { open: false } });
   },
+  startOCRSelection: (targetField, formContext) => {
+    set({
+      ocrSelectionMode: {
+        active: true,
+        selectedBlocks: [],
+        targetField,
+        formContext,
+      },
+      mode: 'select',
+    });
+    console.log('[ui_v2] startOCRSelection → ocrSelectionMode.active = TRUE');
+  },
+  toggleOCRBlock: (pageIndex, blockIndex, text, bbox) => {
+    set((state) => {
+      const existing = state.ocrSelectionMode.selectedBlocks.findIndex(
+        (b) => b.pageIndex === pageIndex && b.blockIndex === blockIndex
+      );
+      
+      let newBlocks;
+      if (existing >= 0) {
+        newBlocks = state.ocrSelectionMode.selectedBlocks.filter((_, i) => i !== existing);
+      } else {
+        newBlocks = [...state.ocrSelectionMode.selectedBlocks, { pageIndex, blockIndex, text, bbox }];
+      }
+      
+      return {
+        ocrSelectionMode: {
+          ...state.ocrSelectionMode,
+          selectedBlocks: newBlocks,
+        },
+      };
+    });
+  },
+  applyOCRSelection: () => {
+    const state = get();
+    const { selectedBlocks, formContext } = state.ocrSelectionMode;
+    
+    if (selectedBlocks.length === 0) {
+      return null;
+    }
+    
+    const concatenatedText = selectedBlocks.map((b) => b.text).join(' ');
+    
+    // Reset OCR selection mode
+    set({
+      ocrSelectionMode: { active: false, selectedBlocks: [], targetField: 'recognizedText' },
+    });
+    console.log('[ui_v2] applyOCRSelection → ocrSelectionMode.active = FALSE');
+    
+    return { text: concatenatedText, formContext };
+  },
+  cancelOCRSelection: () => {
+    set({
+      ocrSelectionMode: { active: false, selectedBlocks: [], targetField: 'recognizedText' },
+    });
+    console.log('[ui_v2] cancelOCRSelection → ocrSelectionMode.active = FALSE');
+  },
   startLinking: (source, initialPending = []) => {
     set({ linking: { active: true, source, pending: initialPending }, mode: 'link' });
   },
@@ -226,10 +316,16 @@ export const useUIV2Actions = () => {
     closeContext: state.closeContext,
     openForm: state.openForm,
     closeForm: state.closeForm,
+    minimizeForm: state.minimizeForm,
+    restoreForm: state.restoreForm,
     startDrawing: state.startDrawing,
     cancelDrawing: state.cancelDrawing,
     openOCRPicker: state.openOCRPicker,
     closeOCRPicker: state.closeOCRPicker,
+    startOCRSelection: state.startOCRSelection,
+    toggleOCRBlock: state.toggleOCRBlock,
+    applyOCRSelection: state.applyOCRSelection,
+    cancelOCRSelection: state.cancelOCRSelection,
     startLinking: state.startLinking,
     addPending: state.addPending,
     finishLinking: state.finishLinking,
@@ -244,6 +340,7 @@ export const useUIV2ContextMenu = () => useUIV2Store((state) => state.contextMen
 export const useUIV2InlineForm = () => useUIV2Store((state) => state.inlineForm, shallow);
 export const useUIV2Drawing = () => useUIV2Store((state) => state.drawing, shallow);
 export const useUIV2OCRPicker = () => useUIV2Store((state) => state.ocrPicker, shallow);
+export const useUIV2OCRSelection = () => useUIV2Store((state) => state.ocrSelectionMode, shallow);
 export const useUIV2Mode = () => useUIV2Store((state) => state.mode);
 export const useUIV2Selection = () => useUIV2Store((state) => ({ selection: state.selection, hover: state.hover }), shallow);
 export const useUIV2Linking = () => useUIV2Store((state) => state.linking, shallow);

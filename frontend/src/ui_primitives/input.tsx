@@ -22,6 +22,8 @@ export const TGInput = forwardRef<HTMLInputElement, TGInputProps>(function TGInp
         fontSize: 'var(--tg-font-sm)',
         boxSizing: 'border-box',
         display: 'block',
+        userSelect: 'text', // Ensure text is selectable
+        cursor: 'text',
         ...style,
       }}
       {...rest}

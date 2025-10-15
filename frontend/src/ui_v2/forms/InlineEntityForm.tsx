@@ -4,6 +4,7 @@ import { TGCard } from '../../ui_primitives/card';
 import { TGButton } from '../../ui_primitives/button';
 import { TGInput } from '../../ui_primitives/input';
 import { TGSelect } from '../../ui_primitives/select';
+import { SemanticMeaningInput } from './SemanticMeaningInput';
 import { cx } from '../utils/classNames';
 
 export type FormVariant =
@@ -25,8 +26,12 @@ interface InlineEntityFormProps {
   onSave?: (data: Record<string, unknown>) => void;
   onCancel?: () => void;
   onCreateFromOCR?: () => void;
+  onApplyOCRSelection?: () => void;
+  ocrSelectionCount?: number;
+  ocrTextToMerge?: string | null; // OCR text to merge into current formData without resetting
   initialValues?: Record<string, unknown> | null;
   mode?: 'create' | 'edit';
+  minimized?: boolean;
   symbolDefinitionOptions?: { label: string; value: string }[];
   componentDefinitionOptions?: { label: string; value: string }[];
   onRequestDefinition?: (draft: Record<string, unknown>) => void;
@@ -52,12 +57,6 @@ const SparkIcon = () => (
   </svg>
 );
 
-const semanticMeaningOptions = [
-  { label: 'Entry Door', value: 'entry' },
-  { label: 'Fire Exit', value: 'fire-exit' },
-  { label: 'Emergency Exit', value: 'emergency' },
-];
-
 const symbolScopeOptions = [
   { label: 'Sheet', value: 'sheet' },
   { label: 'Project', value: 'project' },
@@ -71,8 +70,12 @@ export function InlineEntityForm({
   onSave,
   onCancel,
   onCreateFromOCR,
+  onApplyOCRSelection,
+  ocrSelectionCount = 0,
+  ocrTextToMerge = null,
   initialValues = null,
   mode = 'create',
+  minimized = false,
   symbolDefinitionOptions,
   componentDefinitionOptions,
   onRequestDefinition,
@@ -90,6 +93,16 @@ export function InlineEntityForm({
     }
     setFormData(() => ({ ...(initialValues ?? {}) }));
   }, [open, variant, initialValues]);
+
+  // Merge OCR text into existing formData without resetting other fields
+  useEffect(() => {
+    if (ocrTextToMerge && open) {
+      setFormData((prev) => ({
+        ...prev,
+        recognizedText: ocrTextToMerge,
+      }));
+    }
+  }, [ocrTextToMerge, open]);
 
   if (!open) return null;
 
@@ -170,23 +183,11 @@ export function InlineEntityForm({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <label style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>Semantic Meaning</label>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <TGSelect
-              value={(formData.recognizedText as string) ?? ''}
-              onValueChange={(value) => updateField('recognizedText', value)}
-              options={semanticMeaningOptions}
-              placeholder="Select meaning..."
-            />
-            <TGButton
-              variant="outline"
-              size="sm"
-              style={{ paddingInline: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              onClick={() => onCreateFromOCR?.()}
-            >
-              <SparkIcon />
-              OCR
-            </TGButton>
-          </div>
+          <SemanticMeaningInput
+            value={(formData.recognizedText as string) ?? ''}
+            onChange={(value) => updateField('recognizedText', value)}
+            onRequestOCRSelection={() => onCreateFromOCR?.()}
+          />
         </div>
       </div>
     );
@@ -312,9 +313,70 @@ export function InlineEntityForm({
 
   const actionLabel = mode === 'edit' ? 'Update' : 'Save';
 
+  // If minimized, show compact pill instead of full form
+  if (minimized && open) {
+    return (
+      <div
+        className="tg-ui2"
+        style={{
+          position: 'fixed',
+          top: 16,
+          right: 16,
+          zIndex: 60,
+          background: 'var(--tg-accent)',
+          color: 'white',
+          padding: '10px 16px',
+          borderRadius: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          boxShadow: '0 4px 16px rgba(37, 99, 235, 0.3)',
+          fontSize: 'var(--tg-font-sm)',
+          fontWeight: 500,
+          pointerEvents: 'auto', // Ensure buttons remain clickable even when parent overlay has pointerEvents: none
+        }}
+      >
+        <span>Selecting OCR • {ocrSelectionCount} block{ocrSelectionCount !== 1 ? 's' : ''}</span>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <TGButton
+            variant="ghost"
+            size="sm"
+            onClick={onApplyOCRSelection}
+            disabled={ocrSelectionCount === 0}
+            style={{
+              background: ocrSelectionCount === 0 ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.9)',
+              color: ocrSelectionCount === 0 ? 'rgba(255, 255, 255, 0.5)' : 'var(--tg-accent)',
+              border: 'none',
+              fontSize: 'var(--tg-font-xs)',
+              padding: '4px 12px',
+              fontWeight: 600,
+              cursor: ocrSelectionCount === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Apply
+          </TGButton>
+          <TGButton
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              border: 'none',
+              fontSize: 'var(--tg-font-xs)',
+              padding: '4px 10px',
+            }}
+          >
+            Cancel
+          </TGButton>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="tg-ui2" style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={onCancel} />
+      {/* Backdrop removed - OverlayLayer handles outside clicks */}
 
       <TGCard
         data-ui2-overlay-ignore
@@ -328,6 +390,7 @@ export function InlineEntityForm({
           padding: '16px',
           borderColor: 'var(--tg-border)',
           boxShadow: '0 16px 32px rgba(15, 23, 42, 0.18)',
+          pointerEvents: 'auto', // Ensure form remains interactive during OCR selection mode
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
