@@ -39,68 +39,182 @@ export const RightExplorer: React.FC = () => {
 };
 
 const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; setSelectedScopeId: (id: string | null) => void; entities: any[]; setHover: (id: string | null) => void; }> = ({ concepts, selectedScopeId, setSelectedScopeId, entities, setHover }) => {
-    const scopes = concepts.filter(c => c.kind === 'scope');
-    const { links, selectEntity, setCurrentPageIndex } = useProjectStore((s: any) => ({
+    // FIX: Query entities array, not concepts (scopes are stored as entities)
+    const scopes = entities.filter((e: any) => e.entity_type === 'scope');
+    const { links, selectEntity, setCurrentPageIndex, startScopeCreation } = useProjectStore((s: any) => ({
         links: s.links,
         selectEntity: s.selectEntity,
         setCurrentPageIndex: s.setCurrentPageIndex,
+        startScopeCreation: s.startScopeCreation,
     }));
     
-    // Count total scopes with evidence
+    // Separate conceptual (no bbox) from canvas-based (has bbox)
+    const conceptualScopes = scopes.filter((s: any) => !s.bounding_box);
+    const canvasScopes = scopes.filter((s: any) => s.bounding_box);
+    
+    // Count scopes with evidence
     const scopesWithEvidence = scopes.filter(s => 
         links.some((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id)
     ).length;
     
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, paddingLeft: 4 }}>
-                {scopes.length} scopes • {scopesWithEvidence} with evidence
-            </div>
-            {scopes.map(s => {
-                const evidenceLinks = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id);
-                const evidenceCount = evidenceLinks.length;
-                const sel = selectedScopeId === s.id;
-                const hasEvidence = evidenceCount > 0;
-                
-                return (
-                    <div
-                        key={s.id}
-                        onMouseEnter={() => setHover(s.id)}
-                        onMouseLeave={() => setHover(null)}
-                        style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', marginBottom: 6 }}
+            {/* Header with action buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingLeft: 4 }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>
+                    {scopes.length} scopes • {scopesWithEvidence} with evidence
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                    <button 
+                        onClick={() => startScopeCreation?.('conceptual')}
+                        style={{ 
+                            background: '#2563eb', 
+                            color: 'white', 
+                            border: 'none',
+                            borderRadius: 6,
+                            padding: '4px 10px',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            fontWeight: 500
+                        }}
+                        title="Create a project-level scope without canvas location"
                     >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setSelectedScopeId(sel ? null : s.id)}>
-                                <div style={{ fontSize: 12, fontWeight: 600 }}>{s.description || s.id.slice(0,6)}</div>
-                                <div style={{ fontSize: 10, color: hasEvidence ? '#10b981' : '#f59e0b', marginTop: 2 }}>
-                                    {hasEvidence ? `✓ ${evidenceCount} evidence` : '⚠ No evidence'}
+                        + New Scope
+                    </button>
+                    <button 
+                        onClick={() => startScopeCreation?.('canvas')}
+                        style={{ 
+                            background: '#f5f7fa', 
+                            color: '#111', 
+                            border: '1px solid #e1e6eb',
+                            borderRadius: 6,
+                            padding: '4px 10px',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            fontWeight: 500
+                        }}
+                        title="Draw a scope on the canvas"
+                    >
+                        + Draw Scope
+                    </button>
+                </div>
+            </div>
+            
+            {/* Conceptual Scopes Section */}
+            {conceptualScopes.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#334155', marginBottom: 6, paddingLeft: 4 }}>
+                        💭 Conceptual Scopes ({conceptualScopes.length})
+                    </div>
+                    {conceptualScopes.map(s => {
+                        const evidenceLinks = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id);
+                        const evidenceCount = evidenceLinks.length;
+                        const sel = selectedScopeId === s.id;
+                        const hasEvidence = evidenceCount > 0;
+                        
+                        return (
+                            <div
+                                key={s.id}
+                                onMouseEnter={() => setHover(s.id)}
+                                onMouseLeave={() => setHover(null)}
+                                style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', marginBottom: 6 }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setSelectedScopeId(sel ? null : s.id)}>
+                                        <div style={{ fontSize: 12, fontWeight: 600 }}>{s.name || s.description || s.id.slice(0,6)}</div>
+                                        {s.description && s.name && (
+                                            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{s.description}</div>
+                                        )}
+                                        <div style={{ fontSize: 10, color: hasEvidence ? '#10b981' : '#f59e0b', marginTop: 2 }}>
+                                            {hasEvidence ? `✓ ${evidenceCount} evidence` : '⚠ No evidence'}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                selectEntity(s.id);
+                                            }}
+                                            style={btn(false)}
+                                            title="Edit scope"
+                                        >
+                                            Edit
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        // Jump to first evidence
-                                        if (evidenceLinks.length > 0) {
-                                            const ent = entities.find((e: any) => e.id === evidenceLinks[0].target_id);
-                                            if (ent) {
-                                                setCurrentPageIndex(ent.source_sheet_number - 1);
-                                                selectEntity(ent.id);
-                                            }
-                                        }
-                                    }}
-                                    disabled={!hasEvidence}
-                                    style={btn(false)}
-                                    title="Jump to first evidence"
-                                >
-                                    Jump
-                                </button>
-                            </div>
-                        </div>
+                        );
+                    })}
+                </div>
+            )}
+            
+            {/* Canvas Scopes Section */}
+            {canvasScopes.length > 0 && (
+                <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#334155', marginBottom: 6, paddingLeft: 4 }}>
+                        📍 Canvas Scopes ({canvasScopes.length})
                     </div>
-                );
-            })}
-            {scopes.length === 0 && <div style={{ fontSize: 12, opacity: .7 }}>(No scopes yet)</div>}
+                    {canvasScopes.map(s => {
+                        const evidenceLinks = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === s.id);
+                        const evidenceCount = evidenceLinks.length;
+                        const sel = selectedScopeId === s.id;
+                        const hasEvidence = evidenceCount > 0;
+                        
+                        return (
+                            <div
+                                key={s.id}
+                                onMouseEnter={() => setHover(s.id)}
+                                onMouseLeave={() => setHover(null)}
+                                style={{ padding: 8, borderRadius: 6, border: sel ? '1px solid #2563eb' : '1px solid #e1e6eb', background: sel ? '#eff6ff' : '#fff', marginBottom: 6 }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setSelectedScopeId(sel ? null : s.id)}>
+                                        <div style={{ fontSize: 12, fontWeight: 600 }}>{s.name || s.description || s.id.slice(0,6)}</div>
+                                        {s.description && s.name && (
+                                            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{s.description}</div>
+                                        )}
+                                        <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                                            Sheet {s.source_sheet_number}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: hasEvidence ? '#10b981' : '#f59e0b', marginTop: 2 }}>
+                                            {hasEvidence ? `✓ ${evidenceCount} evidence` : '⚠ No evidence'}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                selectEntity(s.id);
+                                            }}
+                                            style={btn(false)}
+                                            title="Edit scope"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                // Jump to scope on canvas
+                                                if (s.source_sheet_number) {
+                                                    setCurrentPageIndex(s.source_sheet_number - 1);
+                                                    selectEntity(s.id);
+                                                }
+                                            }}
+                                            style={btn(false)}
+                                            title="Jump to scope on canvas"
+                                        >
+                                            Jump
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            
+            {/* Empty state */}
+            {scopes.length === 0 && <div style={{ fontSize: 12, opacity: .7, paddingLeft: 4 }}>(No scopes yet)</div>}
         </div>
     );
 };

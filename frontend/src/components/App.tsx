@@ -8,6 +8,7 @@ import { RightPanel } from './RightPanel';
 import { useProjectStore, ProjectStore } from '../state/store';
 import { StatusBanner } from './StatusBanner';
 import { ToastContainer } from './ToastContainer';
+import { ScopeCreationModal } from './ScopeCreationModal';
 
 export const App: React.FC = () => {
     const pdfDoc = useProjectStore((s: ProjectStore) => s.pdfDoc);
@@ -56,6 +57,7 @@ export const App: React.FC = () => {
         <div className="app-shell">
             <StatusBanner />
             <ToastContainer />
+            <ScopeCreationModal />
             {!pdfDoc && <UploadArea />}
             {pdfDoc && (
                 <div className="three-pane" style={{ gridTemplateColumns: `${leftPanel.collapsed ? COLLAPSED_RAIL : leftPanel.widthPx}px 1fr ${rightPanel.collapsed ? COLLAPSED_RAIL : rightPanel.widthPx}px` }}>

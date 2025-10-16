@@ -163,6 +163,16 @@ interface AppState {
     historyIdMap: Record<string, string>; // originalId -> currentId mapping for recreated entities
     // Persisted Notes from OCR selection
     promoteSelectionToNotePersist: (pageIndex: number) => Promise<void>;
+    // Scope creation mode
+    scopeCreationMode: {
+        active: boolean;
+        type: 'canvas' | 'conceptual' | null;
+    };
+    startScopeCreation: (type: 'canvas' | 'conceptual') => void;
+    cancelScopeCreation: () => void;
+    createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<void>;
+    updateScopeLocation: (scopeId: string, sheet: number, bbox: number[]) => Promise<void>;
+    removeScopeLocation: (scopeId: string) => Promise<void>;
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
@@ -941,6 +951,10 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     historyFuture: [],
     pushHistory: (entry: any) => set(state => ({ historyPast: [...(state as any).historyPast, entry], historyFuture: [] } as any)),
     historyIdMap: {},
+    scopeCreationMode: {
+        active: false,
+        type: null,
+    },
     promoteSelectionToNotePersist: async (pageIndex: number) => {
         const { projectId, addToast, pageOcr, selectedBlocks, fetchEntities } = get() as any;
         if (!projectId) return;
@@ -1106,5 +1120,141 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 await st.fetchLinks();
             }
         } catch (e) { console.error('Redo failed', e); }
-    }
+    },
+    // Scope creation actions
+    startScopeCreation: (type: 'canvas' | 'conceptual') => {
+        set({ 
+            scopeCreationMode: { active: true, type },
+        });
+        // Note: Modal component will handle the UI based on this state
+    },
+    cancelScopeCreation: () => {
+        set({ 
+            scopeCreationMode: { active: false, type: null },
+        });
+    },
+    createScope: async (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => {
+        const { projectId, entities, addToast, fetchEntities } = get() as any;
+        if (!projectId) {
+            addToast({ kind: 'error', message: 'No project loaded' });
+            return;
+        }
+        
+        // Check for duplicate names
+        if (data.name) {
+            const duplicate = entities.find((e: any) => 
+                e.entity_type === 'scope' && 
+                (e.name?.toLowerCase() === data.name.toLowerCase() || 
+                 e.description?.toLowerCase() === data.name.toLowerCase())
+            );
+            
+            if (duplicate) {
+                const confirmCreate = window.confirm(
+                    `A scope with similar name "${duplicate.name || duplicate.description}" already exists. Create anyway?`
+                );
+                if (!confirmCreate) return;
+            }
+        }
+        
+        // Build payload
+        const payload: any = {
+            entity_type: 'scope',
+            name: data.name,
+            description: data.description || null,
+        };
+        
+        // Only add spatial fields if provided (for canvas scopes)
+        if (data.source_sheet_number !== undefined && data.bounding_box) {
+            payload.source_sheet_number = data.source_sheet_number;
+            payload.bounding_box = data.bounding_box;
+        }
+        
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            
+            if (!resp.ok) {
+                let msg = 'Create scope failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            
+            const created = await resp.json();
+            await fetchEntities();
+            
+            set({ 
+                scopeCreationMode: { active: false, type: null },
+                selectedEntityId: created.id,
+                rightPanelTab: 'entities',
+            } as any);
+            
+            addToast({ kind: 'success', message: `Scope "${data.name}" created` });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to create scope' });
+        }
+    },
+    updateScopeLocation: async (scopeId: string, sheet: number, bbox: number[]) => {
+        const { projectId, addToast, fetchEntities } = get() as any;
+        if (!projectId) return;
+        
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities/${scopeId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_sheet_number: sheet,
+                    bounding_box: bbox,
+                }),
+            });
+            
+            if (!resp.ok) {
+                let msg = 'Update scope location failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            
+            await fetchEntities();
+            addToast({ kind: 'success', message: 'Canvas location added to scope' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to update scope location' });
+        }
+    },
+    removeScopeLocation: async (scopeId: string) => {
+        const { projectId, addToast, fetchEntities } = get() as any;
+        if (!projectId) return;
+        
+        const confirmRemove = window.confirm(
+            'Remove canvas location from this scope? It will become a conceptual scope (project-level).'
+        );
+        
+        if (!confirmRemove) return;
+        
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities/${scopeId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_sheet_number: null,
+                    bounding_box: null,
+                }),
+            });
+            
+            if (!resp.ok) {
+                let msg = 'Remove scope location failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            
+            await fetchEntities();
+            addToast({ kind: 'success', message: 'Scope converted to conceptual (canvas location removed)' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to remove scope location' });
+        }
+    },
 }));

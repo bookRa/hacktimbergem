@@ -88,10 +88,46 @@ class Note(BaseVisualEntity):
     text: str | None = None
 
 
-class Scope(BaseVisualEntity):
+class Scope(BaseModel):
+    """Scope can be conceptual (no bbox) or canvas-based (with bbox).
+    
+    Conceptual scopes are project-level requirements without spatial representation.
+    Canvas scopes are area-specific annotations on sheets.
+    """
+    id: str = Field(..., description="Server-assigned unique id")
     entity_type: Literal["scope"] = "scope"
     name: str | None = None
     description: str | None = None
+    
+    # Optional spatial fields (required for canvas scopes, null for conceptual)
+    source_sheet_number: Optional[int] = Field(None, ge=1)
+    bounding_box: Optional[BoundingBox] = None
+    
+    # Standard metadata
+    created_at: float = Field(default_factory=lambda: time.time())
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
+    
+    @validator('bounding_box', always=True)
+    def _validate_bbox_sheet_consistency(cls, v, values):  # type: ignore
+        """Ensure bbox and sheet consistency, and that conceptual scopes have meaningful content."""
+        bbox = v
+        sheet = values.get('source_sheet_number')
+        name = values.get('name')
+        desc = values.get('description')
+        
+        # If bbox exists, sheet must exist
+        if bbox is not None and sheet is None:
+            raise ValueError("source_sheet_number required when bounding_box is provided")
+        
+        # If neither bbox nor meaningful text, reject
+        if bbox is None and not name and not desc:
+            raise ValueError("name or description required for conceptual scopes (scopes without bounding box)")
+        
+        return v
+    
+    class Config:
+        orm_mode = True
 
 
 class SymbolDefinition(BaseVisualEntity):
@@ -173,11 +209,33 @@ class CreateNote(CreateEntityBase):
 
 
 class CreateScope(CreateEntityBase):
+    """Create a scope - can be conceptual (no bbox) or canvas-based (with bbox)."""
     entity_type: Literal["scope"]
-    source_sheet_number: int
-    bounding_box: List[float]
+    source_sheet_number: Optional[int] = None
+    bounding_box: Optional[List[float]] = None
     name: str | None = None
     description: str | None = None
+    
+    @validator('bounding_box', always=True)
+    def _validate_consistency(cls, v, values):  # type: ignore
+        """Validate bbox/sheet consistency and ensure meaningful content."""
+        bbox = v
+        sheet = values.get('source_sheet_number')
+        name = values.get('name')
+        desc = values.get('description')
+        
+        # If bbox provided, sheet must also be provided
+        if bbox is not None:
+            if sheet is None:
+                raise ValueError("source_sheet_number required when bounding_box is provided")
+            if len(bbox) != 4:
+                raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        
+        # If neither bbox nor text content, reject
+        if bbox is None and not name and not desc:
+            raise ValueError("name or description required for conceptual scopes (scopes without bounding box)")
+        
+        return v
 
 
 class CreateSymbolDefinition(CreateEntityBase):
