@@ -263,18 +263,25 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }
     });
     return filtered
-      .map((entity) => ({
-        entity,
-        tagType: entityTypeMap[entity.entity_type],
-        bboxPx: pdfBoxToDisplay(
-          [entity.bounding_box.x1, entity.bounding_box.y1, entity.bounding_box.x2, entity.bounding_box.y2],
-          { pageWidthPts, pageHeightPts, nativeWidth: meta.nativeWidth, nativeHeight: meta.nativeHeight },
-          scale
-        ),
-        isIncomplete: isIncomplete(entity as any),
-      }))
+      .map((entity) => {
+        // Recompute validation flags with links to get accurate completion status
+        const attrs = { ...entity, id: entity.id };
+        const recomputedFlags = deriveEntityFlags(entity.entity_type, attrs, links);
+        const entityWithFreshFlags = { ...entity, ...recomputedFlags };
+        
+        return {
+          entity,
+          tagType: entityTypeMap[entity.entity_type],
+          bboxPx: pdfBoxToDisplay(
+            [entity.bounding_box.x1, entity.bounding_box.y1, entity.bounding_box.x2, entity.bounding_box.y2],
+            { pageWidthPts, pageHeightPts, nativeWidth: meta.nativeWidth, nativeHeight: meta.nativeHeight },
+            scale
+          ),
+          isIncomplete: isIncomplete(entityWithFreshFlags as any),
+        };
+      })
       .sort((a, b) => a.entity.created_at - b.entity.created_at);
-  }, [entities, pageIndex, pageOcr, pagesMeta, scale, layers]);
+  }, [entities, pageIndex, pageOcr, pagesMeta, scale, layers, links]);
 
   const entityMeta = useMemo(() => {
     const map = new Map<string, Entity>();
@@ -676,7 +683,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         payload.specifications = (entity as any).specifications ?? {};
       }
 
-      Object.assign(payload, deriveEntityFlags(entity.entity_type, payload));
+      Object.assign(payload, deriveEntityFlags(entity.entity_type, payload, null));
 
       try {
         const created = await createEntity(projectId, payload as any);
@@ -1037,23 +1044,44 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       if (action === 'link') {
         const { target } = contextMenu;
         if (!target) return;
-        if (target.type !== 'Scope') {
-          addToast({ kind: 'warning', message: 'Linking is currently available for scopes only' });
+        
+        // Support linking for both scopes (linking instances to them) and instances (linking them to scopes)
+        if (target.type === 'Scope') {
+          // Linking instances TO this scope (scope is source, instances are targets)
+          const existing = (links || [])
+            .filter((linkObj: any) => linkObj.rel_type === 'JUSTIFIED_BY' && linkObj.source_id === entity.id)
+            .map((linkObj: any): Entity | undefined => entityMeta.get(linkObj.target_id))
+            .filter((linkedEntity: Entity | undefined): linkedEntity is Entity => Boolean(linkedEntity))
+            .map((linkedEntity: Entity) => ({
+              id: linkedEntity.id,
+              type: entityTypeMap[linkedEntity.entity_type],
+              sheetId: String(linkedEntity.source_sheet_number),
+            }));
+          startLinking(target, existing);
+          setSelection([target, ...existing]);
           closeContext();
-          return;
+        } else if (target.type === 'SymbolInst' || target.type === 'CompInst' || target.type === 'Note') {
+          // Linking this instance TO a scope (scope is source, instance is target)
+          const existing = (links || [])
+            .filter((linkObj: any) => linkObj.rel_type === 'JUSTIFIED_BY' && linkObj.target_id === entity.id)
+            .map((linkObj: any): Entity | undefined => entityMeta.get(linkObj.source_id))
+            .filter((linkedEntity: Entity | undefined): linkedEntity is Entity => 
+              Boolean(linkedEntity) && Boolean(linkedEntity?.entity_type === 'scope')
+            )
+            .map((linkedEntity: Entity) => ({
+              id: linkedEntity.id,
+              type: 'Scope',
+              sheetId: String(linkedEntity.source_sheet_number),
+            }));
+          
+          // Create a pseudo-scope selection to start scope linking mode
+          startLinking({ id: entity.id, type: target.type, sheetId: String(entity.source_sheet_number) }, existing);
+          setSelection([{ id: entity.id, type: target.type, sheetId: String(entity.source_sheet_number) }, ...existing]);
+          closeContext();
+        } else {
+          addToast({ kind: 'warning', message: 'Linking is only available for scopes and instances' });
+          closeContext();
         }
-        const existing = (links || [])
-          .filter((linkObj: any) => linkObj.rel_type === 'JUSTIFIED_BY' && linkObj.source_id === entity.id)
-          .map((linkObj: any): Entity | undefined => entityMeta.get(linkObj.target_id))
-          .filter((linkedEntity: Entity | undefined): linkedEntity is Entity => Boolean(linkedEntity))
-          .map((linkedEntity: Entity) => ({
-            id: linkedEntity.id,
-            type: entityTypeMap[linkedEntity.entity_type],
-            sheetId: String(linkedEntity.source_sheet_number),
-          }));
-        startLinking(target, existing);
-        setSelection([target, ...existing]);
-        closeContext();
       }
 
       if (action === 'unlink') {
@@ -1173,50 +1201,102 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       return;
     }
 
-    if (source.type !== 'Scope') {
-      addToast({ kind: 'warning', message: 'Linking is currently available for scopes only' });
-      return;
-    }
+    // Support two linking directions:
+    // 1. Scope → Instances (scope justifies instances as evidence)
+    // 2. Instance → Scopes (scopes justify this instance)
+    
+    if (source.type === 'Scope') {
+      // Direction 1: Scope (source) → Instances (targets)
+      // Check for existing links to prevent duplicates
+      const existingLinks = (links || [])
+        .filter((linkObj: { rel_type: string; source_id: string; target_id: string }) =>
+          linkObj.rel_type === 'JUSTIFIED_BY' &&
+          linkObj.source_id === source.id &&
+          pending.some(sel => sel.id === linkObj.target_id)
+        );
 
-    // Check for existing links to prevent duplicates
-    const existingLinks = (links || [])
-      .filter((linkObj: { rel_type: string; source_id: string; target_id: string }) =>
-        linkObj.rel_type === 'JUSTIFIED_BY' &&
-        linkObj.source_id === source.id &&
-        pending.some(sel => sel.id === linkObj.target_id)
+      const newTargets = pending.filter(sel =>
+        !existingLinks.some((link: { target_id: string }) => link.target_id === sel.id)
       );
 
-    const newTargets = pending.filter(sel =>
-      !existingLinks.some((link: { target_id: string }) => link.target_id === sel.id)
-    );
-
-    if (newTargets.length === 0) {
-      addToast({ kind: 'warning', message: 'All selected entities are already linked' });
-      cancelLinking();
-      return;
-    }
-
-    try {
-      const linkPromises = newTargets.map((sel) =>
-        apiCreateLink(projectId, {
-          rel_type: 'JUSTIFIED_BY',
-          source_id: source.id,
-          target_id: sel.id,
-        })
-      );
-
-      await Promise.all(linkPromises);
-      await fetchLinks();
-      addToast({ kind: 'success', message: `${newTargets.length} link${newTargets.length > 1 ? 's' : ''} created` });
-      setSelection([source, ...pending]);
-    } catch (error: any) {
-      console.error(error);
-      // Check if it's a duplicate link error
-      if (error.message && error.message.includes('already exists')) {
-        addToast({ kind: 'warning', message: 'Some links already exist' });
-      } else {
-        addToast({ kind: 'error', message: error?.message || 'Failed to create links' });
+      if (newTargets.length === 0) {
+        addToast({ kind: 'warning', message: 'All selected entities are already linked' });
+        cancelLinking();
+        return;
       }
+
+      try {
+        const linkPromises = newTargets.map((sel) =>
+          apiCreateLink(projectId, {
+            rel_type: 'JUSTIFIED_BY',
+            source_id: source.id,
+            target_id: sel.id,
+          })
+        );
+
+        await Promise.all(linkPromises);
+        await fetchLinks();
+        addToast({ kind: 'success', message: `${newTargets.length} link${newTargets.length > 1 ? 's' : ''} created` });
+        setSelection([source, ...pending]);
+      } catch (error: any) {
+        console.error(error);
+        if (error.message && error.message.includes('already exists')) {
+          addToast({ kind: 'warning', message: 'Some links already exist' });
+        } else {
+          addToast({ kind: 'error', message: error?.message || 'Failed to create links' });
+        }
+      }
+    } else if (source.type === 'SymbolInst' || source.type === 'CompInst' || source.type === 'Note') {
+      // Direction 2: Instance/Note (target) ← Scopes (sources)
+      // Here "pending" contains scopes that should be sources
+      const scopeTargets = pending.filter(sel => sel.type === 'Scope');
+      
+      if (scopeTargets.length === 0) {
+        addToast({ kind: 'warning', message: 'Please select at least one scope to link' });
+        return;
+      }
+      
+      // Check for existing links
+      const existingLinks = (links || [])
+        .filter((linkObj: { rel_type: string; source_id: string; target_id: string }) =>
+          linkObj.rel_type === 'JUSTIFIED_BY' &&
+          linkObj.target_id === source.id &&
+          scopeTargets.some(sel => sel.id === linkObj.source_id)
+        );
+
+      const newScopes = scopeTargets.filter(sel =>
+        !existingLinks.some((link: { source_id: string }) => link.source_id === sel.id)
+      );
+
+      if (newScopes.length === 0) {
+        addToast({ kind: 'warning', message: 'All selected scopes are already linked' });
+        cancelLinking();
+        return;
+      }
+
+      try {
+        const linkPromises = newScopes.map((sel) =>
+          apiCreateLink(projectId, {
+            rel_type: 'JUSTIFIED_BY',
+            source_id: sel.id,    // Scope is source
+            target_id: source.id,  // Instance is target
+          })
+        );
+
+        await Promise.all(linkPromises);
+        await fetchLinks();
+        addToast({ kind: 'success', message: `${newScopes.length} link${newScopes.length > 1 ? 's' : ''} created` });
+        setSelection([source, ...pending]);
+      } catch (error: any) {
+        console.error(error);
+        if (error.message && error.message.includes('already exists')) {
+          addToast({ kind: 'warning', message: 'Some links already exist' });
+        } else {
+          addToast({ kind: 'error', message: error?.message || 'Failed to create links' });
+        }
+      }
+    } else {
+      addToast({ kind: 'warning', message: 'Linking is only supported for scopes and instances' });
     }
   }, [addToast, cancelLinking, fetchLinks, finishLinking, links, projectId, setSelection]);
 
@@ -1619,6 +1699,18 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           } catch {
             patch.specifications = (entity as any).specifications ?? {};
           }
+        } else if (inlineForm.type === 'SymbolInst') {
+          // Symbol instance editing
+          if (formData.symbolDefinitionId) {
+            patch.symbol_definition_id = formData.symbolDefinitionId;
+          }
+          patch.recognized_text = formData.recognizedText ?? (entity as any).recognized_text ?? '';
+        } else if (inlineForm.type === 'CompInst') {
+          // Component instance editing
+          if (formData.componentDefinitionId) {
+            patch.component_definition_id = formData.componentDefinitionId;
+          }
+          patch.recognized_text = formData.recognizedText ?? (entity as any).recognized_text ?? '';
         } else {
           addToast({ kind: 'warning', message: 'Editing is not implemented for this entity type yet' });
           closeForm();
@@ -1629,7 +1721,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           before[key] = (entity as any)[key];
         });
         const attrSource = { ...entity, ...patch };
-        Object.assign(patch, deriveEntityFlags(entity.entity_type, attrSource));
+        Object.assign(patch, deriveEntityFlags(entity.entity_type, attrSource, links));
         try {
           await patchEntity(projectId, entity.id, patch);
           await fetchEntities();
@@ -1679,7 +1771,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           title: formData.title ?? '',
           description: formData.description ?? '',
         };
-        Object.assign(payload, deriveEntityFlags('drawing', payload));
+        Object.assign(payload, deriveEntityFlags('drawing', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1707,7 +1799,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           bounding_box: pending.bboxPdf,
           title: formData.title ?? '',
         };
-        Object.assign(payload, deriveEntityFlags('legend', payload));
+        Object.assign(payload, deriveEntityFlags('legend', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1735,7 +1827,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           bounding_box: pending.bboxPdf,
           title: formData.title ?? '',
         };
-        Object.assign(payload, deriveEntityFlags('schedule', payload));
+        Object.assign(payload, deriveEntityFlags('schedule', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1771,7 +1863,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         if (typeof formData.recognizedText === 'string' && formData.recognizedText.trim().length > 0) {
           payload.recognized_text = formData.recognizedText.trim();
         }
-        Object.assign(payload, deriveEntityFlags('symbol_instance', payload));
+        Object.assign(payload, deriveEntityFlags('symbol_instance', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1810,7 +1902,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           name: formData.name ?? '',
           description: formData.description ?? '',
         };
-        Object.assign(payload, deriveEntityFlags('scope', payload));
+        Object.assign(payload, deriveEntityFlags('scope', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1838,7 +1930,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           bounding_box: pending.bboxPdf,
           text: formData.text ?? '',
         };
-        Object.assign(payload, deriveEntityFlags('note', payload));
+        Object.assign(payload, deriveEntityFlags('note', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1869,7 +1961,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           scope: formData.scope ?? 'sheet',
           visual_pattern_description: formData.visualPatternDescription ?? '',
         };
-        Object.assign(payload, deriveEntityFlags('symbol_definition', payload));
+        Object.assign(payload, deriveEntityFlags('symbol_definition', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1936,7 +2028,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           scope: formData.scope ?? 'sheet',
           specifications,
         };
-        Object.assign(payload, deriveEntityFlags('component_definition', payload));
+        Object.assign(payload, deriveEntityFlags('component_definition', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();
@@ -1999,7 +2091,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           bounding_box: pending.bboxPdf,
           component_definition_id: componentDefinitionId,
         };
-        Object.assign(payload, deriveEntityFlags('component_instance', payload));
+        Object.assign(payload, deriveEntityFlags('component_instance', payload, null));
         try {
           const created = await createEntity(projectId, payload);
           await fetchEntities();

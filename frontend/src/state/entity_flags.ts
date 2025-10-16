@@ -5,7 +5,11 @@ const trimString = (value: unknown): string => {
   return value.trim();
 };
 
-export function deriveEntityFlags(entityType: EntityType, attrs: Record<string, any>): EntityFlags {
+export function deriveEntityFlags(
+  entityType: EntityType, 
+  attrs: Record<string, any>,
+  links?: Array<{ rel_type: string; source_id: string; target_id: string }> | null
+): EntityFlags {
   const missing: Record<'drawing' | 'definition' | 'scope', boolean> = {
     drawing: false,
     definition: false,
@@ -36,12 +40,22 @@ export function deriveEntityFlags(entityType: EntityType, attrs: Record<string, 
     }
     case 'symbol_instance': {
       missing.definition = !attrs.symbol_definition_id;
-      missing.scope = !attrs.scope_id && !attrs.scope; // placeholder until scope wiring
+      // Check for JUSTIFIED_BY link (scope -> instance) OR direct scope_id field
+      const hasDirectScope = attrs.scope_id || attrs.scope;
+      const hasScopeLink = links?.some(
+        (link) => link.rel_type === 'JUSTIFIED_BY' && link.target_id === attrs.id
+      );
+      missing.scope = !hasDirectScope && !hasScopeLink;
       break;
     }
     case 'component_instance': {
       missing.definition = !attrs.component_definition_id;
-      missing.scope = !attrs.scope_id && !attrs.scope;
+      // Check for JUSTIFIED_BY link (scope -> instance) OR direct scope_id field
+      const hasDirectScope = attrs.scope_id || attrs.scope;
+      const hasScopeLink = links?.some(
+        (link) => link.rel_type === 'JUSTIFIED_BY' && link.target_id === attrs.id
+      );
+      missing.scope = !hasDirectScope && !hasScopeLink;
       break;
     }
     default:

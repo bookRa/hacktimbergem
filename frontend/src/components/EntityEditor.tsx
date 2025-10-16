@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../state/store';
 import type { Entity } from '../api/entities';
 import { EntitySelector } from './EntitySelector';
+import { createLink as apiCreateLink } from '../api/links';
 
 interface EntityEditorProps {
   entityId: string | null;
@@ -21,6 +22,8 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     deleteLinkById,
     startLinking,
     setRightPanelTab,
+    projectId,
+    fetchLinks,
   } = useProjectStore((state: any) => ({
     entities: state.entities,
     links: state.links,
@@ -33,6 +36,8 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     deleteLinkById: state.deleteLinkById,
     startLinking: state.startLinking,
     setRightPanelTab: state.setRightPanelTab,
+    projectId: state.projectId,
+    fetchLinks: state.fetchLinks,
   }));
 
   const entity = entities.find((e: Entity) => e.id === entityId);
@@ -146,10 +151,11 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
 
   // Get linked entities/concepts
   const getLinkedItems = () => {
-    const result: { spaces: any[]; scopes: any[]; definition?: any; instances: any[] } = {
+    const result: { spaces: any[]; scopes: any[]; definition?: any; instances: any[]; evidence: any[] } = {
       spaces: [],
       scopes: [],
-      instances: []
+      instances: [],
+      evidence: []
     };
 
     // For drawings and instances - get spaces via DEPICTS/LOCATED_IN
@@ -171,7 +177,15 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     if (['symbol_instance', 'component_instance', 'note'].includes(entity.entity_type)) {
       const scopeLinks = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.target_id === entity.id);
       result.scopes = scopeLinks
-        .map((l: any) => concepts.find((c: any) => c.id === l.source_id && c.kind === 'scope'))
+        .map((l: any) => entities.find((e: Entity) => e.id === l.source_id && e.entity_type === 'scope'))
+        .filter(Boolean);
+    }
+
+    // For scopes - get linked evidence (instances/notes justified by this scope)
+    if (entity.entity_type === 'scope') {
+      const evidenceLinks = links.filter((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.source_id === entity.id);
+      result.evidence = evidenceLinks
+        .map((l: any) => entities.find((e: Entity) => e.id === l.target_id))
         .filter(Boolean);
     }
 
@@ -233,6 +247,21 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     }
   };
 
+  const unlinkEvidence = async (evidenceId: string) => {
+    const linkObj = links.find((l: any) => 
+      l.rel_type === 'JUSTIFIED_BY' && l.source_id === entity.id && l.target_id === evidenceId
+    );
+    if (linkObj) {
+      try {
+        await deleteLinkById(linkObj.id);
+        addToast({ kind: 'success', message: 'Evidence link removed' });
+      } catch (error: any) {
+        console.error(error);
+        addToast({ kind: 'error', message: error?.message || 'Failed to remove link' });
+      }
+    }
+  };
+
   const startLinkingSpace = () => {
     setShowSpaceSelector(true);
   };
@@ -264,15 +293,30 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
   const handleScopeSelected = async (scope: Entity) => {
     setShowScopeSelector(false);
     
+    if (!projectId || !entity) {
+      addToast({ kind: 'error', message: 'Missing project or entity' });
+      return;
+    }
+    
     try {
-      // Use JUSTIFIED_BY link (scope justifies this entity as evidence)
-      startLinking('JUSTIFIED_BY', { kind: 'scope', id: scope.id });
-      if (entity) {
-        addToast({ kind: 'success', message: 'Scope linked successfully' });
-      }
+      // Create JUSTIFIED_BY link (scope justifies this entity as evidence)
+      // Direction: scope (source) -> instance/note (target)
+      await apiCreateLink(projectId, {
+        rel_type: 'JUSTIFIED_BY',
+        source_id: scope.id,
+        target_id: entity.id,
+      });
+      
+      // Refresh links to update UI
+      await fetchLinks();
+      addToast({ kind: 'success', message: 'Scope linked successfully' });
     } catch (error: any) {
       console.error(error);
-      addToast({ kind: 'error', message: error?.message || 'Failed to link scope' });
+      if (error.message && error.message.includes('already exists')) {
+        addToast({ kind: 'warning', message: 'This scope is already linked' });
+      } else {
+        addToast({ kind: 'error', message: error?.message || 'Failed to link scope' });
+      }
     }
   };
 
@@ -721,7 +765,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
                           alignItems: 'center',
                           gap: 6
                         }}>
-                          {scope.description?.slice(0, 30) || scope.id.slice(0, 6)}
+                          {scope.description?.slice(0, 30) || scope.name || scope.id.slice(0, 6)}
                           <button
                             onClick={() => unlinkScope(scope.id)}
                             style={{
@@ -741,6 +785,54 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>No scopes linked</div>
+                  )}
+                </div>
+              )}
+
+              {/* Linked Evidence (for scopes) */}
+              {entity.entity_type === 'scope' && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ ...styles.label, marginBottom: 8 }}>
+                    Evidence ({linkedItems.evidence.length})
+                  </div>
+                  {linkedItems.evidence.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {linkedItems.evidence.map((ev: Entity) => (
+                        <div key={ev.id} style={{
+                          ...styles.card,
+                          padding: '8px 10px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                              {ev.entity_type === 'symbol_instance' ? 'Symbol' : 
+                               ev.entity_type === 'component_instance' ? 'Component' : 'Note'}
+                            </span>
+                            <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>
+                              #{ev.id.slice(0, 6)} • Sheet {ev.source_sheet_number}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => unlinkEvidence(ev.id)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#dc2626',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontSize: 14,
+                              fontWeight: 600
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>No evidence linked</div>
                   )}
                 </div>
               )}

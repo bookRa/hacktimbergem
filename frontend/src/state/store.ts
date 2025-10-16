@@ -762,7 +762,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 payload.component_definition_id = creatingEntity.meta?.definitionId;
             }
 
-            Object.assign(payload, deriveEntityFlags(creatingEntity.type as EntityType, payload));
+            Object.assign(payload, deriveEntityFlags(creatingEntity.type as EntityType, payload, null));
             const resp = await fetch(`/api/projects/${projectId}/entities`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });
