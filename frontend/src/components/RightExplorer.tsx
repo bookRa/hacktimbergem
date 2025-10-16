@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useProjectStore } from '../state/store';
 
 export const RightExplorer: React.FC = () => {
@@ -255,9 +255,36 @@ const SymbolsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
 };
 
 const ComponentsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
-    const { selectEntity, currentPageIndex, setCurrentPageIndex, setFocusBBox } = useProjectStore((s: any) => ({ selectEntity: s.selectEntity, currentPageIndex: s.currentPageIndex, setCurrentPageIndex: s.setCurrentPageIndex, setFocusBBox: s.setFocusBBox }));
+    const { selectEntity, currentPageIndex, setCurrentPageIndex, setFocusBBox, creatingEntity, startInstanceStamp, cancelEntityCreation } = useProjectStore((s: any) => ({ 
+        selectEntity: s.selectEntity, 
+        currentPageIndex: s.currentPageIndex, 
+        setCurrentPageIndex: s.setCurrentPageIndex, 
+        setFocusBBox: s.setFocusBBox,
+        creatingEntity: s.creatingEntity,
+        startInstanceStamp: s.startInstanceStamp,
+        cancelEntityCreation: s.cancelEntityCreation
+    }));
     const defs = entities.filter((e: any) => e.entity_type === 'component_definition');
     const schedules = entities.filter((e: any) => e.entity_type === 'schedule');
+    
+    // Keyboard shortcuts for stamping (1-9 keys)
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            const n = parseInt(e.key);
+            if (n >= 1 && n <= 9) {
+                const d = defs[n - 1];
+                if (d) { startInstanceStamp('component', d.id); e.preventDefault(); }
+            }
+            if (e.key === 'Escape') { 
+                if (creatingEntity && creatingEntity.type === 'component_instance') { 
+                    cancelEntityCreation(); 
+                }
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [defs, creatingEntity, startInstanceStamp, cancelEntityCreation]);
     const groups: Record<string, any[]> = {};
     defs.forEach(d => {
         const key = d.defined_in_id || (d.scope === 'project' ? 'Project' : `Sheet ${d.source_sheet_number}`);
@@ -265,6 +292,48 @@ const ComponentsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
     });
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
+            {/* Stamp Palette */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {defs.slice(0, 9).map((d: any, idx: number) => {
+                    const active = creatingEntity && creatingEntity.type === 'component_instance' && creatingEntity.meta?.definitionId === d.id;
+                    return (
+                        <button 
+                            key={d.id} 
+                            onClick={() => startInstanceStamp('component', d.id)} 
+                            title={`Press ${idx + 1}`} 
+                            style={{ 
+                                background: active ? '#2563eb' : '#f5f7fa', 
+                                color: active ? '#fff' : '#111', 
+                                border: '1px solid #e1e6eb', 
+                                borderRadius: 6, 
+                                padding: '4px 6px', 
+                                cursor: 'pointer',
+                                fontSize: 11,
+                                fontWeight: 500
+                            }}
+                        >
+                            [{idx + 1}] {d.name || d.id.slice(0,6)}
+                        </button>
+                    );
+                })}
+                {(creatingEntity && creatingEntity.type === 'component_instance') && (
+                    <button 
+                        onClick={() => cancelEntityCreation()} 
+                        style={{ 
+                            background: '#f59e0b', 
+                            color: '#fff', 
+                            border: 'none', 
+                            borderRadius: 6, 
+                            padding: '4px 6px', 
+                            cursor: 'pointer',
+                            fontSize: 11,
+                            fontWeight: 500
+                        }}
+                    >
+                        Cancel Stamping (Esc)
+                    </button>
+                )}
+            </div>
             {Object.keys(groups).map((k) => (
                 <div key={k} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
                     <div style={{ padding: '6px 8px', fontSize: 12, fontWeight: 600 }}>{k.startsWith('Sheet') || k==='Project' ? k : `Schedule ${k.slice(0,6)}`}</div>

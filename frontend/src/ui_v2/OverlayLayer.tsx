@@ -95,7 +95,7 @@ const entityTypeMap: Record<Entity['entity_type'], TagEntityType> = {
   component_instance: 'CompInst',
 };
 
-const formTypeByEntity: Partial<Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef'>> = {
+const formTypeByEntity: Partial<Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst'>> = {
   drawing: 'Drawing',
   legend: 'Legend',
   schedule: 'Schedule',
@@ -103,6 +103,8 @@ const formTypeByEntity: Partial<Record<Entity['entity_type'], 'Drawing' | 'Legen
   note: 'Note',
   symbol_definition: 'SymbolDef',
   component_definition: 'CompDef',
+  symbol_instance: 'SymbolInst',
+  component_instance: 'CompInst',
 };
 
 function isIncomplete(entity: Entity & { status?: string; validation?: any }): boolean {
@@ -602,6 +604,12 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         initialValues.description = (entity as any).description ?? '';
         initialValues.scope = (entity as any).scope ?? 'sheet';
         initialValues.specifications = JSON.stringify((entity as any).specifications ?? {}, null, 2);
+      } else if (entity.entity_type === 'symbol_instance') {
+        initialValues.symbolDefinitionId = (entity as any).symbol_definition_id ?? '';
+        initialValues.recognizedText = (entity as any).recognized_text ?? '';
+      } else if (entity.entity_type === 'component_instance') {
+        initialValues.componentDefinitionId = (entity as any).component_definition_id ?? '';
+        initialValues.recognizedText = (entity as any).recognized_text ?? '';
       }
       const formAt = contextMenu.at ?? { x: 0, y: 0 };
       openForm({
@@ -630,7 +638,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         addToast({ kind: 'error', message: 'Missing page metadata for duplication' });
         return;
       }
-      const SUPPORTED: Entity['entity_type'][] = ['drawing', 'legend', 'schedule', 'scope', 'note', 'symbol_definition', 'component_definition'];
+      const SUPPORTED: Entity['entity_type'][] = [
+        'drawing', 'legend', 'schedule', 'scope', 'note', 
+        'symbol_definition', 'component_definition',
+        'symbol_instance', 'component_instance'
+      ];
       if (!SUPPORTED.includes(entity.entity_type)) {
         addToast({ kind: 'warning', message: 'Duplicate is not yet supported for this entity type' });
         return;
@@ -681,6 +693,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         payload.description = (entity as any).description ?? '';
         payload.scope = (entity as any).scope ?? 'sheet';
         payload.specifications = (entity as any).specifications ?? {};
+      } else if (entity.entity_type === 'symbol_instance') {
+        // Copy definition reference and recognized text
+        // NOTE: Links (JUSTIFIED_BY to scopes) are NOT copied - user must re-link
+        payload.symbol_definition_id = (entity as any).symbol_definition_id;
+        payload.recognized_text = (entity as any).recognized_text ?? '';
+      } else if (entity.entity_type === 'component_instance') {
+        // Copy definition reference and recognized text
+        // NOTE: Links (JUSTIFIED_BY to scopes) are NOT copied - user must re-link
+        payload.component_definition_id = (entity as any).component_definition_id;
+        payload.recognized_text = (entity as any).recognized_text ?? '';
       }
 
       Object.assign(payload, deriveEntityFlags(entity.entity_type, payload, null));

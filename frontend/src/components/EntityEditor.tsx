@@ -24,6 +24,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     setRightPanelTab,
     projectId,
     fetchLinks,
+    selectEntity,
   } = useProjectStore((state: any) => ({
     entities: state.entities,
     links: state.links,
@@ -38,6 +39,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     setRightPanelTab: state.setRightPanelTab,
     projectId: state.projectId,
     fetchLinks: state.fetchLinks,
+    selectEntity: state.selectEntity,
   }));
 
   const entity = entities.find((e: Entity) => e.id === entityId);
@@ -655,8 +657,9 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
                     </span>
                     <button
                       onClick={() => {
-                        setRightPanelTab('entities');
-                        // This would ideally set the entity in the editor
+                        if (linkedItems.definition) {
+                          selectEntity(linkedItems.definition.id);
+                        }
                       }}
                       style={{ ...styles.buttonSecondary, fontSize: 11, padding: '4px 10px' }}
                     >
@@ -672,23 +675,56 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
                   <div style={{ ...styles.label, marginBottom: 8 }}>
                     Instances ({linkedItems.instances.length})
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {linkedItems.instances.slice(0, 5).map((inst: Entity) => (
-                      <div key={inst.id} style={{
-                        ...styles.card,
-                        padding: '8px 10px',
-                        fontSize: 12,
-                        color: '#475569',
-                        fontWeight: 500
-                      }}>
-                        #{inst.id.slice(0, 6)} • Sheet {inst.source_sheet_number}
-                      </div>
-                    ))}
-                    {linkedItems.instances.length > 5 && (
-                      <div style={{ fontSize: 11, color: '#64748b', padding: '4px 8px', fontStyle: 'italic' }}>
-                        ...and {linkedItems.instances.length - 5} more
-                      </div>
-                    )}
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: 6,
+                    maxHeight: '240px',
+                    overflowY: 'auto',
+                    paddingRight: 4
+                  }}>
+                    {linkedItems.instances.map((inst: Entity) => {
+                      const recognizedText = (inst as any).recognized_text;
+                      return (
+                        <div key={inst.id} style={{
+                          ...styles.card,
+                          padding: '8px 10px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          gap: 8
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: '#475569', fontWeight: 500, marginBottom: 2 }}>
+                              #{inst.id.slice(0, 6)} • Sheet {inst.source_sheet_number}
+                            </div>
+                            {recognizedText && (
+                              <div style={{ 
+                                fontSize: 11, 
+                                color: '#64748b', 
+                                fontStyle: 'italic',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}>
+                                "{recognizedText.slice(0, 40)}{recognizedText.length > 40 ? '...' : ''}"
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => selectEntity(inst.id)}
+                            style={{ 
+                              ...styles.buttonSecondary, 
+                              fontSize: 11, 
+                              padding: '4px 10px',
+                              flexShrink: 0
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -796,40 +832,76 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
                     Evidence ({linkedItems.evidence.length})
                   </div>
                   {linkedItems.evidence.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {linkedItems.evidence.map((ev: Entity) => (
-                        <div key={ev.id} style={{
-                          ...styles.card,
-                          padding: '8px 10px',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}>
-                          <div>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
-                              {ev.entity_type === 'symbol_instance' ? 'Symbol' : 
-                               ev.entity_type === 'component_instance' ? 'Component' : 'Note'}
-                            </span>
-                            <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>
-                              #{ev.id.slice(0, 6)} • Sheet {ev.source_sheet_number}
-                            </span>
+                    <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: 6,
+                      maxHeight: '240px',
+                      overflowY: 'auto',
+                      paddingRight: 4
+                    }}>
+                      {linkedItems.evidence.map((ev: Entity) => {
+                        const recognizedText = (ev as any).recognized_text;
+                        const text = (ev as any).text; // For notes
+                        const displayText = recognizedText || text;
+                        
+                        return (
+                          <div key={ev.id} style={{
+                            ...styles.card,
+                            padding: '8px 10px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            gap: 8
+                          }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ marginBottom: 2 }}>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                                  {ev.entity_type === 'symbol_instance' ? 'Symbol' : 
+                                   ev.entity_type === 'component_instance' ? 'Component' : 'Note'}
+                                </span>
+                                <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>
+                                  #{ev.id.slice(0, 6)} • Sheet {ev.source_sheet_number}
+                                </span>
+                              </div>
+                              {displayText && (
+                                <div style={{ 
+                                  fontSize: 11, 
+                                  color: '#64748b', 
+                                  fontStyle: 'italic',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}>
+                                  "{displayText.slice(0, 40)}{displayText.length > 40 ? '...' : ''}"
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                              <button
+                                onClick={() => selectEntity(ev.id)}
+                                style={{ ...styles.buttonSecondary, fontSize: 11, padding: '4px 10px' }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => unlinkEvidence(ev.id)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#dc2626',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  fontSize: 14,
+                                  fontWeight: 600
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
                           </div>
-                          <button
-                            onClick={() => unlinkEvidence(ev.id)}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: '#dc2626',
-                              cursor: 'pointer',
-                              padding: 0,
-                              fontSize: 14,
-                              fontWeight: 600
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>No evidence linked</div>
