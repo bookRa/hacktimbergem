@@ -162,6 +162,8 @@ async def patch_entity_endpoint(
         kwargs["component_definition_id"] = body["component_definition_id"]
     if "recognized_text" in body:
         kwargs["recognized_text"] = body["recognized_text"]
+    if "instantiated_in_id" in body:
+        kwargs["instantiated_in_id"] = body["instantiated_in_id"]
     if "status" in body:
         kwargs["status"] = body["status"]
     if "validation" in body:

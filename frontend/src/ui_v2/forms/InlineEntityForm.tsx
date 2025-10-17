@@ -267,7 +267,7 @@ export function InlineEntityForm({
             </div>
             {isConceptual ? (
               <TGButton
-                variant="secondary"
+                variant="outline"
                 onClick={async () => {
                   const scopeId = formData.id as string;
                   if (!scopeId) return;
@@ -288,7 +288,7 @@ export function InlineEntityForm({
               </TGButton>
             ) : (
               <TGButton
-                variant="secondary"
+                variant="outline"
                 onClick={async () => {
                   const scopeId = formData.id as string;
                   if (!scopeId) return;
@@ -396,7 +396,7 @@ export function InlineEntityForm({
         {renderTextarea('Note', 'text', 'Enter note text...')}
         
         <TGButton
-          variant="secondary"
+          variant="outline"
           onClick={handleLoadOCR}
           style={{ fontSize: 'var(--tg-font-sm)', display: 'flex', alignItems: 'center', gap: '6px' }}
         >

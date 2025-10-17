@@ -1136,7 +1136,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         if (type === 'canvas') {
             import('./ui_v2').then(({ useUIV2Store }) => {
                 const startDrawing = useUIV2Store.getState().startDrawing;
-                startDrawing('scope');
+                startDrawing('Scope');
             }).catch((err) => {
                 console.error('[startScopeCreation] Failed to import UI V2 store:', err);
             });
@@ -1160,7 +1160,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         import('./ui_v2').then(({ useUIV2Store }) => {
             const startDrawing = useUIV2Store.getState().startDrawing;
             console.log('[startAddingScopeLocation] Starting drawing mode for scope');
-            startDrawing('scope');
+            startDrawing('Scope');
         }).catch((err) => {
             console.error('[startAddingScopeLocation] Failed to import UI V2 store:', err);
         });
@@ -1316,6 +1316,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             addToast({ kind: 'error', message: e?.message || 'Failed to remove scope location' });
         }
     },
+    
     // OCR helper: Get all OCR blocks that intersect with a given bounding box
     getOCRBlocksInBBox: (pageIndex: number, bbox: [number, number, number, number]) => {
         const { pageOcr } = get() as any;

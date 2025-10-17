@@ -75,7 +75,7 @@ export const EntitySelector: React.FC<EntitySelectorProps> = ({
     const sheets: Set<number> = new Set(
       entities
         .map((e: Entity) => e.source_sheet_number)
-        .filter((s): s is number => s !== null && s !== undefined)
+        .filter((s: number | null | undefined): s is number => s !== null && s !== undefined)
     );
     return Array.from(sheets).sort((a, b) => a - b);
   }, [entities]);

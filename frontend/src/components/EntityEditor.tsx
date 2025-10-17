@@ -52,6 +52,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
   const [linkageExpanded, setLinkageExpanded] = useState(true);
   const [showSpaceSelector, setShowSpaceSelector] = useState(false);
   const [showScopeSelector, setShowScopeSelector] = useState(false);
+  const [showDrawingSelector, setShowDrawingSelector] = useState(false);
 
   useEffect(() => {
     if (!entity) {
@@ -323,6 +324,50 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
       } else {
         addToast({ kind: 'error', message: error?.message || 'Failed to link scope' });
       }
+    }
+  };
+
+  const handleDrawingSelected = async (drawing: Entity) => {
+    setShowDrawingSelector(false);
+    
+    if (!projectId || !entity) {
+      addToast({ kind: 'error', message: 'Missing project or entity' });
+      return;
+    }
+    
+    // Validate drawing is on same sheet as instance
+    if (drawing.source_sheet_number !== entity.source_sheet_number) {
+      addToast({ 
+        kind: 'error', 
+        message: `Drawing is on Sheet ${drawing.source_sheet_number}, but instance is on Sheet ${entity.source_sheet_number}. They must be on the same sheet.` 
+      });
+      return;
+    }
+    
+    try {
+      // Explicitly set instantiated_in_id to the selected drawing
+      const resp = await fetch(`/api/projects/${projectId}/entities/${entity.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instantiated_in_id: drawing.id,
+        }),
+      });
+      
+      if (!resp.ok) {
+        let msg = 'Failed to link drawing';
+        try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+        throw new Error(msg);
+      }
+      
+      // Refresh entities to see the updated instantiated_in_id
+      const { fetchEntities } = useProjectStore.getState();
+      await fetchEntities();
+      
+      addToast({ kind: 'success', message: 'Drawing linked successfully' });
+    } catch (error: any) {
+      console.error(error);
+      addToast({ kind: 'error', message: error?.message || 'Failed to link drawing' });
     }
   };
 
@@ -930,6 +975,87 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
         </div>
       </div>
 
+      {/* Drawing Linkage for Instances */}
+      {(entity.entity_type === 'symbol_instance' || entity.entity_type === 'component_instance') && (
+        <div style={{
+          padding: '16px',
+          borderTop: '1px solid #e2e8f0',
+        }}>
+          <div style={{ ...styles.label, marginBottom: 8 }}>Drawing</div>
+          {(() => {
+            const drawingId = (entity as any).instantiated_in_id;
+            const drawing = drawingId ? entities.find((e: Entity) => e.id === drawingId) : null;
+            
+            return (
+              <>
+                {drawing ? (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    background: '#f0fdf4',
+                    border: '1px solid #86efac',
+                    borderRadius: '6px',
+                    marginBottom: 8
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#166534' }}>
+                        {(drawing as any).title || 'Untitled Drawing'}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#16a34a' }}>
+                        Sheet {drawing.source_sheet_number} • #{drawing.id.slice(0, 6)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setCurrentPageIndex(drawing.source_sheet_number - 1);
+                        selectEntity(drawing.id);
+                      }}
+                      style={{
+                        ...styles.buttonSecondary,
+                        fontSize: 11,
+                        padding: '4px 8px'
+                      }}
+                    >
+                      Jump
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{
+                    padding: '8px 12px',
+                    background: '#fef9c3',
+                    border: '1px solid #fde047',
+                    borderRadius: '6px',
+                    fontSize: 11,
+                    color: '#713f12',
+                    marginBottom: 8
+                  }}>
+                    Not contained in any drawing
+                  </div>
+                )}
+                
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                  💡 Move this instance into a drawing's bounding box to auto-link, or link manually below
+                </div>
+                
+                <button
+                  onClick={() => setShowDrawingSelector(true)}
+                  style={{
+                    ...styles.buttonSecondary,
+                    fontSize: 11,
+                    padding: '6px 10px',
+                    width: '100%'
+                  }}
+                >
+                  {drawing ? '🔄 Change Drawing' : '➕ Link to Drawing'}
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Scope Conversion Buttons */}
       {entity.entity_type === 'scope' && (
         <div style={{
@@ -1048,6 +1174,16 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
           onSelect={handleScopeSelected}
           onCancel={() => setShowScopeSelector(false)}
           showSheetInfo={false}
+        />
+      )}
+
+      {showDrawingSelector && (
+        <EntitySelector
+          filterTypes={['drawing']}
+          title="Select Drawing to Link"
+          onSelect={handleDrawingSelected}
+          onCancel={() => setShowDrawingSelector(false)}
+          showSheetInfo={true}
         />
       )}
     </div>

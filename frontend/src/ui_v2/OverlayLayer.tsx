@@ -50,6 +50,21 @@ const HANDLE_CURSOR: Record<ResizeHandle, string> = {
 
 const MIN_HANDLE_SIZE = 8;
 
+// Z-order mapping: lower numbers render first (bottom layer), higher numbers render last (top layer)
+const TYPE_Z_ORDER: Record<Entity['entity_type'], number> = {
+  drawing: 0,  // Drawings at bottom (can't block clicks to instances)
+  legend: 1,
+  schedule: 1,
+  scope: 1,
+  note: 2,
+  symbol_definition: 3,
+  component_definition: 3,
+  symbol_instance: 4,  // Instances on top (must be fully clickable)
+  component_instance: 4
+};
+
+console.log('🔥🔥🔥 [OverlayLayer] Module loaded with TYPE_Z_ORDER:', TYPE_Z_ORDER);
+
 function computeResizeRect(
   start: { x: number; y: number; width: number; height: number },
   handle: ResizeHandle,
@@ -282,7 +297,19 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           isIncomplete: isIncomplete(entityWithFreshFlags as any),
         };
       })
-      .sort((a, b) => a.entity.created_at - b.entity.created_at);
+      .sort((a, b) => {
+        // Primary sort: by entity type Z-order (drawings on bottom, instances on top)
+        const za = TYPE_Z_ORDER[a.entity.entity_type] ?? 1;
+        const zb = TYPE_Z_ORDER[b.entity.entity_type] ?? 1;
+        if (za !== zb) {
+          console.log(`🔥 [Z-SORT] ${a.entity.entity_type}(z=${za}) vs ${b.entity.entity_type}(z=${zb}) => ${za < zb ? 'A first' : 'B first'}`);
+          return za - zb;
+        }
+        // Secondary sort: by creation time (older entities render first/bottom)
+        const result = a.entity.created_at - b.entity.created_at;
+        console.log(`🔥 [Z-SORT] Same z-order, time-based: ${a.entity.entity_type} created ${a.entity.created_at} vs ${b.entity.created_at} => ${result < 0 ? 'A first' : 'B first'}`);
+        return result;
+      });
   }, [entities, pageIndex, pageOcr, pagesMeta, scale, layers, links]);
 
   const entityMeta = useMemo(() => {
@@ -1576,12 +1603,12 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
         // Check if we're adding a location to an existing conceptual scope
         // (addingScopeLocationTo already declared above in debug section)
-        if (drawing.entityType === 'scope' && addingScopeLocationTo) {
+        if (drawing.entityType === 'Scope' && addingScopeLocationTo) {
           console.log('[OverlayLayer] Adding location to existing scope:', addingScopeLocationTo);
           
           // Update the scope with the new location
           const updateScopeLocation = useProjectStore.getState().updateScopeLocation;
-          updateScopeLocation(addingScopeLocationTo, sheetId, bboxPdf).then(() => {
+          updateScopeLocation(addingScopeLocationTo, Number(sheetId), bboxPdf).then(() => {
             console.log('[OverlayLayer] Scope location updated successfully');
           }).catch((err) => {
             console.error('[OverlayLayer] Failed to update scope location:', err);

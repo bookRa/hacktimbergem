@@ -148,17 +148,77 @@ class ComponentDefinition(BaseVisualEntity):
     defined_in_id: Optional[str] = None
 
 
-class SymbolInstance(BaseVisualEntity):
+class SymbolInstance(BaseModel):
+    """Symbol instance can be conceptual (no bbox) or canvas-based (with bbox).
+    
+    Conceptual instances exist in project scope without spatial location.
+    Canvas instances are placed on specific sheets within drawings.
+    """
+    id: str = Field(..., description="Server-assigned unique id")
     entity_type: Literal["symbol_instance"] = "symbol_instance"
     symbol_definition_id: str
     recognized_text: Optional[str] = None
+    
+    # Optional spatial fields (required for canvas instances, null for conceptual)
+    source_sheet_number: Optional[int] = Field(None, ge=1)
+    bounding_box: Optional[BoundingBox] = None
     instantiated_in_id: Optional[str] = None
+    
+    # Standard metadata
+    created_at: float = Field(default_factory=lambda: time.time())
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
+    
+    @model_validator(mode='after')
+    def _validate_bbox_sheet_consistency(self):  # type: ignore
+        """Ensure bbox and sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox exists, sheet must exist
+        if bbox is not None and sheet is None:
+            raise ValueError("source_sheet_number required when bounding_box is provided")
+        
+        return self
+    
+    class Config:
+        orm_mode = True
 
 
-class ComponentInstance(BaseVisualEntity):
+class ComponentInstance(BaseModel):
+    """Component instance can be conceptual (no bbox) or canvas-based (with bbox).
+    
+    Conceptual instances exist in project scope without spatial location.
+    Canvas instances are placed on specific sheets within drawings.
+    """
+    id: str = Field(..., description="Server-assigned unique id")
     entity_type: Literal["component_instance"] = "component_instance"
     component_definition_id: str
+    
+    # Optional spatial fields (required for canvas instances, null for conceptual)
+    source_sheet_number: Optional[int] = Field(None, ge=1)
+    bounding_box: Optional[BoundingBox] = None
     instantiated_in_id: Optional[str] = None
+    
+    # Standard metadata
+    created_at: float = Field(default_factory=lambda: time.time())
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
+    
+    @model_validator(mode='after')
+    def _validate_bbox_sheet_consistency(self):  # type: ignore
+        """Ensure bbox and sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox exists, sheet must exist
+        if bbox is not None and sheet is None:
+            raise ValueError("source_sheet_number required when bounding_box is provided")
+        
+        return self
+    
+    class Config:
+        orm_mode = True
 
 
 EntityUnion = Union[
@@ -261,18 +321,50 @@ class CreateComponentDefinition(CreateEntityBase):
 
 
 class CreateSymbolInstance(CreateEntityBase):
+    """Create a symbol instance - can be conceptual (no bbox) or canvas-based (with bbox)."""
     entity_type: Literal["symbol_instance"]
-    source_sheet_number: int
-    bounding_box: List[float]
+    source_sheet_number: Optional[int] = None
+    bounding_box: Optional[List[float]] = None
     symbol_definition_id: str
     recognized_text: Optional[str] = None
+    
+    @model_validator(mode='after')
+    def _validate_consistency(self):  # type: ignore
+        """Validate bbox/sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox provided, sheet must also be provided
+        if bbox is not None:
+            if sheet is None:
+                raise ValueError("source_sheet_number required when bounding_box is provided")
+            if len(bbox) != 4:
+                raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        
+        return self
 
 
 class CreateComponentInstance(CreateEntityBase):
+    """Create a component instance - can be conceptual (no bbox) or canvas-based (with bbox)."""
     entity_type: Literal["component_instance"]
-    source_sheet_number: int
-    bounding_box: List[float]
+    source_sheet_number: Optional[int] = None
+    bounding_box: Optional[List[float]] = None
     component_definition_id: str
+    
+    @model_validator(mode='after')
+    def _validate_consistency(self):  # type: ignore
+        """Validate bbox/sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox provided, sheet must also be provided
+        if bbox is not None:
+            if sheet is None:
+                raise ValueError("source_sheet_number required when bounding_box is provided")
+            if len(bbox) != 4:
+                raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        
+        return self
 
 
 CreateEntityUnion = Annotated[

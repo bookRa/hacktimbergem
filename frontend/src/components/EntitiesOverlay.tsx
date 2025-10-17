@@ -22,20 +22,25 @@ const TYPE_COLORS: Record<string, { stroke: string; fill: string; }> = {
     scope: { stroke: '#8b5cf6', fill: 'rgba(139,92,246,0.18)' }  // Canvas scopes
 };
 
-// Z-order: ensure legends/schedules are beneath their definitions so overlapping remains interactable
+// Z-order: drawings at bottom so symbols/instances can be clicked
 const TYPE_Z_ORDER: Record<string, number> = {
-    legend: 0,
-    schedule: 0,
-    drawing: 1,
-    scope: 1,  // Canvas scopes at same level as drawings
-    note: 1,
-    symbol_definition: 2,
-    component_definition: 2,
-    symbol_instance: 3,
-    component_instance: 3
+    drawing: 0,  // Drawings at bottom layer (can't block clicks)
+    legend: 1,
+    schedule: 1,
+    scope: 1,  // Canvas scopes at same level as legends/schedules
+    note: 2,
+    symbol_definition: 3,
+    component_definition: 3,
+    symbol_instance: 4,  // Instances on top (must be clickable)
+    component_instance: 4
 };
 
+// SANITY CHECK: This should print when the module loads
+console.log('🔥🔥🔥 [SANITY] EntitiesOverlay.tsx module loaded NOW', TYPE_Z_ORDER);
+
 export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef }) => {
+    // SANITY CHECK: This should print on EVERY render
+    console.log('🔥🔥🔥 [SANITY] EntitiesOverlay rendering, pageIndex:', pageIndex);
     const { entities, creatingEntity, finalizeEntityCreation, cancelEntityCreation, currentPageIndex, setRightPanelTab, selectedEntityId, setSelectedEntityId, updateEntityBBox, pageOcr, pagesMeta, toggleSelectBlock, addToast, linking, toggleLinkTarget, cancelLinking, hoverScopeId, setHoverEntityId, hoverEntityId, layers } = useProjectStore(s => ({
         entities: s.entities,
         creatingEntity: s.creatingEntity,
@@ -109,12 +114,22 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     }, [creatingEntity, cancelEntityCreation, linking, cancelLinking]);
 
     const pageEntitiesRaw = useMemo(() => {
+        console.log('🔥🔥🔥 [SANITY] useMemo running for pageIndex:', pageIndex + 1);
+        
         // Filter entities on this page AND exclude entities without bounding boxes (e.g., conceptual scopes)
         const raw = (entities as any[]).filter((e: any) => 
             e.source_sheet_number === pageIndex + 1 &&
             e.bounding_box !== null && 
             e.bounding_box !== undefined
         );
+        
+        console.log('🔥🔥🔥 [Z-ORDER] Raw entities:', raw.length);
+        console.table(raw.map((e: any) => ({
+            id: e.id.slice(0, 8),
+            type: e.entity_type,
+            created: new Date(e.created_at * 1000).toLocaleTimeString()
+        })));
+        
         // Apply layer visibility filters early
         const isVisible = (e: any) => {
             if (e.entity_type === 'drawing') return layers.drawings;
@@ -128,14 +143,30 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
         };
         const visible = raw.filter(isVisible);
         const arr = visible.slice();
-        raw.sort((a: any, b: any) => {
+        
+        console.log('🔥🔥🔥 [Z-ORDER] TYPE_Z_ORDER config:', TYPE_Z_ORDER);
+        
+        arr.sort((a: any, b: any) => {
             const za = TYPE_Z_ORDER[a.entity_type] ?? 1;
             const zb = TYPE_Z_ORDER[b.entity_type] ?? 1;
             if (za !== zb) return za - zb; // lower z drawn first, higher z on top
-            return 0;
+            // Secondary sort by creation time - older entities rendered first (on bottom)
+            const ta = a.created_at || 0;
+            const tb = b.created_at || 0;
+            return ta - tb;
         });
+        
+        console.log('🔥🔥🔥 [Z-ORDER] FINAL SORTED ORDER:');
+        console.table(arr.map((e: any, idx: number) => ({
+            renderOrder: idx,
+            id: e.id.slice(0, 8),
+            type: e.entity_type,
+            zIndex: TYPE_Z_ORDER[e.entity_type],
+            created: new Date(e.created_at * 1000).toLocaleTimeString()
+        })));
+        
         return arr;
-    }, [entities, pageIndex, layers.drawings, layers.legends, layers.schedules, layers.symbols, layers.components, layers.notes]);
+    }, [entities, pageIndex, layers.drawings, layers.legends, layers.schedules, layers.symbols, layers.components, layers.notes, layers.scopes]);
     // Convert all entity PDF-space boxes to canvas space for rendering and hit-testing
     const ocr = (pageOcr as any)?.[pageIndex];
     const meta = (pagesMeta as any)?.[pageIndex];
@@ -524,7 +555,17 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
                         <rect key={`guide-${d.id}`} x={x1 * scale} y={y1 * scale} width={(x2 - x1) * scale} height={(y2 - y1) * scale} fill={isHover ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.05)'} stroke={isHover ? '#3b82f6' : '#93c5fd'} strokeDasharray="6 4" strokeWidth={isHover ? 2 : 1} />
                     );
                 })}
-                {(visibleIds ? pageEntities.filter((e: any) => visibleIds.includes(e.id)) : pageEntities).map((e: any) => {
+                {(() => {
+                    const toRender = visibleIds ? pageEntities.filter((e: any) => visibleIds.includes(e.id)) : pageEntities;
+                    console.log('🔥🔥🔥 [Z-ORDER] ACTUAL SVG RENDER ORDER:');
+                    console.table(toRender.map((e: any, idx: number) => ({
+                        svgIndex: idx,
+                        id: e.id.slice(0, 8),
+                        type: e.entity_type,
+                        zIndex: TYPE_Z_ORDER[e.entity_type]
+                    })));
+                    return toRender;
+                })().map((e: any) => {
                     const c = TYPE_COLORS[e.entity_type] || { stroke: '#64748b', fill: 'rgba(100,116,139,0.15)' };
                     const live = editingBoxes[e.id] || { x1: e._canvas_box[0], y1: e._canvas_box[1], x2: e._canvas_box[2], y2: e._canvas_box[3] };
                     const { x1, y1, x2, y2 } = live;

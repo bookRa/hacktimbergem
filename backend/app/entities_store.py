@@ -180,16 +180,21 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
         parent = _find_intersecting_parent(entities, ent, parent_type="schedule")
         if parent:
             ent.defined_in_id = parent.id  # type: ignore
-    # For instances, auto-set instantiated_in_id by locating containing drawing
+    # For instances, auto-set instantiated_in_id by locating containing drawing (if bbox exists and drawing found)
     if getattr(ent, "entity_type", None) in {"symbol_instance", "component_instance"}:  # type: ignore
-        drawing = _find_containing_drawing(entities, ent)
-        if not drawing:
-            raise ValueError("Instance must be placed within a drawing on the same sheet")
-        data = ent.dict()
-        data["instantiated_in_id"] = drawing.id  # type: ignore
-        ent_cls = SymbolInstance if ent.entity_type == "symbol_instance" else ComponentInstance  # type: ignore
-        ent = ent_cls(**data)
-        entities[-1] = ent
+        bbox = getattr(ent, "bounding_box", None)
+        if bbox is not None:
+            # Canvas-based instance: try to find containing drawing
+            drawing = _find_containing_drawing(entities, ent)
+            if drawing:
+                # Found a containing drawing - set the reference
+                data = ent.dict()
+                data["instantiated_in_id"] = drawing.id  # type: ignore
+                ent_cls = SymbolInstance if ent.entity_type == "symbol_instance" else ComponentInstance  # type: ignore
+                ent = ent_cls(**data)
+                entities[-1] = ent
+            # If no drawing found, instantiated_in_id remains None (instance is on canvas but not in a drawing)
+        # Conceptual instance (no bbox): instantiated_in_id remains None
 
     save_entities(project_id, entities)
     return ent
@@ -215,6 +220,7 @@ def update_entity(
     symbol_definition_id: str | None = None,
     component_definition_id: str | None = None,
     recognized_text: str | None = None,
+    instantiated_in_id: str | None = _NOT_PROVIDED,  # type: ignore  # Manual drawing link for instances
     status: str | None = None,
     validation: dict | ValidationInfo | None = None,
 ) -> EntityUnion:
@@ -304,7 +310,7 @@ def update_entity(
     cls = cls_map[data["entity_type"]]
     updated = cls(**data)
     entities[idx] = updated
-    # Instances: allow meta updates and ensure they remain inside a drawing
+    # Instances: allow meta updates and optionally recompute drawing containment
     if data["entity_type"] in {"symbol_instance", "component_instance"}:
         # Update linked fields if provided
         if data["entity_type"] == "symbol_instance":
@@ -312,8 +318,10 @@ def update_entity(
                 sym_def = _get_entity_by_id(entities, symbol_definition_id)
                 if not sym_def or getattr(sym_def, "entity_type", None) != "symbol_definition":
                     raise ValueError("symbol_definition_id not found")
-                if getattr(sym_def, "scope", "sheet") == "sheet" and getattr(sym_def, "source_sheet_number", None) != data["source_sheet_number"]:
-                    raise ValueError("SymbolDefinition scope is 'sheet' and must be used on the same sheet")
+                # Only validate sheet match if instance has a sheet
+                if data.get("source_sheet_number") is not None:
+                    if getattr(sym_def, "scope", "sheet") == "sheet" and getattr(sym_def, "source_sheet_number", None) != data["source_sheet_number"]:
+                        raise ValueError("SymbolDefinition scope is 'sheet' and must be used on the same sheet")
                 data["symbol_definition_id"] = symbol_definition_id
             if recognized_text is not None:
                 data["recognized_text"] = recognized_text
@@ -322,17 +330,40 @@ def update_entity(
                 comp_def = _get_entity_by_id(entities, component_definition_id)
                 if not comp_def or getattr(comp_def, "entity_type", None) != "component_definition":
                     raise ValueError("component_definition_id not found")
-                    
-                if getattr(comp_def, "scope", "sheet") == "sheet" and getattr(comp_def, "source_sheet_number", None) != data["source_sheet_number"]:
-                    raise ValueError("ComponentDefinition scope is 'sheet' and must be used on the same sheet")
+                # Only validate sheet match if instance has a sheet
+                if data.get("source_sheet_number") is not None:
+                    if getattr(comp_def, "scope", "sheet") == "sheet" and getattr(comp_def, "source_sheet_number", None) != data["source_sheet_number"]:
+                        raise ValueError("ComponentDefinition scope is 'sheet' and must be used on the same sheet")
                 data["component_definition_id"] = component_definition_id
-        # Recompute instantiated_in_id from (possibly new) bbox
-        temp_cls = cls_map[data["entity_type"]]
-        temp_ent = temp_cls(**data)
-        drawing = _find_containing_drawing(entities, temp_ent)
-        if not drawing:
-            raise ValueError("Instance must be placed within a drawing on the same sheet")
-        data["instantiated_in_id"] = drawing.id
+        
+        # Handle instantiated_in_id (drawing linkage)
+        if instantiated_in_id is not _NOT_PROVIDED:
+            # Manual drawing link provided - validate and use it
+            if instantiated_in_id is not None:
+                drawing = _get_entity_by_id(entities, instantiated_in_id)
+                if not drawing or getattr(drawing, "entity_type", None) != "drawing":
+                    raise ValueError("instantiated_in_id must reference a valid drawing")
+                # Validate same sheet
+                if getattr(drawing, "source_sheet_number", None) != data.get("source_sheet_number"):
+                    raise ValueError("Instance and drawing must be on the same sheet")
+            data["instantiated_in_id"] = instantiated_in_id
+        else:
+            # Auto-compute instantiated_in_id from bbox if not manually provided
+            if data.get("bounding_box") is not None:
+                # Canvas-based instance: try to find containing drawing
+                temp_cls = cls_map[data["entity_type"]]
+                temp_ent = temp_cls(**data)
+                drawing = _find_containing_drawing(entities, temp_ent)
+                if drawing:
+                    # Found a containing drawing - set the reference
+                    data["instantiated_in_id"] = drawing.id
+                else:
+                    # No drawing found - instance is on canvas but not in a drawing
+                    data["instantiated_in_id"] = None
+            else:
+                # Conceptual instance: clear instantiated_in_id
+                data["instantiated_in_id"] = None
+        
         # Rebuild updated entity and persist
         updated = cls_map[data["entity_type"]](**data)
         entities[idx] = updated
