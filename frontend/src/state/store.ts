@@ -175,6 +175,8 @@ interface AppState {
     createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<void>;
     updateScopeLocation: (scopeId: string, sheet: number, bbox: number[]) => Promise<void>;
     removeScopeLocation: (scopeId: string) => Promise<void>;
+    // OCR helpers
+    getOCRBlocksInBBox: (pageIndex: number, bbox: [number, number, number, number]) => Array<{ index: number; text: string; bbox: [number, number, number, number] }>;
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
@@ -1313,5 +1315,40 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             console.error('[removeScopeLocation] Error:', e);
             addToast({ kind: 'error', message: e?.message || 'Failed to remove scope location' });
         }
+    },
+    // OCR helper: Get all OCR blocks that intersect with a given bounding box
+    getOCRBlocksInBBox: (pageIndex: number, bbox: [number, number, number, number]) => {
+        const { pageOcr } = get() as any;
+        const ocr = pageOcr[pageIndex];
+        
+        if (!ocr || !Array.isArray(ocr)) {
+            console.log('[getOCRBlocksInBBox] No OCR data for page', pageIndex);
+            return [];
+        }
+        
+        const [x1, y1, x2, y2] = bbox;
+        const blocksInBBox: Array<{ index: number; text: string; bbox: [number, number, number, number] }> = [];
+        
+        for (let i = 0; i < ocr.length; i++) {
+            const block = ocr[i];
+            if (!block.bbox || block.bbox.length !== 4) continue;
+            
+            const [bx1, by1, bx2, by2] = block.bbox;
+            
+            // Check if block intersects with note bbox
+            // Two rectangles intersect if they don't NOT overlap
+            const intersects = !(bx2 < x1 || bx1 > x2 || by2 < y1 || by1 > y2);
+            
+            if (intersects && block.text && block.text.trim()) {
+                blocksInBBox.push({ 
+                    index: i, 
+                    text: block.text.trim(), 
+                    bbox: [bx1, by1, bx2, by2] 
+                });
+            }
+        }
+        
+        console.log(`[getOCRBlocksInBBox] Found ${blocksInBBox.length} OCR blocks in bbox`, { pageIndex, bbox, blocks: blocksInBBox });
+        return blocksInBBox;
     },
 }));

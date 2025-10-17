@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react';
 import '../theme/tokens.css';
 import { TGCard } from '../../ui_primitives/card';
 import { TGInput } from '../../ui_primitives/input';
-import { TGScrollArea } from '../../ui_primitives/scroll-area';
 import { cx } from '../utils/classNames';
 
 type EntityDescriptor = {
   type: string;
   label: string;
   description: string;
+  tooltip: string;
   icon: () => JSX.Element;
 };
 
@@ -86,16 +86,76 @@ const BoxIcon = () => (
 );
 
 const entityTypes: EntityDescriptor[] = [
-  { type: 'Drawing', label: 'Drawing', description: 'Architectural drawing or plan', icon: TriangleIcon },
-  { type: 'Legend', label: 'Legend', description: 'Symbol legend or key', icon: SquareIcon },
-  { type: 'Schedule', label: 'Schedule', description: 'Schedule or table', icon: CalendarIcon },
-  { type: 'Note', label: 'Note', description: 'Text note or annotation', icon: NoteIcon },
-  { type: 'Space', label: 'Space', description: 'Room or space boundary', icon: HomeIcon },
-  { type: 'Symbol Instance', label: 'Symbol Instance', description: 'Instance of a symbol', icon: ComponentIcon },
-  { type: 'Component Instance', label: 'Component Instance', description: 'Instance of a component', icon: CopyIcon },
-  { type: 'Symbol Definition', label: 'Symbol Definition', description: 'Symbol definition', icon: ShapesIcon },
-  { type: 'Component Definition', label: 'Component Definition', description: 'Component definition', icon: BoxIcon },
-  { type: 'Scope', label: 'Scope', description: 'Work scope or trade', icon: ComponentIcon },
+  { 
+    type: 'Drawing', 
+    label: 'Drawing', 
+    description: 'Drawing', 
+    tooltip: 'Architectural drawing, plan, elevation, or section view',
+    icon: TriangleIcon 
+  },
+  { 
+    type: 'Legend', 
+    label: 'Legend', 
+    description: 'Legend', 
+    tooltip: 'Symbol legend or key that explains drawing symbols',
+    icon: SquareIcon 
+  },
+  { 
+    type: 'Schedule', 
+    label: 'Schedule', 
+    description: 'Schedule', 
+    tooltip: 'Schedule table (door/window/finish schedule, etc.)',
+    icon: CalendarIcon 
+  },
+  { 
+    type: 'Note', 
+    label: 'Note', 
+    description: 'Note', 
+    tooltip: 'Text annotation, general note, or specification callout',
+    icon: NoteIcon 
+  },
+  { 
+    type: 'Space', 
+    label: 'Space', 
+    description: 'Space', 
+    tooltip: 'Room or space boundary with area and occupancy info',
+    icon: HomeIcon 
+  },
+  { 
+    type: 'Symbol Instance', 
+    label: 'Symbol', 
+    description: 'Symbol', 
+    tooltip: 'Instance of a symbol (door, window, fixture) placed on drawing',
+    icon: ComponentIcon 
+  },
+  { 
+    type: 'Component Instance', 
+    label: 'Component', 
+    description: 'Component', 
+    tooltip: 'Instance of a component (equipment, furniture) placed on drawing',
+    icon: CopyIcon 
+  },
+  { 
+    type: 'Symbol Definition', 
+    label: 'Symbol Def', 
+    description: 'Symbol Definition', 
+    tooltip: 'Symbol definition that defines keynote symbols used across drawings',
+    icon: ShapesIcon 
+  },
+  { 
+    type: 'Component Definition', 
+    label: 'Component Def', 
+    description: 'Component Definition', 
+    tooltip: 'Component definition that defines equipment/furniture types',
+    icon: BoxIcon 
+  },
+  { 
+    type: 'Scope', 
+    label: 'Scope', 
+    description: 'Scope', 
+    tooltip: 'Work scope or trade area (demolition, electrical, plumbing, etc.)',
+    icon: ComponentIcon 
+  },
 ];
 
 export type ContextPickerPlacement = 'top' | 'bottom' | 'left' | 'right';
@@ -121,6 +181,8 @@ export function ContextPicker({
   onClose,
 }: ContextPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
 
   const filteredTypes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -142,87 +204,173 @@ export function ContextPicker({
         style={{
           position: 'absolute',
           zIndex: 50,
-          padding: '16px',
-          width: '320px',
+          padding: '12px',
+          width: '380px',
           left: x,
           top: y,
           boxShadow: '0 12px 32px rgba(15, 23, 42, 0.18)',
           borderColor: 'var(--tg-border)',
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ position: 'relative' }}>
-            <span
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* Optional Search - show only if user clicks search icon or starts typing */}
+          {showSearch && (
+            <div style={{ position: 'relative' }}>
+              <span
+                style={{
+                  position: 'absolute',
+                  left: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--tg-muted)',
+                  display: 'inline-flex',
+                }}
+              >
+                <SearchIcon />
+              </span>
+              <TGInput
+                placeholder="Filter..."
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                autoFocus
+                style={{
+                  paddingLeft: '28px',
+                  fontSize: 'var(--tg-font-xs)',
+                  height: '28px',
+                  backgroundColor: 'var(--tg-panel)',
+                  borderColor: 'var(--tg-border)',
+                }}
+              />
+            </div>
+          )}
+
+          {/* 2-column grid layout */}
+          <div 
+            style={{ 
+              display: 'grid', 
+              gridTemplateColumns: '1fr 1fr',
+              gap: '4px',
+            }}
+          >
+            {filteredTypes.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.type}
+                  type="button"
+                  className="tg-ui2"
+                  style={{
+                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '14px 8px',
+                    borderRadius: 'var(--tg-radius-sm)',
+                    border: '1px solid var(--tg-border)',
+                    background: hoveredItem === item.type ? 'var(--tg-panel)' : 'transparent',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => {
+                    onSelect?.(item.type);
+                    onClose?.();
+                  }}
+                  onMouseEnter={() => setHoveredItem(item.type)}
+                  onMouseLeave={() => setHoveredItem(null)}
+                >
+                  <span 
+                    style={{ 
+                      color: 'var(--tg-accent)', 
+                      display: 'inline-flex',
+                      fontSize: '18px',
+                    }}
+                  >
+                    <Icon />
+                  </span>
+                  <span 
+                    style={{ 
+                      color: 'var(--tg-text)', 
+                      fontSize: 'var(--tg-font-xs)', 
+                      fontWeight: 500,
+                      textAlign: 'center',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {item.label}
+                  </span>
+
+                  {/* Tooltip on hover */}
+                  {hoveredItem === item.type && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: '100%',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        marginBottom: '6px',
+                        padding: '8px 12px',
+                        backgroundColor: 'var(--tg-panel-elevated)',
+                        border: '1px solid var(--tg-border)',
+                        borderRadius: 'var(--tg-radius-sm)',
+                        color: 'var(--tg-text)',
+                        fontSize: 'var(--tg-font-xs)',
+                        lineHeight: 1.4,
+                        whiteSpace: 'normal',
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                        zIndex: 100,
+                        pointerEvents: 'none',
+                        maxWidth: '220px',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {item.tooltip}
+                      {/* Tooltip arrow */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: 0,
+                          height: 0,
+                          borderLeft: '5px solid transparent',
+                          borderRight: '5px solid transparent',
+                          borderTop: '5px solid var(--tg-panel-elevated)',
+                        }}
+                      />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search toggle button */}
+          {!showSearch && (
+            <button
+              type="button"
+              className="tg-ui2"
+              onClick={() => setShowSearch(true)}
               style={{
-                position: 'absolute',
-                left: '10px',
-                top: '50%',
-                transform: 'translateY(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '6px',
+                borderRadius: 'var(--tg-radius-sm)',
+                border: '1px solid var(--tg-border)',
+                background: 'transparent',
                 color: 'var(--tg-muted)',
-                display: 'inline-flex',
+                fontSize: 'var(--tg-font-xs)',
+                cursor: 'pointer',
               }}
             >
               <SearchIcon />
-            </span>
-            <TGInput
-              placeholder="Search entity types..."
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              style={{
-                paddingLeft: '32px',
-                backgroundColor: 'var(--tg-panel)',
-                borderColor: 'var(--tg-border)',
-              }}
-            />
-          </div>
-
-          <TGScrollArea style={{ maxHeight: '260px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {filteredTypes.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.type}
-                    type="button"
-                    className="tg-ui2"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px',
-                      borderRadius: 'var(--tg-radius-sm)',
-                      border: '1px solid transparent',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                    onClick={() => {
-                      onSelect?.(item.type);
-                      onClose?.();
-                    }}
-                    onMouseEnter={(event) => {
-                      (event.currentTarget.style.backgroundColor = 'var(--tg-panel)');
-                    }}
-                    onMouseLeave={(event) => {
-                      event.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    <span style={{ color: 'var(--tg-accent)', display: 'inline-flex' }}>
-                      <Icon />
-                    </span>
-                    <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ color: 'var(--tg-text)', fontSize: 'var(--tg-font-sm)', fontWeight: 500 }}>
-                        {item.label}
-                      </span>
-                      <span style={{ color: 'var(--tg-muted)', fontSize: 'var(--tg-font-xs)' }}>
-                        {item.description}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </TGScrollArea>
+              <span>Search</span>
+            </button>
+          )}
         </div>
       </TGCard>
     </>

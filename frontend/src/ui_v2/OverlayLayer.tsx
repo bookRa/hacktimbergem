@@ -478,7 +478,19 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       mode: inlineForm.mode,
       entityId: inlineForm.entityId,
     };
-    startOCRSelection('recognizedText', formContext);
+    
+    // Determine target field based on form type
+    let targetField: 'recognizedText' | 'name' | 'description' | 'text' = 'recognizedText';
+    if (inlineForm.type === 'Note') {
+      targetField = 'text';
+    }
+    
+    console.log('[handleOpenOCRPicker] Starting OCR selection', {
+      formType: inlineForm.type,
+      targetField,
+    });
+    
+    startOCRSelection(targetField, formContext);
   }, [layers.ocr, setLayer, minimizeForm, startOCRSelection, inlineForm]);
 
   const handleApplyOCRSelection = useCallback(() => {

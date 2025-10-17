@@ -39,7 +39,7 @@ type OCRPickerState = {
 type OCRSelectionMode = {
   active: boolean;
   selectedBlocks: Array<{ pageIndex: number; blockIndex: number; text: string; bbox: [number, number, number, number] }>;
-  targetField: 'recognizedText' | 'name' | 'description';
+  targetField: 'recognizedText' | 'name' | 'description' | 'text';
   formContext?: {
     type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
     at?: { x: number; y: number };
@@ -80,7 +80,7 @@ type UIActions = {
   cancelDrawing: () => void;
   openOCRPicker: (pageIndex: number, onSelect: (block: OCRBlock) => void) => void;
   closeOCRPicker: () => void;
-  startOCRSelection: (targetField: 'recognizedText' | 'name' | 'description', formContext: OCRSelectionMode['formContext']) => void;
+  startOCRSelection: (targetField: 'recognizedText' | 'name' | 'description' | 'text', formContext: OCRSelectionMode['formContext']) => void;
   toggleOCRBlock: (pageIndex: number, blockIndex: number, text: string, bbox: [number, number, number, number]) => void;
   applyOCRSelection: () => { text: string; formContext: OCRSelectionMode['formContext'] } | null;
   cancelOCRSelection: () => void;

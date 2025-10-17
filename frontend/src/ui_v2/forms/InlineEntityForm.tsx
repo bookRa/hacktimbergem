@@ -97,12 +97,20 @@ export function InlineEntityForm({
   // Merge OCR text into existing formData without resetting other fields
   useEffect(() => {
     if (ocrTextToMerge && open) {
+      // Determine which field to update based on variant
+      let fieldName = 'recognizedText'; // Default for Symbol/Component instances
+      if (variant === 'NoteForm') {
+        fieldName = 'text';
+      }
+      
       setFormData((prev) => ({
         ...prev,
-        recognizedText: ocrTextToMerge,
+        [fieldName]: ocrTextToMerge,
       }));
+      
+      console.log(`[InlineEntityForm] OCR text merged into ${fieldName} field:`, ocrTextToMerge);
     }
-  }, [ocrTextToMerge, open]);
+  }, [ocrTextToMerge, open, variant]);
 
   // Add escape key handler to close form
   useEffect(() => {
@@ -305,11 +313,98 @@ export function InlineEntityForm({
     );
   };
 
-  const renderNoteForm = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {renderTextarea('Note', 'text', 'Enter note text...')}
-    </div>
-  );
+  const renderNoteForm = () => {
+    const handleLoadOCR = async () => {
+      try {
+        // Get both stores
+        const { useUIV2Store } = await import('../../state/ui_v2');
+        const { useProjectStore } = await import('../../state/store');
+        
+        const uiStore = useUIV2Store.getState();
+        const projectStore = useProjectStore.getState();
+        
+        // Try to get pendingBBox from UI V2 store
+        const inlineFormState = uiStore.inlineForm;
+        const pendingBBox = inlineFormState.pendingBBox;
+        
+        console.log('[Note OCR] Auto-load triggered', {
+          hasPendingBBox: !!pendingBBox,
+          pendingBBox,
+          currentPageIndex: projectStore.currentPageIndex,
+        });
+        
+        if (!pendingBBox || !pendingBBox.bboxPdf) {
+          console.warn('[Note OCR] No pending bbox available, falling back to manual selection');
+          // Fallback to manual OCR selection
+          if (onCreateFromOCR) {
+            onCreateFromOCR();
+          }
+          return;
+        }
+        
+        const currentPageIndex = projectStore.currentPageIndex;
+        const bbox = pendingBBox.bboxPdf as [number, number, number, number];
+        
+        console.log('[Note OCR] Attempting auto-detection', {
+          pageIndex: currentPageIndex,
+          bbox,
+          bboxArea: (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]),
+        });
+        
+        // Find OCR blocks within the note's bbox
+        const blocks = projectStore.getOCRBlocksInBBox(currentPageIndex, bbox);
+        
+        console.log('[Note OCR] Auto-detection result:', {
+          blocksFound: blocks.length,
+          blocks: blocks.map(b => ({ text: b.text.substring(0, 50), bbox: b.bbox })),
+        });
+        
+        if (blocks.length === 0) {
+          console.log('[Note OCR] No OCR blocks found, falling back to manual selection');
+          projectStore.addToast({ 
+            kind: 'info', 
+            message: 'No OCR found in this area. Click blocks manually to select them.' 
+          });
+          // Fallback to manual OCR selection
+          if (onCreateFromOCR) {
+            onCreateFromOCR();
+          }
+          return;
+        }
+        
+        // Concatenate all OCR blocks with line breaks (notes are multi-line)
+        const concatenatedText = blocks
+          .map(b => b.text)
+          .join('\n');
+        
+        console.log('[Note OCR] Auto-populated text field:', concatenatedText);
+        
+        // Update the text field
+        updateField('text', concatenatedText);
+        
+        projectStore.addToast({ 
+          kind: 'success', 
+          message: `Loaded ${blocks.length} OCR block${blocks.length > 1 ? 's' : ''}` 
+        });
+      } catch (error) {
+        console.error('[Note OCR] Error loading OCR:', error);
+      }
+    };
+    
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderTextarea('Note', 'text', 'Enter note text...')}
+        
+        <TGButton
+          variant="secondary"
+          onClick={handleLoadOCR}
+          style={{ fontSize: 'var(--tg-font-sm)', display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          📄 Load OCR from Canvas
+        </TGButton>
+      </div>
+    );
+  };
 
   const renderSymbolDefinitionForm = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
