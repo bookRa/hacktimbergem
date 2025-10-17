@@ -18,7 +18,8 @@ const TYPE_COLORS: Record<string, { stroke: string; fill: string; }> = {
     symbol_definition: { stroke: '#06b6d4', fill: 'rgba(6,182,212,0.18)' },
     component_definition: { stroke: '#a78bfa', fill: 'rgba(167,139,250,0.18)' },
     symbol_instance: { stroke: '#f59e0b', fill: 'rgba(242, 242, 6, 0.22)' },
-    component_instance: { stroke: '#fb923c', fill: 'rgba(245, 172, 0, 0.31)' }
+    component_instance: { stroke: '#fb923c', fill: 'rgba(245, 172, 0, 0.31)' },
+    scope: { stroke: '#8b5cf6', fill: 'rgba(139,92,246,0.18)' }  // Canvas scopes
 };
 
 // Z-order: ensure legends/schedules are beneath their definitions so overlapping remains interactable
@@ -26,6 +27,7 @@ const TYPE_Z_ORDER: Record<string, number> = {
     legend: 0,
     schedule: 0,
     drawing: 1,
+    scope: 1,  // Canvas scopes at same level as drawings
     note: 1,
     symbol_definition: 2,
     component_definition: 2,
@@ -107,7 +109,12 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
     }, [creatingEntity, cancelEntityCreation, linking, cancelLinking]);
 
     const pageEntitiesRaw = useMemo(() => {
-        const raw = (entities as any[]).filter((e: any) => e.source_sheet_number === pageIndex + 1);
+        // Filter entities on this page AND exclude entities without bounding boxes (e.g., conceptual scopes)
+        const raw = (entities as any[]).filter((e: any) => 
+            e.source_sheet_number === pageIndex + 1 &&
+            e.bounding_box !== null && 
+            e.bounding_box !== undefined
+        );
         // Apply layer visibility filters early
         const isVisible = (e: any) => {
             if (e.entity_type === 'drawing') return layers.drawings;
@@ -116,6 +123,7 @@ export const EntitiesOverlay: React.FC<Props> = ({ pageIndex, scale, wrapperRef 
             if (e.entity_type === 'symbol_definition' || e.entity_type === 'symbol_instance') return layers.symbols;
             if (e.entity_type === 'component_definition' || e.entity_type === 'component_instance') return layers.components;
             if (e.entity_type === 'note') return layers.notes;
+            if (e.entity_type === 'scope') return layers.scopes;  // Canvas scopes only (conceptual already filtered)
             return true;
         };
         const visible = raw.filter(isVisible);

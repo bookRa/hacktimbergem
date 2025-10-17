@@ -6,8 +6,8 @@ The `entity_type` field is the discriminator enabling future extension.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, validator
-from typing import Literal, List, Union, Optional, Dict, Any
+from pydantic import BaseModel, Field, validator, Discriminator, model_validator
+from typing import Literal, List, Union, Optional, Dict, Any, Annotated
 import time
 
 
@@ -108,13 +108,13 @@ class Scope(BaseModel):
     status: Optional[StatusLiteral] = None
     validation: Optional[ValidationInfo] = None
     
-    @validator('bounding_box', always=True)
-    def _validate_bbox_sheet_consistency(cls, v, values):  # type: ignore
+    @model_validator(mode='after')
+    def _validate_bbox_sheet_consistency(self):  # type: ignore
         """Ensure bbox and sheet consistency, and that conceptual scopes have meaningful content."""
-        bbox = v
-        sheet = values.get('source_sheet_number')
-        name = values.get('name')
-        desc = values.get('description')
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        name = self.name
+        desc = self.description
         
         # If bbox exists, sheet must exist
         if bbox is not None and sheet is None:
@@ -124,7 +124,7 @@ class Scope(BaseModel):
         if bbox is None and not name and not desc:
             raise ValueError("name or description required for conceptual scopes (scopes without bounding box)")
         
-        return v
+        return self
     
     class Config:
         orm_mode = True
@@ -216,13 +216,13 @@ class CreateScope(CreateEntityBase):
     name: str | None = None
     description: str | None = None
     
-    @validator('bounding_box', always=True)
-    def _validate_consistency(cls, v, values):  # type: ignore
+    @model_validator(mode='after')
+    def _validate_consistency(self):  # type: ignore
         """Validate bbox/sheet consistency and ensure meaningful content."""
-        bbox = v
-        sheet = values.get('source_sheet_number')
-        name = values.get('name')
-        desc = values.get('description')
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        name = self.name
+        desc = self.description
         
         # If bbox provided, sheet must also be provided
         if bbox is not None:
@@ -235,7 +235,7 @@ class CreateScope(CreateEntityBase):
         if bbox is None and not name and not desc:
             raise ValueError("name or description required for conceptual scopes (scopes without bounding box)")
         
-        return v
+        return self
 
 
 class CreateSymbolDefinition(CreateEntityBase):
@@ -275,16 +275,19 @@ class CreateComponentInstance(CreateEntityBase):
     component_definition_id: str
 
 
-CreateEntityUnion = Union[
-    CreateDrawing,
-    CreateLegend,
-    CreateSchedule,
-    CreateNote,
-    CreateScope,
-    CreateSymbolDefinition,
-    CreateComponentDefinition,
-    CreateSymbolInstance,
-    CreateComponentInstance,
+CreateEntityUnion = Annotated[
+    Union[
+        CreateDrawing,
+        CreateLegend,
+        CreateSchedule,
+        CreateNote,
+        CreateScope,
+        CreateSymbolDefinition,
+        CreateComponentDefinition,
+        CreateSymbolInstance,
+        CreateComponentInstance,
+    ],
+    Field(discriminator='entity_type')
 ]
 
 __all__ = [

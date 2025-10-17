@@ -25,6 +25,8 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     projectId,
     fetchLinks,
     selectEntity,
+    updateScopeLocation,
+    removeScopeLocation,
   } = useProjectStore((state: any) => ({
     entities: state.entities,
     links: state.links,
@@ -40,6 +42,8 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     projectId: state.projectId,
     fetchLinks: state.fetchLinks,
     selectEntity: state.selectEntity,
+    updateScopeLocation: state.updateScopeLocation,
+    removeScopeLocation: state.removeScopeLocation,
   }));
 
   const entity = entities.find((e: Entity) => e.id === entityId);
@@ -428,17 +432,30 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
             </span>
             <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>#{entity.id.slice(0, 6)}</span>
           </div>
-          <div style={{ fontSize: 12, color: '#475569', marginTop: 6, fontWeight: 500 }}>
-            Sheet {entity.source_sheet_number}
-            {isOnDifferentSheet && (
-              <button 
-                onClick={jumpToEntity}
-                style={{ ...styles.buttonSecondary, marginLeft: 10, fontSize: 11, padding: '4px 10px' }}
-              >
-                Jump to Sheet
-              </button>
-            )}
-          </div>
+          
+          {/* Sheet Number - Only show if exists */}
+          {entity.source_sheet_number && (
+            <div style={{ fontSize: 12, color: '#475569', marginTop: 6, fontWeight: 500 }}>
+              Sheet {entity.source_sheet_number}
+              {isOnDifferentSheet && (
+                <button 
+                  onClick={jumpToEntity}
+                  style={{ ...styles.buttonSecondary, marginLeft: 10, fontSize: 11, padding: '4px 10px' }}
+                >
+                  Jump to Sheet
+                </button>
+              )}
+            </div>
+          )}
+          
+          {/* Scope Type Indicator */}
+          {entity.entity_type === 'scope' && (
+            <div style={{ fontSize: 12, marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontWeight: 500, color: '#334155' }}>
+                {entity.bounding_box ? '📍 Canvas Scope' : '💭 Conceptual Scope'}
+              </span>
+            </div>
+          )}
         </div>
         <button onClick={onClose} style={{ ...styles.buttonSecondary, padding: '6px 10px', fontSize: 14 }}>✕</button>
       </div>
@@ -912,6 +929,70 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
           )}
         </div>
       </div>
+
+      {/* Scope Conversion Buttons */}
+      {entity.entity_type === 'scope' && (
+        <div style={{
+          padding: '16px',
+          borderTop: '1px solid #e2e8f0',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10
+        }}>
+          {!entity.bounding_box ? (
+            // Conceptual → Canvas: Add location
+            <button
+              onClick={async () => {
+                const scopeId = entity.id;
+                if (!scopeId) return;
+                
+                // Start drawing mode for adding location to this scope
+                const startAddingScopeLocation = useProjectStore.getState().startAddingScopeLocation;
+                startAddingScopeLocation(scopeId);
+                
+                // Optionally close the Entity Tab or minimize it
+                // For now, just notify the user
+                addToast({ 
+                  kind: 'info', 
+                  message: 'Draw a bounding box on the canvas to add a location to this scope' 
+                });
+              }}
+              style={{
+                ...styles.button(false),
+                background: '#f0f9ff',
+                color: '#0369a1',
+                border: '1px solid #bae6fd',
+              }}
+              title="Add a canvas location to this conceptual scope"
+            >
+              + Add Canvas Location
+            </button>
+          ) : (
+            // Canvas → Conceptual: Remove location
+            <button
+              onClick={async () => {
+                if (entity.id) {
+                  // Remove location (has confirmation dialog built-in)
+                  await removeScopeLocation(entity.id);
+                  
+                  // Note: removeScopeLocation already calls fetchEntities(),
+                  // which updates the entities array and triggers a re-render
+                  // No need for manual refresh - React will update automatically
+                }
+              }}
+              style={{
+                ...styles.button(false),
+                background: '#fef2f2',
+                color: '#dc2626',
+                border: '1px solid #fecaca',
+              }}
+              title="Remove canvas location (converts to conceptual scope)"
+            >
+              Remove Canvas Location
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Footer Actions */}
       <div style={{ 

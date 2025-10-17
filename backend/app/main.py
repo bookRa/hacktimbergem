@@ -104,15 +104,16 @@ async def list_entities(project_id: str):
 async def create_entity_endpoint(project_id: str, body: CreateEntityUnion):
     if not read_manifest(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
-    # Validate bounding_box basic structure before delegate (length numeric is revalidated there too)
-    if len(body.bounding_box) != 4:
-        raise HTTPException(status_code=422, detail="bounding_box must have 4 numbers")
-    try:
-        _ = [float(v) for v in body.bounding_box]
-    except Exception:
-        raise HTTPException(
-            status_code=422, detail="bounding_box values must be numeric"
-        )
+    # Validate bounding_box basic structure if present (conceptual scopes may not have bbox)
+    if hasattr(body, 'bounding_box') and body.bounding_box is not None:
+        if len(body.bounding_box) != 4:
+            raise HTTPException(status_code=422, detail="bounding_box must have 4 numbers")
+        try:
+            _ = [float(v) for v in body.bounding_box]
+        except Exception:
+            raise HTTPException(
+                status_code=422, detail="bounding_box values must be numeric"
+            )
     try:
         ent = create_entity(project_id, body)
     except ValueError as e:
@@ -130,38 +131,47 @@ async def patch_entity_endpoint(
 ):
     if not read_manifest(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
-    bbox = body.get("bounding_box")
-    title = body.get("title")
-    text = body.get("text")
-    name = body.get("name")
-    description = body.get("description")
-    visual_pattern_description = body.get("visual_pattern_description")
-    scope = body.get("scope")
-    defined_in_id = body.get("defined_in_id")
-    specifications = body.get("specifications")
-    symbol_definition_id = body.get("symbol_definition_id")
-    component_definition_id = body.get("component_definition_id")
-    recognized_text = body.get("recognized_text")
-    status = body.get("status")
-    validation = body.get("validation")
+    
+    # Build kwargs only for fields that are present in the request
+    # This allows explicit null values to be passed through
+    kwargs: dict = {}
+    
+    if "bounding_box" in body:
+        kwargs["bounding_box"] = body["bounding_box"]
+    if "source_sheet_number" in body:
+        kwargs["source_sheet_number"] = body["source_sheet_number"]
+    if "title" in body:
+        kwargs["title"] = body["title"]
+    if "text" in body:
+        kwargs["text"] = body["text"]
+    if "name" in body:
+        kwargs["name"] = body["name"]
+    if "description" in body:
+        kwargs["description"] = body["description"]
+    if "visual_pattern_description" in body:
+        kwargs["visual_pattern_description"] = body["visual_pattern_description"]
+    if "scope" in body:
+        kwargs["scope"] = body["scope"]
+    if "defined_in_id" in body:
+        kwargs["defined_in_id"] = body["defined_in_id"]
+    if "specifications" in body:
+        kwargs["specifications"] = body["specifications"]
+    if "symbol_definition_id" in body:
+        kwargs["symbol_definition_id"] = body["symbol_definition_id"]
+    if "component_definition_id" in body:
+        kwargs["component_definition_id"] = body["component_definition_id"]
+    if "recognized_text" in body:
+        kwargs["recognized_text"] = body["recognized_text"]
+    if "status" in body:
+        kwargs["status"] = body["status"]
+    if "validation" in body:
+        kwargs["validation"] = body["validation"]
+    
     try:
         ent = update_entity(
             project_id,
             entity_id,
-            bounding_box=bbox,
-            title=title,
-            text=text,
-            name=name,
-            description=description,
-            visual_pattern_description=visual_pattern_description,
-            scope=scope,
-            defined_in_id=defined_in_id,
-            specifications=specifications,
-            symbol_definition_id=symbol_definition_id,
-            component_definition_id=component_definition_id,
-            recognized_text=recognized_text,
-            status=status,
-            validation=validation,
+            **kwargs
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

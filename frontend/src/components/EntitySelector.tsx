@@ -70,14 +70,20 @@ export const EntitySelector: React.FC<EntitySelectorProps> = ({
     return Array.from(types).sort();
   }, [entities]);
 
-  // Get unique sheet numbers
+  // Get unique sheet numbers (filter out null for conceptual entities)
   const availableSheets = useMemo(() => {
-    const sheets: Set<number> = new Set(entities.map((e: Entity) => e.source_sheet_number));
+    const sheets: Set<number> = new Set(
+      entities
+        .map((e: Entity) => e.source_sheet_number)
+        .filter((s): s is number => s !== null && s !== undefined)
+    );
     return Array.from(sheets).sort((a, b) => a - b);
   }, [entities]);
 
   const handleJumpToSheet = (entity: Entity) => {
-    setCurrentPageIndex(entity.source_sheet_number - 1);
+    if (entity.source_sheet_number !== null && entity.source_sheet_number !== undefined) {
+      setCurrentPageIndex(entity.source_sheet_number - 1);
+    }
   };
 
   const getEntityLabel = (entity: Entity): string => {
@@ -279,7 +285,7 @@ export const EntitySelector: React.FC<EntitySelectorProps> = ({
                           }}>
                             #{entity.id.slice(0, 6)}
                           </span>
-                          {showSheetInfo && (
+                          {showSheetInfo && entity.source_sheet_number !== null && entity.source_sheet_number !== undefined && (
                             <span style={{
                               fontSize: typography.xs,
                               color: isCurrentSheet ? colors.success : colors.textTertiary,
@@ -289,6 +295,18 @@ export const EntitySelector: React.FC<EntitySelectorProps> = ({
                               borderRadius: borderRadius.sm
                             }}>
                               Sheet {entity.source_sheet_number}
+                            </span>
+                          )}
+                          {showSheetInfo && (entity.source_sheet_number === null || entity.source_sheet_number === undefined) && (
+                            <span style={{
+                              fontSize: typography.xs,
+                              color: colors.textTertiary,
+                              fontWeight: typography.medium,
+                              background: colors.bgTertiary,
+                              padding: `2px ${spacing.sm}px`,
+                              borderRadius: borderRadius.sm
+                            }}>
+                              💭 Conceptual
                             </span>
                           )}
                         </div>
@@ -305,12 +323,14 @@ export const EntitySelector: React.FC<EntitySelectorProps> = ({
                           {getEntityLabel(entity)}
                         </div>
                         
-                        <div style={{
-                          fontSize: typography.sm,
-                          color: colors.textTertiary
-                        }}>
-                          {entity.bounding_box.x1.toFixed(0)}, {entity.bounding_box.y1.toFixed(0)} → {entity.bounding_box.x2.toFixed(0)}, {entity.bounding_box.y2.toFixed(0)}
-                        </div>
+                        {entity.bounding_box && (
+                          <div style={{
+                            fontSize: typography.sm,
+                            color: colors.textTertiary
+                          }}>
+                            {entity.bounding_box.x1.toFixed(0)}, {entity.bounding_box.y1.toFixed(0)} → {entity.bounding_box.x2.toFixed(0)}, {entity.bounding_box.y2.toFixed(0)}
+                          </div>
+                        )}
                       </div>
                       
                       <div style={{
@@ -332,7 +352,7 @@ export const EntitySelector: React.FC<EntitySelectorProps> = ({
                         >
                           Select
                         </button>
-                        {!isCurrentSheet && (
+                        {!isCurrentSheet && entity.source_sheet_number !== null && entity.source_sheet_number !== undefined && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

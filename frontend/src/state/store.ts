@@ -168,8 +168,10 @@ interface AppState {
         active: boolean;
         type: 'canvas' | 'conceptual' | null;
     };
+    addingScopeLocationTo: string | null; // Track which scope ID is getting a location added
     startScopeCreation: (type: 'canvas' | 'conceptual') => void;
     cancelScopeCreation: () => void;
+    startAddingScopeLocation: (scopeId: string) => void;
     createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<void>;
     updateScopeLocation: (scopeId: string, sheet: number, bbox: number[]) => Promise<void>;
     removeScopeLocation: (scopeId: string) => Promise<void>;
@@ -955,6 +957,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         active: false,
         type: null,
     },
+    addingScopeLocationTo: null,
     promoteSelectionToNotePersist: async (pageIndex: number) => {
         const { projectId, addToast, pageOcr, selectedBlocks, fetchEntities } = get() as any;
         if (!projectId) return;
@@ -1126,11 +1129,38 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         set({ 
             scopeCreationMode: { active: true, type },
         });
-        // Note: Modal component will handle the UI based on this state
+        
+        // If canvas type, trigger drawing mode via ui_v2
+        if (type === 'canvas') {
+            import('./ui_v2').then(({ useUIV2Store }) => {
+                const startDrawing = useUIV2Store.getState().startDrawing;
+                startDrawing('scope');
+            }).catch((err) => {
+                console.error('[startScopeCreation] Failed to import UI V2 store:', err);
+            });
+        }
+        // For 'conceptual', the modal component will handle the UI
     },
     cancelScopeCreation: () => {
         set({ 
             scopeCreationMode: { active: false, type: null },
+        });
+    },
+    startAddingScopeLocation: (scopeId: string) => {
+        console.log('[startAddingScopeLocation] Starting to add location to scope:', scopeId);
+        
+        // Store which scope is getting a location added
+        set({ addingScopeLocationTo: scopeId });
+        
+        // Start canvas drawing mode for scope bbox
+        // Note: startDrawing is in the UI V2 store, not the project store
+        // Import it dynamically to avoid circular dependency
+        import('./ui_v2').then(({ useUIV2Store }) => {
+            const startDrawing = useUIV2Store.getState().startDrawing;
+            console.log('[startAddingScopeLocation] Starting drawing mode for scope');
+            startDrawing('scope');
+        }).catch((err) => {
+            console.error('[startAddingScopeLocation] Failed to import UI V2 store:', err);
         });
     },
     createScope: async (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => {
@@ -1156,18 +1186,26 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             }
         }
         
-        // Build payload
+        // Build payload - only include non-empty strings
         const payload: any = {
             entity_type: 'scope',
-            name: data.name,
-            description: data.description || null,
         };
+        
+        // Only include name/description if they have actual content
+        if (data.name && data.name.trim()) {
+            payload.name = data.name.trim();
+        }
+        if (data.description && data.description.trim()) {
+            payload.description = data.description.trim();
+        }
         
         // Only add spatial fields if provided (for canvas scopes)
         if (data.source_sheet_number !== undefined && data.bounding_box) {
             payload.source_sheet_number = data.source_sheet_number;
             payload.bounding_box = data.bounding_box;
         }
+        
+        console.log('[createScope] Sending payload:', JSON.stringify(payload, null, 2));
         
         try {
             const resp = await fetch(`/api/projects/${projectId}/entities`, {
@@ -1178,7 +1216,17 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             
             if (!resp.ok) {
                 let msg = 'Create scope failed';
-                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                try { 
+                    const j = await resp.json(); 
+                    // Handle FastAPI validation error format (array of error objects)
+                    if (Array.isArray(j.detail)) {
+                        msg = j.detail.map((err: any) => err.msg).join(', ');
+                    } else if (typeof j.detail === 'string') {
+                        msg = j.detail;
+                    }
+                } catch (parseError) {
+                    console.error('Failed to parse error response:', parseError);
+                }
                 throw new Error(msg);
             }
             
@@ -1218,6 +1266,14 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             }
             
             await fetchEntities();
+            
+            // Navigate to the sheet and select the scope to show the result
+            set({
+                currentPageIndex: sheet - 1, // Convert 1-based to 0-based
+                selectedEntityId: scopeId,
+                rightPanelTab: 'entities',
+            } as any);
+            
             addToast({ kind: 'success', message: 'Canvas location added to scope' });
         } catch (e: any) {
             console.error(e);
@@ -1251,9 +1307,10 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             }
             
             await fetchEntities();
+            console.log('[removeScopeLocation] Successfully removed location and refreshed entities');
             addToast({ kind: 'success', message: 'Scope converted to conceptual (canvas location removed)' });
         } catch (e: any) {
-            console.error(e);
+            console.error('[removeScopeLocation] Error:', e);
             addToast({ kind: 'error', message: e?.message || 'Failed to remove scope location' });
         }
     },

@@ -225,12 +225,85 @@ export function InlineEntityForm({
     );
   };
 
-  const renderScopeForm = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {renderTextField('Name', 'name', 'Enter scope name...')}
-      {renderTextarea('Description', 'description', 'Enter scope description...')}
-    </div>
-  );
+  const renderScopeForm = () => {
+    const isConceptual = !formData.bounding_box || !formData.source_sheet_number;
+    const isEdit = mode === 'edit';
+    
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Scope Type Indicator */}
+        {isEdit && (
+          <div style={{
+            padding: '8px 12px',
+            borderRadius: 'var(--tg-radius-sm)',
+            fontSize: 'var(--tg-font-xs)',
+            backgroundColor: isConceptual ? 'var(--tg-info)' : 'var(--tg-success)',
+            color: isConceptual ? 'var(--tg-info-contrast)' : 'var(--tg-success-contrast)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}>
+            <span>{isConceptual ? '💭' : '📍'}</span>
+            <span>{isConceptual ? 'Conceptual Scope (Project-level)' : 'Canvas Scope (Sheet-specific)'}</span>
+          </div>
+        )}
+        
+        {renderTextField('Name', 'name', 'Enter scope name...')}
+        {renderTextarea('Description', 'description', 'Enter scope description...')}
+        
+        {/* Location Management - only in edit mode */}
+        {isEdit && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px solid var(--tg-border)' }}>
+            <div style={{ fontSize: 'var(--tg-font-xs)', color: 'var(--tg-muted)', fontWeight: 500 }}>
+              Canvas Location
+            </div>
+            {isConceptual ? (
+              <TGButton
+                variant="secondary"
+                onClick={async () => {
+                  const scopeId = formData.id as string;
+                  if (!scopeId) return;
+                  
+                  // Import dynamically to access store
+                  const { useProjectStore } = await import('../../state/store');
+                  const startAddingScopeLocation = useProjectStore.getState().startAddingScopeLocation;
+                  
+                  // Start drawing mode for adding location to this scope
+                  startAddingScopeLocation(scopeId);
+                  
+                  // Close form so user can draw on canvas
+                  onCancel?.();
+                }}
+                style={{ fontSize: 'var(--tg-font-sm)' }}
+              >
+                📍 + Add Canvas Location
+              </TGButton>
+            ) : (
+              <TGButton
+                variant="secondary"
+                onClick={async () => {
+                  const scopeId = formData.id as string;
+                  if (!scopeId) return;
+                  
+                  // Import dynamically to access store
+                  const { useProjectStore } = await import('../../state/store');
+                  const removeScopeLocation = useProjectStore.getState().removeScopeLocation;
+                  
+                  await removeScopeLocation(scopeId);
+                  
+                  // Close form to refresh
+                  onCancel?.();
+                }}
+                style={{ fontSize: 'var(--tg-font-sm)' }}
+              >
+                🗑️ Remove Canvas Location
+              </TGButton>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderNoteForm = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

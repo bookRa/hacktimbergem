@@ -79,16 +79,20 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
     """Validate and persist a new entity, returning the stored object."""
     entities = load_entities(project_id)
     new_id = uuid.uuid4().hex
-    bbox_list = payload.bounding_box
-    if len(bbox_list) != 4:
-        raise ValueError("bounding_box must have 4 numbers")
-    try:
-        x1, y1, x2, y2 = [float(v) for v in bbox_list]
-    except Exception:
-        raise ValueError("bounding_box values must be numeric")
-    if x2 <= x1 or y2 <= y1:
-        raise ValueError("bounding_box must have x2>x1 and y2>y1")
-    bbox = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    
+    # Validate and process bounding_box if present (conceptual scopes may not have bbox)
+    bbox = None
+    if hasattr(payload, 'bounding_box') and payload.bounding_box is not None:
+        bbox_list = payload.bounding_box
+        if len(bbox_list) != 4:
+            raise ValueError("bounding_box must have 4 numbers")
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox_list]
+        except Exception:
+            raise ValueError("bounding_box values must be numeric")
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("bounding_box must have x2>x1 and y2>y1")
+        bbox = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
     validation = getattr(payload, "validation", None)
     if validation is not None and not isinstance(validation, ValidationInfo):
         try:
@@ -191,11 +195,15 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
     return ent
 
 
+# Sentinel to distinguish "not provided" from "explicitly None"
+_NOT_PROVIDED = object()
+
 def update_entity(
     project_id: str,
     entity_id: str,
     *,
-    bounding_box: list[float] | None = None,
+    bounding_box: list[float] | None = _NOT_PROVIDED,  # type: ignore
+    source_sheet_number: int | None = _NOT_PROVIDED,  # type: ignore
     title: str | None = None,
     text: str | None = None,
     name: str | None = None,
@@ -220,16 +228,25 @@ def update_entity(
         raise ValueError("Entity not found")
     idx, current = found
     data = current.dict()
-    if bounding_box is not None:
-        if len(bounding_box) != 4:
-            raise ValueError("bounding_box must have 4 numbers")
-        try:
-            x1, y1, x2, y2 = [float(v) for v in bounding_box]
-        except Exception:
-            raise ValueError("bounding_box values must be numeric")
-        if x2 <= x1 or y2 <= y1:
-            raise ValueError("bounding_box must have x2>x1 and y2>y1")
-        data["bounding_box"] = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    # Handle bounding_box - can be explicit None to remove location
+    if bounding_box is not _NOT_PROVIDED:
+        if bounding_box is None:
+            # Explicitly set to None to remove location
+            data["bounding_box"] = None
+        else:
+            if len(bounding_box) != 4:
+                raise ValueError("bounding_box must have 4 numbers")
+            try:
+                x1, y1, x2, y2 = [float(v) for v in bounding_box]
+            except Exception:
+                raise ValueError("bounding_box values must be numeric")
+            if x2 <= x1 or y2 <= y1:
+                raise ValueError("bounding_box must have x2>x1 and y2>y1")
+            data["bounding_box"] = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    
+    # Handle source_sheet_number - can be explicit None to remove location
+    if source_sheet_number is not _NOT_PROVIDED:
+        data["source_sheet_number"] = source_sheet_number
     if status is not None:
         if status not in {"incomplete", "complete"}:
             raise ValueError("status must be 'incomplete' or 'complete'")

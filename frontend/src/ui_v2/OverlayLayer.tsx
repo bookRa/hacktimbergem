@@ -1523,11 +1523,13 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         // Check if this is a new definition creation
         const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
         const definitionType = (window as any).__definitionType;
+        const addingScopeLocationTo = useProjectStore.getState().addingScopeLocationTo;
         
         console.log('[DEBUG] handlePointerUp - drawing.active=true', {
           isNewDefinitionCreation,
           definitionType,
           drawingEntityType: drawing.entityType,
+          addingScopeLocationTo,
           pendingInstanceForm: (window as any).__pendingInstanceForm
         });
 
@@ -1556,6 +1558,28 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
             pendingBBox: { sheetId, bboxPdf }
           });
           console.log('[DEBUG] Called openForm()');
+          
+          return;
+        }
+
+        // Check if we're adding a location to an existing conceptual scope
+        // (addingScopeLocationTo already declared above in debug section)
+        if (drawing.entityType === 'scope' && addingScopeLocationTo) {
+          console.log('[OverlayLayer] Adding location to existing scope:', addingScopeLocationTo);
+          
+          // Update the scope with the new location
+          const updateScopeLocation = useProjectStore.getState().updateScopeLocation;
+          updateScopeLocation(addingScopeLocationTo, sheetId, bboxPdf).then(() => {
+            console.log('[OverlayLayer] Scope location updated successfully');
+          }).catch((err) => {
+            console.error('[OverlayLayer] Failed to update scope location:', err);
+          });
+          
+          // Clear the state
+          useProjectStore.setState({ addingScopeLocationTo: null });
+          
+          // Exit drawing mode
+          cancelDrawing();
           
           return;
         }
