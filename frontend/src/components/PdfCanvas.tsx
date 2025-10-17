@@ -400,8 +400,6 @@ export const PdfCanvas: React.FC = () => {
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
                             {!creatingEntity && !ocrSelectionMode.active && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
-                        {/* Legacy overlay retained for fallback; UI V2 overlay mounted below */}
-                        {/* <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} /> */}
                         <OverlayLayer pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 ) : (
@@ -411,8 +409,6 @@ export const PdfCanvas: React.FC = () => {
                             <OcrOverlay pageIndex={currentPageIndex} scale={scale} />
                             {!creatingEntity && !ocrSelectionMode.active && <DragSelectOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />}
                         </>}
-                        {/* Legacy overlay retained for fallback; UI V2 overlay mounted below */}
-                        {/* <EntitiesOverlay pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} /> */}
                         <OverlayLayer pageIndex={currentPageIndex} scale={scale} wrapperRef={pageWrapperRef} />
                     </>
                 )}

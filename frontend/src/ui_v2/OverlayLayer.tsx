@@ -63,8 +63,6 @@ const TYPE_Z_ORDER: Record<Entity['entity_type'], number> = {
   component_instance: 4
 };
 
-console.log('🔥🔥🔥 [OverlayLayer] Module loaded with TYPE_Z_ORDER:', TYPE_Z_ORDER);
-
 function computeResizeRect(
   start: { x: number; y: number; width: number; height: number },
   handle: ResizeHandle,
@@ -301,14 +299,9 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         // Primary sort: by entity type Z-order (drawings on bottom, instances on top)
         const za = TYPE_Z_ORDER[a.entity.entity_type] ?? 1;
         const zb = TYPE_Z_ORDER[b.entity.entity_type] ?? 1;
-        if (za !== zb) {
-          console.log(`🔥 [Z-SORT] ${a.entity.entity_type}(z=${za}) vs ${b.entity.entity_type}(z=${zb}) => ${za < zb ? 'A first' : 'B first'}`);
-          return za - zb;
-        }
+        if (za !== zb) return za - zb;
         // Secondary sort: by creation time (older entities render first/bottom)
-        const result = a.entity.created_at - b.entity.created_at;
-        console.log(`🔥 [Z-SORT] Same z-order, time-based: ${a.entity.entity_type} created ${a.entity.created_at} vs ${b.entity.created_at} => ${result < 0 ? 'A first' : 'B first'}`);
-        return result;
+        return a.entity.created_at - b.entity.created_at;
       });
   }, [entities, pageIndex, pageOcr, pagesMeta, scale, layers, links]);
 
