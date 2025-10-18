@@ -2430,6 +2430,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
             const draftRect = editingDrafts[item.entity.id];
             const bbox = draftRect ?? item.bboxPx;
             const isSelected = selection.some((sel) => sel.id === item.entity.id);
+            const isHovered = hover && hover.id === item.entity.id;
             return (
               <BBox
                 variant={renderVariant({ ...item, bboxPx: bbox })}
@@ -2443,9 +2444,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
                 onMouseLeave={handleMouseLeave}
                 style={{ cursor: isSelected ? 'move' : 'pointer' }}
               >
-                <div style={{ position: 'absolute', top: -28, left: 0 }}>
-                  <EntityTag type={item.tagType} id={item.entity.id.slice(0, 4).toUpperCase()} incomplete={item.isIncomplete} />
-                </div>
+                {isHovered && (
+                  <div style={{ position: 'absolute', top: -28, left: 0 }}>
+                    <EntityTag type={item.tagType} id={item.entity.id.slice(0, 4).toUpperCase()} incomplete={item.isIncomplete} />
+                  </div>
+                )}
                 {selection.length === 1 && selection[0].id === item.entity.id ? (
                   <>
                     {(['tl', 'tm', 'tr', 'ml', 'mr', 'bl', 'bm', 'br'] as ResizeHandle[]).map((handle) => {

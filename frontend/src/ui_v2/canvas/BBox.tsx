@@ -23,7 +23,7 @@ interface BBoxProps {
 
 const variantStyles: Record<BBoxVariant, CSSProperties> = {
   normal: {
-    border: '2px solid var(--tg-border)',
+    border: '2px solid var(--tg-complete)',
     backgroundColor: 'transparent',
   },
   hover: {
