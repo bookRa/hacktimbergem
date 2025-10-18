@@ -28,6 +28,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     selectEntity,
     updateScopeLocation,
     removeScopeLocation,
+    startInstanceStamp,
   } = useProjectStore((state: any) => ({
     entities: state.entities,
     links: state.links,
@@ -45,6 +46,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     selectEntity: state.selectEntity,
     updateScopeLocation: state.updateScopeLocation,
     removeScopeLocation: state.removeScopeLocation,
+    startInstanceStamp: state.startInstanceStamp,
   }));
 
   // UI V2 linking state
@@ -840,6 +842,33 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Start Stamping Button (for definitions) */}
+              {(entity.entity_type === 'symbol_definition' || entity.entity_type === 'component_definition') && (
+                <div style={{ marginBottom: 14 }}>
+                  <button
+                    onClick={() => {
+                      const kind = entity.entity_type === 'symbol_definition' ? 'symbol' : 'component';
+                      startInstanceStamp(kind, entity.id);
+                      addToast({ 
+                        kind: 'info', 
+                        message: 'Click on canvas to place instances. Press Esc to cancel.' 
+                      });
+                    }}
+                    style={{
+                      ...styles.button(false),
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                    title="Start stamping instances of this definition on the canvas"
+                  >
+                    🖌️ Start Stamping Instances
+                  </button>
                 </div>
               )}
 

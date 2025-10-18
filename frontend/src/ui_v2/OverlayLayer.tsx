@@ -935,7 +935,22 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       if (event.key === 'Escape' && editSessionRef.current) {
         event.preventDefault();
         cancelEditSession();
+        return; // Early return to prevent multiple handlers
       }
+      
+      // Check for stamping mode first (legacy creatingEntity)
+      const isStamping = creatingEntity && 
+                        (creatingEntity.type === 'symbol_instance' || 
+                         creatingEntity.type === 'component_instance');
+      
+      if (event.key === 'Escape' && isStamping) {
+        event.preventDefault();
+        console.log('[DEBUG] Escape pressed - canceling stamping mode');
+        cancelEntityCreation(); // Cancel legacy state
+        cancelDrawing();        // Cancel UI V2 state
+        return;
+      }
+      
       if (event.key === 'Escape' && drawing.active) {
         event.preventDefault();
         cancelDrawing();
@@ -943,7 +958,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cancelEditSession, cancelDrawing, drawing.active]);
+  }, [cancelEditSession, cancelDrawing, cancelEntityCreation, drawing.active, creatingEntity]);
 
   useEffect(() => () => cancelEditSession(), [cancelEditSession]);
   useEffect(
@@ -958,7 +973,28 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     [setHover, setHoverEntityId, setHoverScopeId, cancelDrawing, drawing.active]
   );
 
+  // Get definition entity for stamping mode
+  const definitionEntity = useMemo(() => {
+    if (!creatingEntity) return null;
+    const defId = creatingEntity.meta?.definitionId;
+    if (!defId) return null;
+    return entities.find(e => e.id === defId);
+  }, [creatingEntity, entities]);
+
+  // Calculate stamp size in PDF points (will be scaled to canvas pixels on placement)
+  const stampSizePts = useMemo(() => {
+    if (!definitionEntity || !definitionEntity.bounding_box) return null;
+    const bbox = definitionEntity.bounding_box;
+    return {
+      width: bbox.x2 - bbox.x1,
+      height: bbox.y2 - bbox.y1
+    };
+  }, [definitionEntity]);
+
   // Bridge legacy stamp mode (creatingEntity) to UI V2 drawing state
+  // Extract definitionId to detect when user switches stamp types
+  const definitionId = creatingEntity?.meta?.definitionId;
+  
   useEffect(() => {
     if (!creatingEntity) {
       // If legacy stamp mode was cancelled, sync to UI V2
@@ -973,11 +1009,12 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const targetType = creatingEntity.type === 'symbol_instance' ? 'SymbolInst' : 'CompInst';
       
       // Activate UI V2 drawing mode if not already active for this type
+      // Re-run when definitionId changes (user switched stamp types)
       if (!drawing.active || drawing.entityType !== targetType) {
         startDrawing(targetType);
       }
     }
-  }, [creatingEntity, drawing.active, drawing.entityType, startDrawing, cancelDrawing]);
+  }, [creatingEntity, drawing.active, drawing.entityType, startDrawing, cancelDrawing, definitionId]);
 
   const computeContextPosition = useCallback(
     (point: { x: number; y: number }) => {
@@ -1362,6 +1399,86 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     );
   }, []);
 
+  // Single-click stamp placement handler
+  const handleStampClick = useCallback(
+    async (event: React.PointerEvent<HTMLDivElement>) => {
+      const overlayEl = overlayRef.current;
+      const rect = overlayEl?.getBoundingClientRect();
+      if (!overlayEl || !rect || !stampSizePts || !creatingEntity || !projectId) return;
+
+      // Get click position
+      const clickX = event.clientX - rect.left;
+      const clickY = event.clientY - rect.top;
+
+      // Get page metadata for PDF conversion
+      const meta = pagesMeta?.[pageIndex];
+      const ocr = pageOcr?.[pageIndex];
+      const pageWidthPts = meta?.pageWidthPts || ocr?.width_pts;
+      const pageHeightPts = meta?.pageHeightPts || ocr?.height_pts;
+      if (!meta || !pageWidthPts || !pageHeightPts) {
+        addToast({ kind: 'error', message: 'Missing page metadata' });
+        return;
+      }
+
+      // Convert canvas pixels to PDF points
+      const toPdf = (coord: { x: number; y: number }): [number, number] => {
+        const rasterX = coord.x / scale;
+        const rasterY = coord.y / scale;
+        const pdfX = (rasterX / meta.nativeWidth) * pageWidthPts;
+        const pdfY = (rasterY / meta.nativeHeight) * pageHeightPts;
+        return [pdfX, pdfY];
+      };
+
+      // Center the stamp on click position in PDF coordinates
+      const [centerX, centerY] = toPdf({ x: clickX, y: clickY });
+      const halfWidth = stampSizePts.width / 2;
+      const halfHeight = stampSizePts.height / 2;
+      const bboxPdf: PdfBBox = [
+        centerX - halfWidth,
+        centerY - halfHeight,
+        centerX + halfWidth,
+        centerY + halfHeight
+      ];
+
+      // Create the instance entity immediately (no form, no context menu)
+      const sheetNumber = pageIndex + 1;
+      const payload: any = {
+        entity_type: creatingEntity.type,
+        source_sheet_number: sheetNumber,
+        bounding_box: bboxPdf
+      };
+
+      if (creatingEntity.type === 'symbol_instance') {
+        payload.symbol_definition_id = creatingEntity.meta?.definitionId;
+        if (creatingEntity.meta?.recognized_text) {
+          payload.recognized_text = creatingEntity.meta.recognized_text;
+        }
+      } else if (creatingEntity.type === 'component_instance') {
+        payload.component_definition_id = creatingEntity.meta?.definitionId;
+      }
+
+      // Add entity flags
+      Object.assign(payload, deriveEntityFlags(creatingEntity.type as any, payload, null));
+
+      try {
+        const created = await createEntity(projectId, payload as any);
+        await fetchEntities();
+        addToast({ kind: 'success', message: `Instance placed` });
+        try {
+          pushHistory({ type: 'create_entity', entity: created });
+        } catch (error) {
+          console.warn('history push failed', error);
+        }
+        // Keep stamping mode active (creatingEntity stays set)
+        // User can continue clicking to place more instances
+      } catch (error: any) {
+        console.error(error);
+        addToast({ kind: 'error', message: error?.message || 'Failed to create instance' });
+      }
+    },
+    [stampSizePts, creatingEntity, projectId, pageIndex, pagesMeta, pageOcr, scale, addToast, fetchEntities, pushHistory]
+  );
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (shouldIgnorePointer(event.target)) {
@@ -1414,9 +1531,25 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         }
       }
 
-      // If we're in drawing mode, start drawing
+      // Check if in stamp mode (single-click placement)
+      const isStampMode = creatingEntity && 
+                         (creatingEntity.type === 'symbol_instance' || 
+                          creatingEntity.type === 'component_instance') &&
+                         stampSizePts;
+
+      // If we're in drawing mode...
       if (drawing.active) {
         if (!overlayEl || !rect) return;
+        
+        // If in stamp mode, handle as single-click placement
+        if (isStampMode) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleStampClick(event);
+          return;
+        }
+        
+        // Otherwise, start drag-to-draw for other entity types
         try {
           overlayEl.setPointerCapture(event.pointerId);
         } catch (_) {
@@ -1451,7 +1584,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       setIsDrawing(true);
       commitDraftRect({ x, y, width: 0, height: 0 });
     },
-    [cancelEditSession, closeContext, closeForm, contextMenu.open, drawing.active, inlineForm.open, ocrSelectionMode.active, shouldIgnorePointer]
+    [cancelEditSession, closeContext, closeForm, contextMenu.open, drawing.active, inlineForm.open, ocrSelectionMode.active, shouldIgnorePointer, creatingEntity, stampSizePts, handleStampClick, pageEntities, setSelection, setHover, setHoverEntityId, setHoverScopeId]
   );
 
   const handlePointerMove = useCallback(
