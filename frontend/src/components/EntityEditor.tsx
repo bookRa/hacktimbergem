@@ -3,6 +3,7 @@ import { useProjectStore } from '../state/store';
 import type { Entity } from '../api/entities';
 import { EntitySelector } from './EntitySelector';
 import { createLink as apiCreateLink } from '../api/links';
+import { useUIV2Actions, useUIV2Linking } from '../state/ui_v2';
 
 interface EntityEditorProps {
   entityId: string | null;
@@ -45,6 +46,10 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     updateScopeLocation: state.updateScopeLocation,
     removeScopeLocation: state.removeScopeLocation,
   }));
+
+  // UI V2 linking state
+  const linking = useUIV2Linking();
+  const { startLinking: startUIV2Linking, cancelLinking } = useUIV2Actions();
 
   const entity = entities.find((e: Entity) => e.id === entityId);
   const [localValues, setLocalValues] = useState<Record<string, any>>({});
@@ -267,6 +272,53 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
         addToast({ kind: 'error', message: error?.message || 'Failed to remove link' });
       }
     }
+  };
+
+  const startMultiLinkMode = () => {
+    if (!entity) return;
+    
+    // Get entity type for UI V2 Selection
+    const getSelectionType = (e: Entity): 'Drawing' | 'Legend' | 'Schedule' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope' => {
+      const typeMap: Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope'> = {
+        drawing: 'Drawing',
+        legend: 'Legend',
+        schedule: 'Schedule',
+        note: 'Note',
+        scope: 'Scope',
+        symbol_definition: 'SymbolDef',
+        component_definition: 'CompDef',
+        symbol_instance: 'SymbolInst',
+        component_instance: 'CompInst',
+      };
+      return typeMap[e.entity_type];
+    };
+
+    // Get already linked evidence to pre-populate
+    const existingEvidence = linkedItems.evidence;
+    const initialPending = existingEvidence.map(ev => ({
+      type: getSelectionType(ev),
+      id: ev.id,
+      sheetId: String(ev.source_sheet_number)
+    }));
+
+    // Start linking mode with the scope as source
+    startUIV2Linking(
+      {
+        type: getSelectionType(entity),
+        id: entity.id,
+        sheetId: entity.source_sheet_number ? String(entity.source_sheet_number) : undefined
+      },
+      initialPending
+    );
+
+    // Notify user
+    addToast({ 
+      kind: 'info', 
+      message: 'Click symbols, components, or notes on canvas or in Explorer to link them as evidence. Click Finish when done.' 
+    });
+
+    // Minimize the editor panel to give more room for canvas interaction
+    // (optional, but helps UX)
   };
 
   const startLinkingSpace = () => {
@@ -890,8 +942,22 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
               {/* Linked Evidence (for scopes) */}
               {entity.entity_type === 'scope' && (
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ ...styles.label, marginBottom: 8 }}>
-                    Evidence ({linkedItems.evidence.length})
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={styles.label}>
+                      Evidence ({linkedItems.evidence.length})
+                    </div>
+                    <button 
+                      onClick={startMultiLinkMode} 
+                      style={{ 
+                        ...styles.buttonSecondary, 
+                        fontSize: 11, 
+                        padding: '4px 10px',
+                        fontWeight: 600
+                      }}
+                      title="Start multi-link mode: click entities on canvas or in Explorer to add them as evidence"
+                    >
+                      🔗 Link Multiple
+                    </button>
                   </div>
                   {linkedItems.evidence.length > 0 ? (
                     <div style={{ 

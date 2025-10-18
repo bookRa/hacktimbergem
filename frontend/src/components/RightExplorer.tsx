@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useProjectStore } from '../state/store';
+import { useUIV2Linking, useUIV2Actions } from '../state/ui_v2';
 
 export const RightExplorer: React.FC = () => {
     const { concepts, entities, selectedScopeId, setSelectedScopeId, setHoverScopeId, hoverEntityId, explorerTab, setExplorerTab, selectSpace, links } = useProjectStore((s: any) => ({
@@ -229,6 +230,10 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
         selectEntity: s.selectEntity,
         links: s.links,
     }));
+    
+    // UI V2 linking state
+    const linking = useUIV2Linking();
+    const { addPending } = useUIV2Actions();
     const defs = entities.filter((e: any) => e.entity_type === 'symbol_definition' && (e.scope === 'project' || e.source_sheet_number === currentPageIndex + 1));
     // Keyboard shortcuts 1..9 to pick def
     React.useEffect(() => {
@@ -292,11 +297,44 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
                             const linkedToSpace = links.some((l: any) => l.rel_type === 'LOCATED_IN' && l.source_id === i.id);
                             const linkedToScope = links.some((l: any) => l.rel_type === 'JUSTIFIED_BY' && l.target_id === i.id);
                             
+                            // Check if this instance is in the linking pending list
+                            const isInLinkingPending = linking.active && linking.pending.some(p => p.id === i.id && p.type === 'SymbolInst');
+                            const isLinkingSource = linking.active && linking.source?.id === i.id && linking.source?.type === 'SymbolInst';
+                            
+                            const handleClick = () => {
+                                if (linking.active && linking.source?.type === 'Scope') {
+                                    // In linking mode: add/remove from pending list
+                                    addPending({
+                                        type: 'SymbolInst',
+                                        id: i.id,
+                                        sheetId: String(i.source_sheet_number)
+                                    });
+                                } else {
+                                    // Normal mode: open editor
+                                    selectEntity(i.id);
+                                }
+                            };
+                            
                             return (
-                                <div key={i.id} onMouseEnter={() => setHoverEntityId(i.id)} onMouseLeave={() => setHoverEntityId(null)} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb', background: hoverEntityId === i.id ? '#eff6ff' : '#fff' }}>
+                                <div 
+                                    key={i.id} 
+                                    onMouseEnter={() => setHoverEntityId(i.id)} 
+                                    onMouseLeave={() => setHoverEntityId(null)} 
+                                    onClick={handleClick}
+                                    style={{ 
+                                        padding: 6, 
+                                        borderRadius: 6, 
+                                        border: isInLinkingPending || isLinkingSource ? '2px solid #2563eb' : '1px solid #e1e6eb', 
+                                        background: isInLinkingPending || isLinkingSource ? '#eff6ff' : (hoverEntityId === i.id ? '#f9fafb' : '#fff'),
+                                        cursor: linking.active ? 'pointer' : 'default'
+                                    }}
+                                >
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: 12, fontWeight: 600 }}>#{i.id.slice(0,6)}</div>
+                                            <div style={{ fontSize: 12, fontWeight: 600 }}>
+                                                #{i.id.slice(0,6)}
+                                                {isInLinkingPending && <span style={{ color: '#2563eb', marginLeft: 4 }}>✓</span>}
+                                            </div>
                                             <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
                                                 {def?.name || 'No definition'} 
                                                 {(linkedToSpace || linkedToScope) && (
@@ -306,14 +344,17 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
                                                 )}
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => {
-                                                selectEntity(i.id);
-                                            }}
-                                            style={btn(false)}
-                                        >
-                                            Edit
-                                        </button>
+                                        {!linking.active && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    selectEntity(i.id);
+                                                }}
+                                                style={btn(false)}
+                                            >
+                                                Edit
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             );
@@ -490,6 +531,12 @@ const ComponentsInstances: React.FC<{ entities: any[] }> = ({ entities }) => {
         (acc[key] ||= []).push(e);
         return acc;
     }, {} as Record<string, any[]>);
+    
+    // UI V2 linking state
+    const linking = useUIV2Linking();
+    const { addPending } = useUIV2Actions();
+    const { selectEntity } = useProjectStore((s: any) => ({ selectEntity: s.selectEntity }));
+    
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
             {Object.keys(grouped).map((key) => (
@@ -506,11 +553,44 @@ const ComponentsInstances: React.FC<{ entities: any[] }> = ({ entities }) => {
                         })()}
                     </div>
                     <div style={{ padding: '0 8px 8px', display: 'grid', gap: 6 }}>
-                        {grouped[key].map(i => (
-                            <div key={i.id} style={{ padding: 6, borderRadius: 6, border: '1px solid #e1e6eb', background: '#fff' }}>
-                                <div style={{ fontSize: 12 }}>#{i.id.slice(0,6)}</div>
-                            </div>
-                        ))}
+                        {grouped[key].map(i => {
+                            // Check if this instance is in the linking pending list
+                            const isInLinkingPending = linking.active && linking.pending.some(p => p.id === i.id && p.type === 'CompInst');
+                            const isLinkingSource = linking.active && linking.source?.id === i.id && linking.source?.type === 'CompInst';
+                            
+                            const handleClick = () => {
+                                if (linking.active && linking.source?.type === 'Scope') {
+                                    // In linking mode: add/remove from pending list
+                                    addPending({
+                                        type: 'CompInst',
+                                        id: i.id,
+                                        sheetId: String(i.source_sheet_number)
+                                    });
+                                } else {
+                                    // Normal mode: open editor
+                                    selectEntity(i.id);
+                                }
+                            };
+                            
+                            return (
+                                <div 
+                                    key={i.id} 
+                                    onClick={handleClick}
+                                    style={{ 
+                                        padding: 6, 
+                                        borderRadius: 6, 
+                                        border: isInLinkingPending || isLinkingSource ? '2px solid #2563eb' : '1px solid #e1e6eb', 
+                                        background: isInLinkingPending || isLinkingSource ? '#eff6ff' : '#fff',
+                                        cursor: linking.active ? 'pointer' : 'default'
+                                    }}
+                                >
+                                    <div style={{ fontSize: 12 }}>
+                                        #{i.id.slice(0,6)}
+                                        {isInLinkingPending && <span style={{ color: '#2563eb', marginLeft: 4 }}>✓</span>}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             ))}
@@ -537,18 +617,57 @@ const NotesList: React.FC<{ entities: any[] }> = ({ entities }) => {
     const { currentPageIndex, selectEntity, promoteSelectionToNotePersist, selectedBlocks } = useProjectStore((s: any) => ({ currentPageIndex: s.currentPageIndex, selectEntity: s.selectEntity, promoteSelectionToNotePersist: s.promoteSelectionToNotePersist, selectedBlocks: s.selectedBlocks }));
     const notes = entities.filter((e: any) => e.entity_type === 'note' && e.source_sheet_number === currentPageIndex + 1);
     const selectedCount = (selectedBlocks?.[currentPageIndex] || []).length;
+    
+    // UI V2 linking state
+    const linking = useUIV2Linking();
+    const { addPending } = useUIV2Actions();
+    
     return (
         <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
             <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                 <button disabled={!selectedCount} onClick={() => promoteSelectionToNotePersist(currentPageIndex)} style={btn(!selectedCount)}>Promote selection → Note</button>
                 <span style={{ fontSize: 11, opacity: .7, alignSelf: 'center' }}>Selected OCR: {selectedCount}</span>
             </div>
-            {notes.map(n => (
-                <div key={n.id} onClick={() => { selectEntity(n.id); }} style={{ padding: 8, borderRadius: 6, border: '1px solid #e1e6eb', background: '#fff', cursor: 'pointer', marginBottom: 6 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>Note #{n.id.slice(0,6)}</div>
-                    <div style={{ fontSize: 11, opacity: .8 }}>{(n.text || '').slice(0, 140) || '(empty)'}</div>
-                </div>
-            ))}
+            {notes.map(n => {
+                // Check if this note is in the linking pending list
+                const isInLinkingPending = linking.active && linking.pending.some(p => p.id === n.id && p.type === 'Note');
+                const isLinkingSource = linking.active && linking.source?.id === n.id && linking.source?.type === 'Note';
+                
+                const handleClick = () => {
+                    if (linking.active && linking.source?.type === 'Scope') {
+                        // In linking mode: add/remove from pending list
+                        addPending({
+                            type: 'Note',
+                            id: n.id,
+                            sheetId: String(n.source_sheet_number)
+                        });
+                    } else {
+                        // Normal mode: open editor
+                        selectEntity(n.id);
+                    }
+                };
+                
+                return (
+                    <div 
+                        key={n.id} 
+                        onClick={handleClick} 
+                        style={{ 
+                            padding: 8, 
+                            borderRadius: 6, 
+                            border: isInLinkingPending || isLinkingSource ? '2px solid #2563eb' : '1px solid #e1e6eb', 
+                            background: isInLinkingPending || isLinkingSource ? '#eff6ff' : '#fff', 
+                            cursor: 'pointer', 
+                            marginBottom: 6 
+                        }}
+                    >
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>
+                            Note #{n.id.slice(0,6)}
+                            {isInLinkingPending && <span style={{ color: '#2563eb', marginLeft: 4 }}>✓</span>}
+                        </div>
+                        <div style={{ fontSize: 11, opacity: .8 }}>{(n.text || '').slice(0, 140) || '(empty)'}</div>
+                    </div>
+                );
+            })}
             {notes.length === 0 && <div style={{ fontSize: 12, opacity: .7 }}>(No notes on this sheet)</div>}
         </div>
     );
