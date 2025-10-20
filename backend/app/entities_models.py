@@ -73,19 +73,138 @@ class Drawing(BaseVisualEntity):
     description: str | None = None
 
 
-class Legend(BaseVisualEntity):
-    entity_type: Literal["legend"] = "legend"
-    title: str | None = None
-
-
-class Schedule(BaseVisualEntity):
-    entity_type: Literal["schedule"] = "schedule"
-    title: str | None = None
-
-
 class Note(BaseVisualEntity):
     entity_type: Literal["note"] = "note"
     text: str | None = None
+
+
+class Legend(BaseVisualEntity):
+    """Container for keynote legend entries."""
+    entity_type: Literal["legend"] = "legend"
+    title: str | None = None
+    notes: str | None = None
+
+
+class Schedule(BaseVisualEntity):
+    """Container for door/window/finish/equipment schedules."""
+    entity_type: Literal["schedule"] = "schedule"
+    title: str | None = None
+    schedule_type: str | None = None  # e.g., "door", "window", "finish", "equipment"
+    notes: str | None = None
+
+
+class AssemblyGroup(BaseVisualEntity):
+    """Container for assembly details/callouts."""
+    entity_type: Literal["assembly_group"] = "assembly_group"
+    title: str | None = None
+    notes: str | None = None
+
+
+class LegendItem(BaseModel):
+    """Individual keynote entry within a Legend."""
+    id: str = Field(..., description="Server-assigned unique id")
+    entity_type: Literal["legend_item"] = "legend_item"
+    legend_id: str = Field(..., description="Parent Legend container ID")
+    symbol_text: str | None = None
+    description: str | None = None
+    notes: str | None = None
+    
+    # Optional spatial fields (for when the item has a specific bbox on the sheet)
+    source_sheet_number: Optional[int] = Field(None, ge=1)
+    bounding_box: Optional[BoundingBox] = None
+    
+    # Standard metadata
+    created_at: float = Field(default_factory=lambda: time.time())
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
+    
+    @model_validator(mode='after')
+    def _validate_bbox_sheet_consistency(self):  # type: ignore
+        """Ensure bbox and sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox exists, sheet must exist
+        if bbox is not None and sheet is None:
+            raise ValueError("source_sheet_number required when bounding_box is provided")
+        
+        return self
+    
+    class Config:
+        orm_mode = True
+
+
+class ScheduleItem(BaseModel):
+    """Individual schedule row/entry within a Schedule."""
+    id: str = Field(..., description="Server-assigned unique id")
+    entity_type: Literal["schedule_item"] = "schedule_item"
+    schedule_id: str = Field(..., description="Parent Schedule container ID")
+    mark: str | None = None  # e.g., "W1", "D2", "A"
+    description: str | None = None
+    notes: str | None = None
+    specifications: Optional[Dict[str, Any]] = None
+    drawing_id: Optional[str] = Field(None, description="Optional Drawing depicting this item")
+    
+    # Optional spatial fields
+    source_sheet_number: Optional[int] = Field(None, ge=1)
+    bounding_box: Optional[BoundingBox] = None
+    
+    # Standard metadata
+    created_at: float = Field(default_factory=lambda: time.time())
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
+    
+    @model_validator(mode='after')
+    def _validate_bbox_sheet_consistency(self):  # type: ignore
+        """Ensure bbox and sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox exists, sheet must exist
+        if bbox is not None and sheet is None:
+            raise ValueError("source_sheet_number required when bounding_box is provided")
+        
+        return self
+    
+    class Config:
+        orm_mode = True
+
+
+class Assembly(BaseModel):
+    """Individual assembly detail within an AssemblyGroup."""
+    id: str = Field(..., description="Server-assigned unique id")
+    entity_type: Literal["assembly"] = "assembly"
+    assembly_group_id: str = Field(..., description="Parent AssemblyGroup container ID")
+    code: str | None = None  # e.g., "W2A", "F1B"
+    name: str | None = None
+    description: str | None = None
+    notes: str | None = None
+    specifications: Optional[Dict[str, Any]] = None
+    drawing_id: Optional[str] = Field(None, description="Optional Drawing depicting this assembly")
+    
+    # Optional spatial fields
+    source_sheet_number: Optional[int] = Field(None, ge=1)
+    bounding_box: Optional[BoundingBox] = None
+    
+    # Standard metadata
+    created_at: float = Field(default_factory=lambda: time.time())
+    status: Optional[StatusLiteral] = None
+    validation: Optional[ValidationInfo] = None
+    
+    @model_validator(mode='after')
+    def _validate_bbox_sheet_consistency(self):  # type: ignore
+        """Ensure bbox and sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox exists, sheet must exist
+        if bbox is not None and sheet is None:
+            raise ValueError("source_sheet_number required when bounding_box is provided")
+        
+        return self
+    
+    class Config:
+        orm_mode = True
 
 
 class Scope(BaseModel):
@@ -153,11 +272,18 @@ class SymbolInstance(BaseModel):
     
     Conceptual instances exist in project scope without spatial location.
     Canvas instances are placed on specific sheets within drawings.
+    
+    SymbolDefinition provides visual/conceptual definition (shape, general meaning).
+    Definition item (Assembly/ScheduleItem/LegendItem) provides specific meaning.
     """
     id: str = Field(..., description="Server-assigned unique id")
     entity_type: Literal["symbol_instance"] = "symbol_instance"
     symbol_definition_id: str
     recognized_text: Optional[str] = None
+    
+    # Link to specific definition item (what this symbol actually represents)
+    definition_item_id: Optional[str] = Field(None, description="ID of Assembly/ScheduleItem/LegendItem")
+    definition_item_type: Optional[Literal["assembly", "schedule_item", "legend_item"]] = None
     
     # Optional spatial fields (required for canvas instances, null for conceptual)
     source_sheet_number: Optional[int] = Field(None, ge=1)
@@ -178,6 +304,12 @@ class SymbolInstance(BaseModel):
         # If bbox exists, sheet must exist
         if bbox is not None and sheet is None:
             raise ValueError("source_sheet_number required when bounding_box is provided")
+        
+        # If definition_item_id is provided, definition_item_type must also be provided
+        if self.definition_item_id is not None and self.definition_item_type is None:
+            raise ValueError("definition_item_type required when definition_item_id is provided")
+        if self.definition_item_type is not None and self.definition_item_id is None:
+            raise ValueError("definition_item_id required when definition_item_type is provided")
         
         return self
     
@@ -224,7 +356,11 @@ class ComponentInstance(BaseModel):
 EntityUnion = Union[
     Drawing,
     Legend,
+    LegendItem,
     Schedule,
+    ScheduleItem,
+    AssemblyGroup,
+    Assembly,
     Note,
     Scope,
     SymbolDefinition,
@@ -252,6 +388,33 @@ class CreateLegend(CreateEntityBase):
     source_sheet_number: int
     bounding_box: List[float]
     title: str | None = None
+    notes: str | None = None
+
+
+class CreateLegendItem(CreateEntityBase):
+    """Create a legend item - can have optional bbox."""
+    entity_type: Literal["legend_item"]
+    legend_id: str
+    symbol_text: str | None = None
+    description: str | None = None
+    notes: str | None = None
+    source_sheet_number: Optional[int] = None
+    bounding_box: Optional[List[float]] = None
+    
+    @model_validator(mode='after')
+    def _validate_consistency(self):  # type: ignore
+        """Validate bbox/sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox provided, sheet must also be provided
+        if bbox is not None:
+            if sheet is None:
+                raise ValueError("source_sheet_number required when bounding_box is provided")
+            if len(bbox) != 4:
+                raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        
+        return self
 
 
 class CreateSchedule(CreateEntityBase):
@@ -259,6 +422,73 @@ class CreateSchedule(CreateEntityBase):
     source_sheet_number: int
     bounding_box: List[float]
     title: str | None = None
+    schedule_type: str | None = None
+    notes: str | None = None
+
+
+class CreateScheduleItem(CreateEntityBase):
+    """Create a schedule item - can have optional bbox."""
+    entity_type: Literal["schedule_item"]
+    schedule_id: str
+    mark: str | None = None
+    description: str | None = None
+    notes: str | None = None
+    specifications: Optional[Dict[str, Any]] = None
+    drawing_id: Optional[str] = None
+    source_sheet_number: Optional[int] = None
+    bounding_box: Optional[List[float]] = None
+    
+    @model_validator(mode='after')
+    def _validate_consistency(self):  # type: ignore
+        """Validate bbox/sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox provided, sheet must also be provided
+        if bbox is not None:
+            if sheet is None:
+                raise ValueError("source_sheet_number required when bounding_box is provided")
+            if len(bbox) != 4:
+                raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        
+        return self
+
+
+class CreateAssemblyGroup(CreateEntityBase):
+    entity_type: Literal["assembly_group"]
+    source_sheet_number: int
+    bounding_box: List[float]
+    title: str | None = None
+    notes: str | None = None
+
+
+class CreateAssembly(CreateEntityBase):
+    """Create an assembly - can have optional bbox."""
+    entity_type: Literal["assembly"]
+    assembly_group_id: str
+    code: str | None = None
+    name: str | None = None
+    description: str | None = None
+    notes: str | None = None
+    specifications: Optional[Dict[str, Any]] = None
+    drawing_id: Optional[str] = None
+    source_sheet_number: Optional[int] = None
+    bounding_box: Optional[List[float]] = None
+    
+    @model_validator(mode='after')
+    def _validate_consistency(self):  # type: ignore
+        """Validate bbox/sheet consistency."""
+        bbox = self.bounding_box
+        sheet = self.source_sheet_number
+        
+        # If bbox provided, sheet must also be provided
+        if bbox is not None:
+            if sheet is None:
+                raise ValueError("source_sheet_number required when bounding_box is provided")
+            if len(bbox) != 4:
+                raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        
+        return self
 
 
 class CreateNote(CreateEntityBase):
@@ -327,10 +557,12 @@ class CreateSymbolInstance(CreateEntityBase):
     bounding_box: Optional[List[float]] = None
     symbol_definition_id: str
     recognized_text: Optional[str] = None
+    definition_item_id: Optional[str] = None
+    definition_item_type: Optional[Literal["assembly", "schedule_item", "legend_item"]] = None
     
     @model_validator(mode='after')
     def _validate_consistency(self):  # type: ignore
-        """Validate bbox/sheet consistency."""
+        """Validate bbox/sheet consistency and definition item consistency."""
         bbox = self.bounding_box
         sheet = self.source_sheet_number
         
@@ -340,6 +572,12 @@ class CreateSymbolInstance(CreateEntityBase):
                 raise ValueError("source_sheet_number required when bounding_box is provided")
             if len(bbox) != 4:
                 raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        
+        # If definition_item_id is provided, definition_item_type must also be provided
+        if self.definition_item_id is not None and self.definition_item_type is None:
+            raise ValueError("definition_item_type required when definition_item_id is provided")
+        if self.definition_item_type is not None and self.definition_item_id is None:
+            raise ValueError("definition_item_id required when definition_item_type is provided")
         
         return self
 
@@ -371,7 +609,11 @@ CreateEntityUnion = Annotated[
     Union[
         CreateDrawing,
         CreateLegend,
+        CreateLegendItem,
         CreateSchedule,
+        CreateScheduleItem,
+        CreateAssemblyGroup,
+        CreateAssembly,
         CreateNote,
         CreateScope,
         CreateSymbolDefinition,
@@ -390,7 +632,11 @@ __all__ = [
     "StatusLiteral",
     "Drawing",
     "Legend",
+    "LegendItem",
     "Schedule",
+    "ScheduleItem",
+    "AssemblyGroup",
+    "Assembly",
     "Note",
     "Scope",
     "SymbolDefinition",
@@ -401,7 +647,11 @@ __all__ = [
     "CreateEntityUnion",
     "CreateDrawing",
     "CreateLegend",
+    "CreateLegendItem",
     "CreateSchedule",
+    "CreateScheduleItem",
+    "CreateAssemblyGroup",
+    "CreateAssembly",
     "CreateNote",
     "CreateScope",
     "CreateSymbolDefinition",

@@ -168,6 +168,29 @@ async def patch_entity_endpoint(
         kwargs["status"] = body["status"]
     if "validation" in body:
         kwargs["validation"] = body["validation"]
+    # New fields for container/item types
+    if "notes" in body:
+        kwargs["notes"] = body["notes"]
+    if "schedule_type" in body:
+        kwargs["schedule_type"] = body["schedule_type"]
+    if "legend_id" in body:
+        kwargs["legend_id"] = body["legend_id"]
+    if "schedule_id" in body:
+        kwargs["schedule_id"] = body["schedule_id"]
+    if "assembly_group_id" in body:
+        kwargs["assembly_group_id"] = body["assembly_group_id"]
+    if "symbol_text" in body:
+        kwargs["symbol_text"] = body["symbol_text"]
+    if "mark" in body:
+        kwargs["mark"] = body["mark"]
+    if "code" in body:
+        kwargs["code"] = body["code"]
+    if "drawing_id" in body:
+        kwargs["drawing_id"] = body["drawing_id"]
+    if "definition_item_id" in body:
+        kwargs["definition_item_id"] = body["definition_item_id"]
+    if "definition_item_type" in body:
+        kwargs["definition_item_type"] = body["definition_item_type"]
     
     try:
         ent = update_entity(

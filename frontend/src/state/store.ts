@@ -98,8 +98,8 @@ interface AppState {
     toggleLinkTarget: (targetId: string) => void;
     finishLinking: () => Promise<void>;
     cancelLinking: () => void;
-    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
-    startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'note') => void;
+    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'assembly_group' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
+    startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'assembly_group' | 'note') => void;
     startDefinitionCreation: (type: 'symbol_definition' | 'component_definition', parentId: string | null, meta: any) => void;
     startInstanceStamp: (kind: 'symbol' | 'component', definitionId: string, opts?: { sizePts?: number; recognized_text?: string }) => void;
     cancelEntityCreation: () => void;
@@ -114,7 +114,7 @@ interface AppState {
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities' | 'explorer';
     leftTab: 'sheets' | 'search';
-    explorerTab: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes';
+    explorerTab: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes' | 'legends' | 'legendItems' | 'schedules' | 'scheduleItems' | 'assemblies' | 'assemblyGroups';
     // UI layout (Sprint 1)
     leftPanel: { widthPx: number; collapsed: boolean };
     rightPanel: { widthPx: number; collapsed: boolean };
@@ -123,7 +123,7 @@ interface AppState {
     toggleLeftCollapsed: () => void;
     toggleRightCollapsed: () => void;
     setLeftTab: (t: 'sheets' | 'search') => void;
-    setExplorerTab: (t: 'scopes' | 'symbolsInst') => void;
+    setExplorerTab: (t: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes' | 'legends' | 'legendItems' | 'schedules' | 'scheduleItems' | 'assemblies' | 'assemblyGroups') => void;
     // Layer visibility (authoritative for overlays)
     layers: { ocr: boolean; drawings: boolean; legends: boolean; schedules: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
     setLayer: (k: keyof AppState['layers'], v: boolean) => void;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../state/store';
 import type { Entity } from '../api/entities';
+import { createEntity as apiCreateEntity } from '../api/entities';
 import { EntitySelector } from './EntitySelector';
 import { createLink as apiCreateLink } from '../api/links';
 import { useUIV2Actions, useUIV2Linking } from '../state/ui_v2';
@@ -25,6 +26,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     setRightPanelTab,
     projectId,
     fetchLinks,
+    fetchEntities,
     selectEntity,
     updateScopeLocation,
     removeScopeLocation,
@@ -43,6 +45,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     setRightPanelTab: state.setRightPanelTab,
     projectId: state.projectId,
     fetchLinks: state.fetchLinks,
+    fetchEntities: state.fetchEntities,
     selectEntity: state.selectEntity,
     updateScopeLocation: state.updateScopeLocation,
     removeScopeLocation: state.removeScopeLocation,
@@ -71,11 +74,40 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     // Initialize local values based on entity type
     const initial: Record<string, any> = {};
     
-    if (entity.entity_type === 'drawing' || entity.entity_type === 'legend' || entity.entity_type === 'schedule') {
+    if (entity.entity_type === 'drawing' || entity.entity_type === 'legend' || entity.entity_type === 'schedule' || entity.entity_type === 'assembly_group') {
       initial.title = (entity as any).title || '';
     }
     if (entity.entity_type === 'drawing') {
       initial.description = (entity as any).description || '';
+    }
+    if (entity.entity_type === 'legend' || entity.entity_type === 'schedule' || entity.entity_type === 'assembly_group') {
+      initial.notes = (entity as any).notes || '';
+    }
+    if (entity.entity_type === 'schedule') {
+      initial.schedule_type = (entity as any).schedule_type || '';
+    }
+    if (entity.entity_type === 'legend_item') {
+      initial.legend_id = (entity as any).legend_id || '';
+      initial.symbol_text = (entity as any).symbol_text || '';
+      initial.description = (entity as any).description || '';
+      initial.notes = (entity as any).notes || '';
+    }
+    if (entity.entity_type === 'schedule_item') {
+      initial.schedule_id = (entity as any).schedule_id || '';
+      initial.mark = (entity as any).mark || '';
+      initial.description = (entity as any).description || '';
+      initial.notes = (entity as any).notes || '';
+      initial.specifications = JSON.stringify((entity as any).specifications || {}, null, 2);
+      initial.drawing_id = (entity as any).drawing_id || '';
+    }
+    if (entity.entity_type === 'assembly') {
+      initial.assembly_group_id = (entity as any).assembly_group_id || '';
+      initial.code = (entity as any).code || '';
+      initial.name = (entity as any).name || '';
+      initial.description = (entity as any).description || '';
+      initial.notes = (entity as any).notes || '';
+      initial.specifications = JSON.stringify((entity as any).specifications || {}, null, 2);
+      initial.drawing_id = (entity as any).drawing_id || '';
     }
     if (entity.entity_type === 'note') {
       initial.text = (entity as any).text || '';
@@ -98,6 +130,8 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     }
     if (entity.entity_type === 'symbol_instance') {
       initial.recognized_text = (entity as any).recognized_text || '';
+      initial.definition_item_id = (entity as any).definition_item_id || '';
+      initial.definition_item_type = (entity as any).definition_item_type || '';
     }
 
     setLocalValues(initial);
@@ -123,8 +157,8 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     try {
       const payload: Record<string, any> = { ...localValues };
       
-      // Handle component definition specifications (JSON parse)
-      if (entity.entity_type === 'component_definition' && payload.specifications) {
+      // Handle specifications JSON parsing for entities that have it
+      if (['component_definition', 'schedule_item', 'assembly'].includes(entity.entity_type) && payload.specifications) {
         try {
           payload.specifications = JSON.parse(payload.specifications);
         } catch {
@@ -281,7 +315,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     
     // Get entity type for UI V2 Selection
     const getSelectionType = (e: Entity): 'Drawing' | 'Legend' | 'Schedule' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope' => {
-      const typeMap: Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope'> = {
+      const typeMap: Partial<Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope'>> = {
         drawing: 'Drawing',
         legend: 'Legend',
         schedule: 'Schedule',
@@ -292,7 +326,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
         symbol_instance: 'SymbolInst',
         component_instance: 'CompInst',
       };
-      return typeMap[e.entity_type];
+      return typeMap[e.entity_type] ?? 'Drawing';
     };
 
     // Get already linked evidence to pre-populate
@@ -561,8 +595,8 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
 
       {/* Form Fields */}
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-        {/* Drawing/Legend/Schedule Title */}
-        {(entity.entity_type === 'drawing' || entity.entity_type === 'legend' || entity.entity_type === 'schedule') && (
+        {/* Drawing/Legend/Schedule/AssemblyGroup Title */}
+        {(entity.entity_type === 'drawing' || entity.entity_type === 'legend' || entity.entity_type === 'schedule' || entity.entity_type === 'assembly_group') && (
           <div style={{ marginBottom: 16 }}>
             <label style={styles.label}>
               Title
@@ -593,6 +627,38 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
           </div>
         )}
 
+        {/* Container Notes (Legend, Schedule, AssemblyGroup) */}
+        {(entity.entity_type === 'legend' || entity.entity_type === 'schedule' || entity.entity_type === 'assembly_group') && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={styles.label}>
+              Notes
+            </label>
+            <textarea
+              value={localValues.notes || ''}
+              onChange={(e) => handleFieldChange('notes', e.target.value)}
+              rows={3}
+              placeholder="Enter notes"
+              style={styles.textarea}
+            />
+          </div>
+        )}
+
+        {/* Schedule Type */}
+        {entity.entity_type === 'schedule' && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={styles.label}>
+              Schedule Type
+            </label>
+            <input
+              type="text"
+              value={localValues.schedule_type || ''}
+              onChange={(e) => handleFieldChange('schedule_type', e.target.value)}
+              placeholder="e.g., door, window, finish, equipment"
+              style={styles.input}
+            />
+          </div>
+        )}
+
         {/* Note Text */}
         {entity.entity_type === 'note' && (
           <div style={{ marginBottom: 16 }}>
@@ -607,6 +673,253 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
               style={styles.textarea}
             />
           </div>
+        )}
+
+        {/* Legend Item Fields */}
+        {entity.entity_type === 'legend_item' && (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Parent Legend
+              </label>
+              <select
+                value={localValues.legend_id || ''}
+                onChange={(e) => handleFieldChange('legend_id', e.target.value)}
+                style={styles.input}
+              >
+                <option value="">Select a legend...</option>
+                {entities.filter((e: any) => e.entity_type === 'legend').map((legend: any) => (
+                  <option key={legend.id} value={legend.id}>
+                    {legend.title || `Legend ${legend.id.slice(0, 6)}`} (Sheet {legend.source_sheet_number})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Symbol Text
+              </label>
+              <input
+                type="text"
+                value={localValues.symbol_text || ''}
+                onChange={(e) => handleFieldChange('symbol_text', e.target.value)}
+                placeholder="e.g., A1, B2"
+                style={styles.input}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Description
+              </label>
+              <textarea
+                value={localValues.description || ''}
+                onChange={(e) => handleFieldChange('description', e.target.value)}
+                rows={3}
+                placeholder="Enter description"
+                style={styles.textarea}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Notes
+              </label>
+              <textarea
+                value={localValues.notes || ''}
+                onChange={(e) => handleFieldChange('notes', e.target.value)}
+                rows={2}
+                placeholder="Enter notes"
+                style={styles.textarea}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Schedule Item Fields */}
+        {entity.entity_type === 'schedule_item' && (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Parent Schedule
+              </label>
+              <select
+                value={localValues.schedule_id || ''}
+                onChange={(e) => handleFieldChange('schedule_id', e.target.value)}
+                style={styles.input}
+              >
+                <option value="">Select a schedule...</option>
+                {entities.filter((e: any) => e.entity_type === 'schedule').map((schedule: any) => (
+                  <option key={schedule.id} value={schedule.id}>
+                    {schedule.title || `Schedule ${schedule.id.slice(0, 6)}`} (Sheet {schedule.source_sheet_number})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Mark
+              </label>
+              <input
+                type="text"
+                value={localValues.mark || ''}
+                onChange={(e) => handleFieldChange('mark', e.target.value)}
+                placeholder="e.g., W1, D2, A"
+                style={styles.input}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Description
+              </label>
+              <textarea
+                value={localValues.description || ''}
+                onChange={(e) => handleFieldChange('description', e.target.value)}
+                rows={3}
+                placeholder="Enter description"
+                style={styles.textarea}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Linked Drawing
+              </label>
+              <select
+                value={localValues.drawing_id || ''}
+                onChange={(e) => handleFieldChange('drawing_id', e.target.value)}
+                style={styles.input}
+              >
+                <option value="">No drawing linked</option>
+                {entities.filter((e: any) => e.entity_type === 'drawing').map((drawing: any) => (
+                  <option key={drawing.id} value={drawing.id}>
+                    {drawing.title || `Drawing ${drawing.id.slice(0, 6)}`} (Sheet {drawing.source_sheet_number})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Notes
+              </label>
+              <textarea
+                value={localValues.notes || ''}
+                onChange={(e) => handleFieldChange('notes', e.target.value)}
+                rows={2}
+                placeholder="Enter notes"
+                style={styles.textarea}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Specifications (JSON)
+              </label>
+              <textarea
+                value={localValues.specifications || ''}
+                onChange={(e) => handleFieldChange('specifications', e.target.value)}
+                rows={4}
+                placeholder='{"key": "value"}'
+                style={styles.textarea}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Assembly Fields */}
+        {entity.entity_type === 'assembly' && (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Parent Assembly Group
+              </label>
+              <select
+                value={localValues.assembly_group_id || ''}
+                onChange={(e) => handleFieldChange('assembly_group_id', e.target.value)}
+                style={styles.input}
+              >
+                <option value="">Select an assembly group...</option>
+                {entities.filter((e: any) => e.entity_type === 'assembly_group').map((group: any) => (
+                  <option key={group.id} value={group.id}>
+                    {group.title || `Assembly Group ${group.id.slice(0, 6)}`} (Sheet {group.source_sheet_number})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Code
+              </label>
+              <input
+                type="text"
+                value={localValues.code || ''}
+                onChange={(e) => handleFieldChange('code', e.target.value)}
+                placeholder="e.g., W2A, F1B"
+                style={styles.input}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Name
+              </label>
+              <input
+                type="text"
+                value={localValues.name || ''}
+                onChange={(e) => handleFieldChange('name', e.target.value)}
+                placeholder="Enter assembly name"
+                style={styles.input}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Description
+              </label>
+              <textarea
+                value={localValues.description || ''}
+                onChange={(e) => handleFieldChange('description', e.target.value)}
+                rows={3}
+                placeholder="Enter description"
+                style={styles.textarea}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Linked Drawing
+              </label>
+              <select
+                value={localValues.drawing_id || ''}
+                onChange={(e) => handleFieldChange('drawing_id', e.target.value)}
+                style={styles.input}
+              >
+                <option value="">No drawing linked</option>
+                {entities.filter((e: any) => e.entity_type === 'drawing').map((drawing: any) => (
+                  <option key={drawing.id} value={drawing.id}>
+                    {drawing.title || `Drawing ${drawing.id.slice(0, 6)}`} (Sheet {drawing.source_sheet_number})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Notes
+              </label>
+              <textarea
+                value={localValues.notes || ''}
+                onChange={(e) => handleFieldChange('notes', e.target.value)}
+                rows={2}
+                placeholder="Enter notes"
+                style={styles.textarea}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Specifications (JSON)
+              </label>
+              <textarea
+                value={localValues.specifications || ''}
+                onChange={(e) => handleFieldChange('specifications', e.target.value)}
+                rows={4}
+                placeholder='{"key": "value"}'
+                style={styles.textarea}
+              />
+            </div>
+          </>
         )}
 
         {/* Scope Fields */}
@@ -722,17 +1035,180 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
 
         {/* Symbol Instance Recognized Text */}
         {entity.entity_type === 'symbol_instance' && (
-          <div style={{ marginBottom: 16 }}>
-            <label style={styles.label}>
-              Recognized Text
-            </label>
-            <input
-              type="text"
-              value={localValues.recognized_text || ''}
-              onChange={(e) => handleFieldChange('recognized_text', e.target.value)}
-              placeholder="Optional recognized text"
-              style={styles.input}
-            />
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Recognized Text
+              </label>
+              <input
+                type="text"
+                value={localValues.recognized_text || ''}
+                onChange={(e) => handleFieldChange('recognized_text', e.target.value)}
+                placeholder="Optional recognized text"
+                style={styles.input}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={styles.label}>
+                Links to Definition Item
+              </label>
+              <select
+                value={localValues.definition_item_type || ''}
+                onChange={(e) => {
+                  const newType = e.target.value;
+                  handleFieldChange('definition_item_type', newType);
+                  handleFieldChange('definition_item_id', ''); // Reset ID when type changes
+                }}
+                style={styles.input}
+              >
+                <option value="">No definition item linked</option>
+                <option value="legend_item">Legend Item</option>
+                <option value="schedule_item">Schedule Item</option>
+                <option value="assembly">Assembly</option>
+              </select>
+            </div>
+            {localValues.definition_item_type && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={styles.label}>
+                  Select {localValues.definition_item_type === 'legend_item' ? 'Legend Item' : 
+                           localValues.definition_item_type === 'schedule_item' ? 'Schedule Item' : 'Assembly'}
+                </label>
+                <select
+                  value={localValues.definition_item_id || ''}
+                  onChange={(e) => handleFieldChange('definition_item_id', e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="">Select an item...</option>
+                  {(() => {
+                    if (localValues.definition_item_type === 'legend_item') {
+                      return entities.filter((e: any) => e.entity_type === 'legend_item').map((item: any) => (
+                        <option key={item.id} value={item.id}>
+                          {item.symbol_text ? `${item.symbol_text}: ` : ''}{item.description || `Item ${item.id.slice(0, 6)}`}
+                        </option>
+                      ));
+                    } else if (localValues.definition_item_type === 'schedule_item') {
+                      return entities.filter((e: any) => e.entity_type === 'schedule_item').map((item: any) => (
+                        <option key={item.id} value={item.id}>
+                          {item.mark ? `[${item.mark}] ` : ''}{item.description || `Item ${item.id.slice(0, 6)}`}
+                        </option>
+                      ));
+                    } else if (localValues.definition_item_type === 'assembly') {
+                      return entities.filter((e: any) => e.entity_type === 'assembly').map((item: any) => (
+                        <option key={item.id} value={item.id}>
+                          {item.code ? `[${item.code}] ` : ''}{item.name || item.description || `Assembly ${item.id.slice(0, 6)}`}
+                        </option>
+                      ));
+                    }
+                    return null;
+                  })()}
+                </select>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Container Items Management */}
+        {(entity.entity_type === 'legend' || entity.entity_type === 'schedule' || entity.entity_type === 'assembly_group') && (
+          <div style={{ marginTop: 24, borderTop: '2px solid #e2e8f0', paddingTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: '#1e293b' }}>
+                {entity.entity_type === 'legend' ? 'Legend Items' :
+                 entity.entity_type === 'schedule' ? 'Schedule Items' : 'Assemblies'}
+              </h4>
+              <button
+                onClick={() => {
+                  const itemType = entity.entity_type === 'legend' ? 'legend_item' :
+                                   entity.entity_type === 'schedule' ? 'schedule_item' : 'assembly';
+                  // Create new item with parent reference
+                  const newItem: any = {
+                    entity_type: itemType,
+                    source_sheet_number: entity.source_sheet_number,
+                  };
+                  if (itemType === 'legend_item') newItem.legend_id = entity.id;
+                  else if (itemType === 'schedule_item') newItem.schedule_id = entity.id;
+                  else if (itemType === 'assembly') newItem.assembly_group_id = entity.id;
+                  
+                  // Use the API to create the item
+                  (async () => {
+                    try {
+                      await apiCreateEntity(projectId, newItem);
+                      await fetchEntities();
+                      addToast({ kind: 'success', message: `${itemType.replace('_', ' ')} created` });
+                    } catch (error: any) {
+                      console.error(error);
+                      addToast({ kind: 'error', message: error?.message || 'Failed to create item' });
+                    }
+                  })();
+                }}
+                style={{
+                  ...styles.button(false),
+                  fontSize: 11,
+                  padding: '6px 12px'
+                }}
+              >
+                + Add Item
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>
+              {(() => {
+                const itemType = entity.entity_type === 'legend' ? 'legend_item' :
+                                 entity.entity_type === 'schedule' ? 'schedule_item' : 'assembly';
+                const items = entities.filter((e: any) => {
+                  if (itemType === 'legend_item') return e.entity_type === 'legend_item' && e.legend_id === entity.id;
+                  if (itemType === 'schedule_item') return e.entity_type === 'schedule_item' && e.schedule_id === entity.id;
+                  if (itemType === 'assembly') return e.entity_type === 'assembly' && e.assembly_group_id === entity.id;
+                  return false;
+                });
+                return `${items.length} item${items.length !== 1 ? 's' : ''}`;
+              })()}
+            </div>
+            {(() => {
+              const itemType = entity.entity_type === 'legend' ? 'legend_item' :
+                               entity.entity_type === 'schedule' ? 'schedule_item' : 'assembly';
+              const items = entities.filter((e: any) => {
+                if (itemType === 'legend_item') return e.entity_type === 'legend_item' && e.legend_id === entity.id;
+                if (itemType === 'schedule_item') return e.entity_type === 'schedule_item' && e.schedule_id === entity.id;
+                if (itemType === 'assembly') return e.entity_type === 'assembly' && e.assembly_group_id === entity.id;
+                return false;
+              });
+              
+              if (items.length === 0) {
+                return (
+                  <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>
+                    No items yet. Click "+ Add Item" to create one.
+                  </div>
+                );
+              }
+              
+              return items.map((item: any) => (
+                <div
+                  key={item.id}
+                  onClick={() => selectEntity(item.id)}
+                  style={{
+                    padding: 8,
+                    borderRadius: 6,
+                    border: '1px solid #e1e6eb',
+                    background: '#f9fafb',
+                    marginBottom: 8,
+                    cursor: 'pointer',
+                    transition: 'background 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#f9fafb'}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>
+                    {itemType === 'legend_item' && `${(item as any).symbol_text ? `${(item as any).symbol_text}: ` : ''}${(item as any).description || `Item ${item.id.slice(0, 6)}`}`}
+                    {itemType === 'schedule_item' && `${(item as any).mark ? `[${(item as any).mark}] ` : ''}${(item as any).description || `Item ${item.id.slice(0, 6)}`}`}
+                    {itemType === 'assembly' && `${(item as any).code ? `[${(item as any).code}] ` : ''}${(item as any).name || (item as any).description || `Assembly ${item.id.slice(0, 6)}`}`}
+                  </div>
+                  {(item as any).notes && (
+                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+                      {(item as any).notes.slice(0, 60)}{(item as any).notes.length > 60 ? '...' : ''}
+                    </div>
+                  )}
+                </div>
+              ));
+            })()}
           </div>
         )}
 
