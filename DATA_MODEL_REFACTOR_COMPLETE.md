@@ -184,3 +184,4 @@ PATCH /api/projects/{project_id}/entities/<symbol_instance_id>
 - `frontend/src/components/CanvasToolbar.tsx` - Needs button updates
 - Canvas overlay components - Need visual distinction updates
 
+

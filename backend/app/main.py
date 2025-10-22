@@ -87,6 +87,37 @@ async def get_original_pdf(project_id: str):
     return FileResponse(path, media_type="application/pdf")
 
 
+# --------- Page Titles Endpoints ---------
+
+
+class PageTitleUpdate(BaseModel):
+    page_index: int
+    text: str
+
+
+@app.patch("/api/projects/{project_id}/page-titles")
+async def update_page_title(project_id: str, body: PageTitleUpdate):
+    """Update a single page title in the manifest."""
+    from .ingest import patch_manifest
+    
+    m = read_manifest(project_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Ensure page_titles exists in manifest (backwards compatibility)
+    if "page_titles" not in m:
+        m["page_titles"] = {}
+    
+    # Update the specific page title
+    page_titles = m.get("page_titles", {})
+    page_titles[str(body.page_index)] = body.text
+    
+    # Patch manifest with updated page_titles
+    patch_manifest(project_id, page_titles=page_titles)
+    
+    return {"success": True, "page_index": body.page_index, "text": body.text}
+
+
 # --------- Entities Endpoints ---------
 
 

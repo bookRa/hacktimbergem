@@ -11,6 +11,7 @@ export type FormVariant =
   | 'DrawingForm'
   | 'LegendForm'
   | 'ScheduleForm'
+  | 'AssemblyGroupForm'
   | 'ScopeForm'
   | 'NoteForm'
   | 'SymbolDefinitionForm'
@@ -426,12 +427,22 @@ export function InlineEntityForm({
   const renderLegendForm = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {renderTextField('Title', 'title', 'Enter legend title...')}
+      {renderTextarea('Notes', 'notes', 'Add notes about this legend...')}
     </div>
   );
 
   const renderScheduleForm = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {renderTextField('Title', 'title', 'Enter schedule title...')}
+      {renderTextField('Schedule Type', 'scheduleType', 'e.g., door, window, finish...')}
+      {renderTextarea('Notes', 'notes', 'Add notes about this schedule...')}
+    </div>
+  );
+
+  const renderAssemblyGroupForm = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderTextField('Title', 'title', 'Enter assembly group title...')}
+      {renderTextarea('Notes', 'notes', 'Add notes about this assembly group...')}
     </div>
   );
 
@@ -503,6 +514,8 @@ export function InlineEntityForm({
       case 'LegendForm':
         return 'Needs title to be complete';
       case 'ScheduleForm':
+        return 'Needs title to be complete';
+      case 'AssemblyGroupForm':
         return 'Needs title to be complete';
       case 'DrawingForm':
         return 'Needs title to be complete';
@@ -619,6 +632,7 @@ export function InlineEntityForm({
               {variant === 'DrawingForm' && renderDrawingForm()}
               {variant === 'LegendForm' && renderLegendForm()}
               {variant === 'ScheduleForm' && renderScheduleForm()}
+              {variant === 'AssemblyGroupForm' && renderAssemblyGroupForm()}
               {variant === 'SymbolInstanceForm' && renderSymbolInstanceForm()}
               {variant === 'ComponentInstanceForm' && renderComponentInstanceForm()}
               {variant === 'ScopeForm' && renderScopeForm()}

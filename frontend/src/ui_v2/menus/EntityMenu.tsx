@@ -8,6 +8,7 @@ export type EntityKind =
   | 'Drawing'
   | 'Legend'
   | 'Schedule'
+  | 'AssemblyGroup'
   | 'Note'
   | 'Space'
   | 'SymbolDef'

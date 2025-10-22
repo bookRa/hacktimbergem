@@ -71,7 +71,7 @@ interface AppState {
     updateNoteType: (id: string, note_type: string) => void;
     // Page titles
     pageTitles: Record<number, { text: string; fromBlocks?: number[] }>;
-    setPageTitle: (pageIndex: number, text: string, fromBlocks?: number[]) => void;
+    setPageTitle: (pageIndex: number, text: string, fromBlocks?: number[]) => Promise<void>;
     deriveTitleFromBlocks: (pageIndex: number, blockIds: number[]) => void;
     // Persisted visual entities from backend
     entities: any[]; // typed later via api/entities
@@ -125,7 +125,7 @@ interface AppState {
     setLeftTab: (t: 'sheets' | 'search') => void;
     setExplorerTab: (t: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes' | 'legends' | 'legendItems' | 'schedules' | 'scheduleItems' | 'assemblies' | 'assemblyGroups') => void;
     // Layer visibility (authoritative for overlays)
-    layers: { ocr: boolean; drawings: boolean; legends: boolean; schedules: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
+    layers: { ocr: boolean; drawings: boolean; legends: boolean; schedules: boolean; assemblyGroups: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
     setLayer: (k: keyof AppState['layers'], v: boolean) => void;
     // Right inspector sizing
     rightInspectorHeightPx: number;
@@ -210,7 +210,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     leftTab: 'sheets',
     leftPanel: { widthPx: lsNum('ui:leftWidth', 240), collapsed: lsBool('ui:leftCollapsed', false) },
     rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
-    layers: { ocr: false, drawings: true, legends: true, schedules: true, symbols: true, components: true, notes: true, scopes: true },
+    layers: { ocr: false, drawings: true, legends: true, schedules: true, assemblyGroups: true, symbols: true, components: true, notes: true, scopes: true },
     rightInspectorHeightPx: lsNum('ui:rightInspectorHeight', 260),
     explorerTab: 'scopes',
     scrollTarget: null,
@@ -277,6 +277,18 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 if (!r.ok) throw new Error('Status fetch failed');
                 const data = await r.json();
                 set({ manifest: data });
+                
+                // Load page titles from manifest
+                if (data.page_titles) {
+                    const pageTitles: Record<number, { text: string; fromBlocks?: number[] }> = {};
+                    for (const [pageIndex, text] of Object.entries(data.page_titles)) {
+                        if (typeof text === 'string') {
+                            pageTitles[parseInt(pageIndex, 10)] = { text };
+                        }
+                    }
+                    set({ pageTitles });
+                }
+                
                 if (data.status === 'complete') {
                     // Derive total pages if not yet set
                     const pages = (get() as any).pages as number[];
@@ -530,12 +542,33 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     updateNoteType: (id, note_type) => set(state => ({
         notes: state.notes.map(n => n.id === id ? { ...n, note_type } : n)
     })),
-    setPageTitle: (pageIndex, raw, fromBlocks) => set(state => {
+    setPageTitle: async (pageIndex, raw, fromBlocks) => {
         let text = (raw || '').replace(/\s+/g, ' ').trim();
-        if (!text) return {};
+        if (!text) return;
         if (text.length > 120) text = text.slice(0, 117).trimEnd() + '...';
-        return { pageTitles: { ...state.pageTitles, [pageIndex]: { text, fromBlocks: fromBlocks && fromBlocks.length ? fromBlocks : undefined } } };
-    }),
+        
+        // Update local state immediately
+        set(state => ({ 
+            pageTitles: { 
+                ...state.pageTitles, 
+                [pageIndex]: { text, fromBlocks: fromBlocks && fromBlocks.length ? fromBlocks : undefined } 
+            } 
+        }));
+        
+        // Persist to backend
+        const { projectId } = get();
+        if (projectId) {
+            try {
+                await fetch(`/api/projects/${projectId}/page-titles`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page_index: pageIndex, text })
+                });
+            } catch (e) {
+                console.error('[setPageTitle] Failed to persist to backend:', e);
+            }
+        }
+    },
     deriveTitleFromBlocks: (pageIndex, blockIds) => {
         const { pageOcr, setPageTitle } = get();
         const ocr = pageOcr[pageIndex];
