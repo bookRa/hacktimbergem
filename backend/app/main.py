@@ -35,6 +35,7 @@ class ProjectStatus(BaseModel):
     started_at: float | None = None
     completed_at: float | None = None
     error: str | None = None
+    page_titles: dict[str, str] = {}  # Map of page index (as string) to title
 
 
 @app.post("/api/projects")
