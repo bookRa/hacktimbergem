@@ -1375,6 +1375,51 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
                       Edit
                     </button>
                   </div>
+                  
+                  {/* Stamp More button for instances */}
+                  {(entity.entity_type === 'symbol_instance' || entity.entity_type === 'component_instance') && (
+                    <button
+                      onClick={() => {
+                        const kind = entity.entity_type === 'symbol_instance' ? 'symbol' : 'component';
+                        const definitionId = linkedItems.definition!.id;
+                        
+                        // Prepare options to pass along recognized_text and definition item linkage
+                        const opts: any = {};
+                        if (entity.entity_type === 'symbol_instance') {
+                          const recognizedText = (entity as any).recognized_text;
+                          const definitionItemId = (entity as any).definition_item_id;
+                          const definitionItemType = (entity as any).definition_item_type;
+                          
+                          if (recognizedText) opts.recognized_text = recognizedText;
+                          // Both definition_item_id and definition_item_type must be present together
+                          if (definitionItemId && definitionItemType) {
+                            opts.definition_item_id = definitionItemId;
+                            opts.definition_item_type = definitionItemType;
+                          }
+                        }
+                        
+                        startInstanceStamp(kind, definitionId, opts);
+                        addToast({ 
+                          kind: 'info', 
+                          message: 'Click on canvas to place more instances. Press Esc to cancel.' 
+                        });
+                      }}
+                      style={{
+                        ...styles.button(false),
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        marginTop: 8,
+                        fontSize: 12,
+                        padding: '8px 12px'
+                      }}
+                      title="Stamp more instances like this one (including recognized text and definition item linkage)"
+                    >
+                      🖌️ Stamp More Like This
+                    </button>
+                  )}
                 </div>
               )}
 

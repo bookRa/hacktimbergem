@@ -101,7 +101,7 @@ interface AppState {
     creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'assembly_group' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
     startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'assembly_group' | 'note') => void;
     startDefinitionCreation: (type: 'symbol_definition' | 'component_definition', parentId: string | null, meta: any) => void;
-    startInstanceStamp: (kind: 'symbol' | 'component', definitionId: string, opts?: { sizePts?: number; recognized_text?: string }) => void;
+    startInstanceStamp: (kind: 'symbol' | 'component', definitionId: string, opts?: { sizePts?: number; recognized_text?: string; definition_item_id?: string; definition_item_type?: string }) => void;
     cancelEntityCreation: () => void;
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
@@ -804,6 +804,11 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 payload.symbol_definition_id = creatingEntity.meta?.definitionId;
                 if (creatingEntity.meta?.recognized_text) {
                     payload.recognized_text = creatingEntity.meta.recognized_text;
+                }
+                // Both definition_item_id and definition_item_type must be present together
+                if (creatingEntity.meta?.definition_item_id && creatingEntity.meta?.definition_item_type) {
+                    payload.definition_item_id = creatingEntity.meta.definition_item_id;
+                    payload.definition_item_type = creatingEntity.meta.definition_item_type;
                 }
             } else if (creatingEntity.type === 'component_instance') {
                 payload.component_definition_id = creatingEntity.meta?.definitionId;

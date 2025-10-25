@@ -755,10 +755,15 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         payload.scope = (entity as any).scope ?? 'sheet';
         payload.specifications = (entity as any).specifications ?? {};
       } else if (entity.entity_type === 'symbol_instance') {
-        // Copy definition reference and recognized text
+        // Copy definition reference, recognized text, and definition item linkage
         // NOTE: Links (JUSTIFIED_BY to scopes) are NOT copied - user must re-link
         payload.symbol_definition_id = (entity as any).symbol_definition_id;
         payload.recognized_text = (entity as any).recognized_text ?? '';
+        // Copy definition item linkage if present
+        if ((entity as any).definition_item_id && (entity as any).definition_item_type) {
+          payload.definition_item_id = (entity as any).definition_item_id;
+          payload.definition_item_type = (entity as any).definition_item_type;
+        }
       } else if (entity.entity_type === 'component_instance') {
         // Copy definition reference and recognized text
         // NOTE: Links (JUSTIFIED_BY to scopes) are NOT copied - user must re-link
@@ -1502,6 +1507,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         payload.symbol_definition_id = creatingEntity.meta?.definitionId;
         if (creatingEntity.meta?.recognized_text) {
           payload.recognized_text = creatingEntity.meta.recognized_text;
+        }
+        // Copy definition item linkage if present
+        if (creatingEntity.meta?.definition_item_id && creatingEntity.meta?.definition_item_type) {
+          payload.definition_item_id = creatingEntity.meta.definition_item_id;
+          payload.definition_item_type = creatingEntity.meta.definition_item_type;
         }
       } else if (creatingEntity.type === 'component_instance') {
         payload.component_definition_id = creatingEntity.meta?.definitionId;
