@@ -63,6 +63,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
   const [showSpaceSelector, setShowSpaceSelector] = useState(false);
   const [showScopeSelector, setShowScopeSelector] = useState(false);
   const [showDrawingSelector, setShowDrawingSelector] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!entity) {
@@ -151,9 +152,10 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
     setIsDirty(true);
   };
 
-  const handleSave = async () => {
-    if (!isDirty) return;
+  const handleSave = async (saveAndAddAnother: boolean = false) => {
+    if (!isDirty && !saveAndAddAnother) return;
     
+    setIsSaving(true);
     try {
       const payload: Record<string, any> = { ...localValues };
       
@@ -163,16 +165,90 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
           payload.specifications = JSON.parse(payload.specifications);
         } catch {
           addToast({ kind: 'error', message: 'Specifications must be valid JSON' });
+          setIsSaving(false);
           return;
         }
       }
       
+      // Filter out empty string values to prevent backend validation errors
+      // Empty strings should be treated as "no update" rather than "set to empty"
+      Object.keys(payload).forEach(key => {
+        if (payload[key] === '') {
+          delete payload[key];
+        }
+      });
+      
       await updateEntityMeta(entity.id, payload);
       setIsDirty(false);
       addToast({ kind: 'success', message: 'Entity updated' });
+      
+      // If "Save & Add Another", create a new sibling item
+      if (saveAndAddAnother && ['legend_item', 'schedule_item', 'assembly'].includes(entity.entity_type)) {
+        await handleAddAnotherItem();
+      }
     } catch (error: any) {
       console.error(error);
       addToast({ kind: 'error', message: error?.message || 'Update failed' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddAnotherItem = async () => {
+    try {
+      const newItem: any = {
+        entity_type: entity.entity_type,
+        source_sheet_number: entity.source_sheet_number,
+      };
+      
+      // Copy parent reference
+      if (entity.entity_type === 'legend_item' && (entity as any).legend_id) {
+        newItem.legend_id = (entity as any).legend_id;
+      } else if (entity.entity_type === 'schedule_item' && (entity as any).schedule_id) {
+        newItem.schedule_id = (entity as any).schedule_id;
+      } else if (entity.entity_type === 'assembly' && (entity as any).assembly_group_id) {
+        newItem.assembly_group_id = (entity as any).assembly_group_id;
+      }
+      
+      const created = await fetch(`/api/projects/${projectId}/entities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newItem),
+      });
+      
+      if (!created.ok) {
+        throw new Error('Failed to create new item');
+      }
+      
+      const createdEntity = await created.json();
+      await fetchEntities();
+      
+      // Select the newly created entity
+      selectEntity(createdEntity.id);
+      addToast({ kind: 'success', message: 'New item created - ready to edit' });
+    } catch (error: any) {
+      console.error(error);
+      addToast({ kind: 'error', message: error?.message || 'Failed to create new item' });
+    }
+  };
+
+  const handleNavigateToParent = () => {
+    let parentId: string | null = null;
+    
+    if (entity.entity_type === 'legend_item') {
+      parentId = (entity as any).legend_id;
+    } else if (entity.entity_type === 'schedule_item') {
+      parentId = (entity as any).schedule_id;
+    } else if (entity.entity_type === 'assembly') {
+      parentId = (entity as any).assembly_group_id;
+    }
+    
+    if (parentId) {
+      selectEntity(parentId);
+      const parent = entities.find((e: Entity) => e.id === parentId);
+      if (parent) {
+        setCurrentPageIndex(parent.source_sheet_number - 1);
+      }
     }
   };
 
@@ -262,6 +338,23 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
 
   const linkedItems = getLinkedItems();
   const isOnDifferentSheet = entity.source_sheet_number - 1 !== currentPageIndex;
+  
+  // Get parent entity for item entities
+  const parentEntity = (() => {
+    if (entity.entity_type === 'legend_item' && (entity as any).legend_id) {
+      return entities.find((e: Entity) => e.id === (entity as any).legend_id);
+    } else if (entity.entity_type === 'schedule_item' && (entity as any).schedule_id) {
+      return entities.find((e: Entity) => e.id === (entity as any).schedule_id);
+    } else if (entity.entity_type === 'assembly' && (entity as any).assembly_group_id) {
+      return entities.find((e: Entity) => e.id === (entity as any).assembly_group_id);
+    }
+    return null;
+  })();
+  
+  const isItemEntity = ['legend_item', 'schedule_item', 'assembly'].includes(entity.entity_type);
+  const parentLabel = parentEntity 
+    ? (parentEntity as any).title || `${entity.entity_type === 'legend_item' ? 'Legend' : entity.entity_type === 'schedule_item' ? 'Schedule' : 'Assembly Group'} ${parentEntity.id.slice(0, 6)}`
+    : null;
 
   const unlinkSpace = async (spaceId: string) => {
     const linkObj = links.find((l: any) => 
@@ -559,6 +652,30 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
         alignItems: 'center'
       }}>
         <div>
+          {/* Breadcrumb for item entities */}
+          {isItemEntity && parentEntity && (
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={handleNavigateToParent}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#2563eb',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                }}
+                title="Go to parent container"
+                onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+              >
+                ← {parentLabel}
+              </button>
+            </div>
+          )}
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={styles.badge}>
               {entity.entity_type.replace('_', ' ')}
@@ -1700,12 +1817,59 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
         justifyContent: 'space-between',
         gap: 10
       }}>
-        <button 
-          onClick={handleDelete}
-          style={styles.buttonDanger}
-        >
-          Delete
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button 
+            onClick={handleDelete}
+            style={styles.buttonDanger}
+          >
+            Delete
+          </button>
+          
+          {/* Quick Add Item button for container entities */}
+          {['legend', 'schedule', 'assembly_group'].includes(entity.entity_type) && (
+            <button
+              onClick={async () => {
+                const itemType = entity.entity_type === 'legend' ? 'legend_item' :
+                                 entity.entity_type === 'schedule' ? 'schedule_item' : 'assembly';
+                const newItem: any = {
+                  entity_type: itemType,
+                  source_sheet_number: entity.source_sheet_number,
+                };
+                if (itemType === 'legend_item') newItem.legend_id = entity.id;
+                else if (itemType === 'schedule_item') newItem.schedule_id = entity.id;
+                else if (itemType === 'assembly') newItem.assembly_group_id = entity.id;
+                
+                try {
+                  const created = await fetch(`/api/projects/${projectId}/entities`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newItem),
+                  });
+                  
+                  if (!created.ok) throw new Error('Failed to create item');
+                  
+                  const createdEntity = await created.json();
+                  await fetchEntities();
+                  selectEntity(createdEntity.id);
+                  addToast({ kind: 'success', message: 'New item created' });
+                } catch (error: any) {
+                  console.error(error);
+                  addToast({ kind: 'error', message: error?.message || 'Failed to create item' });
+                }
+              }}
+              style={{
+                ...styles.buttonSecondary,
+                borderColor: '#10b981',
+                color: '#10b981',
+                fontWeight: 600,
+              }}
+              title="Quickly add a new item to this container"
+            >
+              + Add Item
+            </button>
+          )}
+        </div>
+        
         <div style={{ display: 'flex', gap: 10 }}>
           <button 
             onClick={() => {
@@ -1717,12 +1881,30 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({ entityId, onClose })
           >
             Cancel
           </button>
+          
+          {/* Save & Add Another button for item entities */}
+          {isItemEntity && (
+            <button 
+              onClick={() => handleSave(true)}
+              disabled={isSaving}
+              style={{
+                ...styles.buttonSecondary,
+                borderColor: '#2563eb',
+                color: '#2563eb',
+                fontWeight: 600,
+              }}
+              title="Save this item and create another one in the same container"
+            >
+              {isSaving ? 'Saving...' : 'Save & Add Another'}
+            </button>
+          )}
+          
           <button 
-            onClick={handleSave}
-            disabled={!isDirty}
-            style={styles.button(!isDirty)}
+            onClick={() => handleSave(false)}
+            disabled={!isDirty || isSaving}
+            style={styles.button(!isDirty || isSaving)}
           >
-            {isDirty ? 'Save Changes' : 'No Changes'}
+            {isSaving ? 'Saving...' : isDirty ? 'Save Changes' : 'No Changes'}
           </button>
         </div>
       </div>
