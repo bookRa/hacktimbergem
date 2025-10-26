@@ -35,6 +35,7 @@ class ProjectStatus(BaseModel):
     started_at: float | None = None
     completed_at: float | None = None
     error: str | None = None
+    page_titles: dict[str, str] = {}  # Map of page index (as string) to title
 
 
 @app.post("/api/projects")
@@ -87,6 +88,37 @@ async def get_original_pdf(project_id: str):
     return FileResponse(path, media_type="application/pdf")
 
 
+# --------- Page Titles Endpoints ---------
+
+
+class PageTitleUpdate(BaseModel):
+    page_index: int
+    text: str
+
+
+@app.patch("/api/projects/{project_id}/page-titles")
+async def update_page_title(project_id: str, body: PageTitleUpdate):
+    """Update a single page title in the manifest."""
+    from .ingest import patch_manifest
+    
+    m = read_manifest(project_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Ensure page_titles exists in manifest (backwards compatibility)
+    if "page_titles" not in m:
+        m["page_titles"] = {}
+    
+    # Update the specific page title
+    page_titles = m.get("page_titles", {})
+    page_titles[str(body.page_index)] = body.text
+    
+    # Patch manifest with updated page_titles
+    patch_manifest(project_id, page_titles=page_titles)
+    
+    return {"success": True, "page_index": body.page_index, "text": body.text}
+
+
 # --------- Entities Endpoints ---------
 
 
@@ -104,15 +136,16 @@ async def list_entities(project_id: str):
 async def create_entity_endpoint(project_id: str, body: CreateEntityUnion):
     if not read_manifest(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
-    # Validate bounding_box basic structure before delegate (length numeric is revalidated there too)
-    if len(body.bounding_box) != 4:
-        raise HTTPException(status_code=422, detail="bounding_box must have 4 numbers")
-    try:
-        _ = [float(v) for v in body.bounding_box]
-    except Exception:
-        raise HTTPException(
-            status_code=422, detail="bounding_box values must be numeric"
-        )
+    # Validate bounding_box basic structure if present (conceptual scopes may not have bbox)
+    if hasattr(body, 'bounding_box') and body.bounding_box is not None:
+        if len(body.bounding_box) != 4:
+            raise HTTPException(status_code=422, detail="bounding_box must have 4 numbers")
+        try:
+            _ = [float(v) for v in body.bounding_box]
+        except Exception:
+            raise HTTPException(
+                status_code=422, detail="bounding_box values must be numeric"
+            )
     try:
         ent = create_entity(project_id, body)
     except ValueError as e:
@@ -130,34 +163,72 @@ async def patch_entity_endpoint(
 ):
     if not read_manifest(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
-    bbox = body.get("bounding_box")
-    title = body.get("title")
-    text = body.get("text")
-    name = body.get("name")
-    description = body.get("description")
-    visual_pattern_description = body.get("visual_pattern_description")
-    scope = body.get("scope")
-    defined_in_id = body.get("defined_in_id")
-    specifications = body.get("specifications")
-    symbol_definition_id = body.get("symbol_definition_id")
-    component_definition_id = body.get("component_definition_id")
-    recognized_text = body.get("recognized_text")
+    
+    # Build kwargs only for fields that are present in the request
+    # This allows explicit null values to be passed through
+    kwargs: dict = {}
+    
+    if "bounding_box" in body:
+        kwargs["bounding_box"] = body["bounding_box"]
+    if "source_sheet_number" in body:
+        kwargs["source_sheet_number"] = body["source_sheet_number"]
+    if "title" in body:
+        kwargs["title"] = body["title"]
+    if "text" in body:
+        kwargs["text"] = body["text"]
+    if "name" in body:
+        kwargs["name"] = body["name"]
+    if "description" in body:
+        kwargs["description"] = body["description"]
+    if "visual_pattern_description" in body:
+        kwargs["visual_pattern_description"] = body["visual_pattern_description"]
+    if "scope" in body:
+        kwargs["scope"] = body["scope"]
+    if "defined_in_id" in body:
+        kwargs["defined_in_id"] = body["defined_in_id"]
+    if "specifications" in body:
+        kwargs["specifications"] = body["specifications"]
+    if "symbol_definition_id" in body:
+        kwargs["symbol_definition_id"] = body["symbol_definition_id"]
+    if "component_definition_id" in body:
+        kwargs["component_definition_id"] = body["component_definition_id"]
+    if "recognized_text" in body:
+        kwargs["recognized_text"] = body["recognized_text"]
+    if "instantiated_in_id" in body:
+        kwargs["instantiated_in_id"] = body["instantiated_in_id"]
+    if "status" in body:
+        kwargs["status"] = body["status"]
+    if "validation" in body:
+        kwargs["validation"] = body["validation"]
+    # New fields for container/item types
+    if "notes" in body:
+        kwargs["notes"] = body["notes"]
+    if "schedule_type" in body:
+        kwargs["schedule_type"] = body["schedule_type"]
+    if "legend_id" in body:
+        kwargs["legend_id"] = body["legend_id"]
+    if "schedule_id" in body:
+        kwargs["schedule_id"] = body["schedule_id"]
+    if "assembly_group_id" in body:
+        kwargs["assembly_group_id"] = body["assembly_group_id"]
+    if "symbol_text" in body:
+        kwargs["symbol_text"] = body["symbol_text"]
+    if "mark" in body:
+        kwargs["mark"] = body["mark"]
+    if "code" in body:
+        kwargs["code"] = body["code"]
+    if "drawing_id" in body:
+        kwargs["drawing_id"] = body["drawing_id"]
+    if "definition_item_id" in body:
+        kwargs["definition_item_id"] = body["definition_item_id"]
+    if "definition_item_type" in body:
+        kwargs["definition_item_type"] = body["definition_item_type"]
+    
     try:
         ent = update_entity(
             project_id,
             entity_id,
-            bounding_box=bbox,
-            title=title,
-            text=text,
-            name=name,
-            description=description,
-            visual_pattern_description=visual_pattern_description,
-            scope=scope,
-            defined_in_id=defined_in_id,
-            specifications=specifications,
-            symbol_definition_id=symbol_definition_id,
-            component_definition_id=component_definition_id,
-            recognized_text=recognized_text,
+            **kwargs
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

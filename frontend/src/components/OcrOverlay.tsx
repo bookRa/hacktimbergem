@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useProjectStore } from '../state/store';
+import { useUIV2OCRSelection, useUIV2Actions } from '../state/ui_v2';
 import { pdfToCanvas } from '../utils/coords';
 
 interface Props {
@@ -19,6 +20,9 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
         toggleSelectBlock: (s as any).toggleSelectBlock,
         layers: (s as any).layers,
     }));
+    const ocrSelectionMode = useUIV2OCRSelection();
+    const { toggleOCRBlock: toggleUIV2OCRBlock } = useUIV2Actions();
+    
     const meta = pagesMeta[pageIndex];
     const ocr = pageOcr[pageIndex];
     const blocks = ocr?.blocks || [];
@@ -39,14 +43,31 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
     if (!layers.ocr || !meta || !renderMeta) return null;
 
     return (
-        <svg style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} width={meta.nativeWidth * scale} height={meta.nativeHeight * scale} viewBox={`0 0 ${meta.nativeWidth} ${meta.nativeHeight}`}>
+        <svg 
+            data-ui2-overlay-ignore 
+            style={{ 
+                position: 'absolute', 
+                inset: 0,
+                // Only capture pointer events when in OCR selection mode
+                pointerEvents: ocrSelectionMode.active ? 'auto' : 'none'
+            }} 
+            width={meta.nativeWidth * scale} 
+            height={meta.nativeHeight * scale} 
+            viewBox={`0 0 ${meta.nativeWidth} ${meta.nativeHeight}`}
+        >
             {blocks.map((b: any, i: number) => {
                 const [x1, y1, x2, y2] = b.bbox;
                 // Convert PDF points -> raster canvas pixels (unscaled), then rely on outer SVG viewBox scaling
                 const [cx1, cy1, cx2, cy2] = pdfToCanvas([x1, y1, x2, y2], renderMeta as any);
                 const status = ocrBlockState?.[pageIndex]?.[i]?.status || 'unverified';
                 const isHovered = hoveredBlock?.[pageIndex] === i;
-                const isSelected = (selectedBlocks?.[pageIndex] || []).includes(i);
+                
+                // Check if this block is selected in either old or new selection system
+                const isSelectedOld = (selectedBlocks?.[pageIndex] || []).includes(i);
+                const isSelectedUIV2 = ocrSelectionMode.active && 
+                    ocrSelectionMode.selectedBlocks.some(sb => sb.pageIndex === pageIndex && sb.blockIndex === i);
+                const isSelected = isSelectedOld || isSelectedUIV2;
+                
                 // Color mapping
                 const colorMap: Record<string, { fill: string; stroke: string; }> = {
                     unverified: { fill: 'rgba(255,165,0,0.15)', stroke: 'rgba(255,140,0,0.9)' },
@@ -56,26 +77,62 @@ export const OcrOverlay: React.FC<Props> = ({ pageIndex, scale }) => {
                 };
                 const c = colorMap[status];
                 const strokeWidth = (isSelected ? 2.5 : isHovered ? 2 : 1) / scale;
-                const finalStroke = isSelected ? '#3b82f6' : isHovered ? c.stroke : c.stroke;
-                const finalFill = isSelected ? 'rgba(59,130,246,0.18)' : c.fill;
+                const finalStroke = isSelected ? '#2563eb' : isHovered ? c.stroke : c.stroke;
+                const finalFill = isSelected ? 'rgba(37,99,235,0.25)' : c.fill;
+                
                 return (
-                    <rect
-                        key={i}
-                        x={cx1}
-                        y={cy1}
-                        width={cx2 - cx1}
-                        height={cy2 - cy1}
-                        fill={finalFill}
-                        stroke={finalStroke}
-                        strokeWidth={strokeWidth}
-                        style={{ cursor: 'pointer', pointerEvents: 'auto' }}
-                        onMouseEnter={() => setHoveredBlock(pageIndex, i)}
-                        onMouseLeave={() => setHoveredBlock(pageIndex, hoveredBlock?.[pageIndex] === i ? null : hoveredBlock?.[pageIndex] || null)}
-                        onClick={(e) => {
-                            const additive = e.metaKey || e.ctrlKey || e.shiftKey;
-                            toggleSelectBlock(pageIndex, i, additive);
-                        }}
-                    />
+                    <g key={i}>
+                        <rect
+                            x={cx1}
+                            y={cy1}
+                            width={cx2 - cx1}
+                            height={cy2 - cy1}
+                            fill={finalFill}
+                            stroke={finalStroke}
+                            strokeWidth={strokeWidth}
+                            style={{ 
+                                cursor: ocrSelectionMode.active ? 'pointer' : 'default',
+                                // Only capture pointer events during OCR selection mode
+                                pointerEvents: ocrSelectionMode.active ? 'auto' : 'none'
+                            }}
+                            onMouseEnter={() => setHoveredBlock(pageIndex, i)}
+                            onMouseLeave={() => setHoveredBlock(pageIndex, hoveredBlock?.[pageIndex] === i ? null : hoveredBlock?.[pageIndex] || null)}
+                            onPointerDown={(e) => {
+                                // Only process events in OCR selection mode
+                                if (!ocrSelectionMode.active) {
+                                    return;
+                                }
+                                
+                                e.stopPropagation();
+                                e.preventDefault();
+                                
+                                toggleUIV2OCRBlock(pageIndex, i, b.text, [x1, y1, x2, y2]);
+                            }}
+                        />
+                        {/* Show checkmark for selected blocks in OCR selection mode */}
+                        {isSelectedUIV2 && ocrSelectionMode.active && (
+                            <g style={{ pointerEvents: 'none' }}>
+                                {/* Circle background */}
+                                <circle
+                                    cx={cx1 + 8 / scale}
+                                    cy={cy1 + 8 / scale}
+                                    r={6 / scale}
+                                    fill="#2563eb"
+                                    stroke="white"
+                                    strokeWidth={1.5 / scale}
+                                />
+                                {/* Checkmark */}
+                                <path
+                                    d={`M ${cx1 + 5.5 / scale} ${cy1 + 8 / scale} L ${cx1 + 7.5 / scale} ${cy1 + 10 / scale} L ${cx1 + 10.5 / scale} ${cy1 + 6 / scale}`}
+                                    stroke="white"
+                                    strokeWidth={1.5 / scale}
+                                    fill="none"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+                            </g>
+                        )}
+                    </g>
                 );
             })}
         </svg>

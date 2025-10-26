@@ -5,6 +5,8 @@ import type { Concept } from '../api/concepts';
 import { fetchConcepts as apiFetchConcepts, createConcept as apiCreateConcept, patchConcept as apiPatchConcept, deleteConcept as apiDeleteConcept } from '../api/concepts';
 import type { Relationship, RelationshipType } from '../api/links';
 import { fetchLinks as apiFetchLinks, createLink as apiCreateLink, deleteLink as apiDeleteLink } from '../api/links';
+import type { EntityType } from '../api/entities';
+import { deriveEntityFlags } from './entity_flags';
 
 // Page raster meta at 300 DPI baseline
 export interface PageRenderMeta {
@@ -69,7 +71,7 @@ interface AppState {
     updateNoteType: (id: string, note_type: string) => void;
     // Page titles
     pageTitles: Record<number, { text: string; fromBlocks?: number[] }>;
-    setPageTitle: (pageIndex: number, text: string, fromBlocks?: number[]) => void;
+    setPageTitle: (pageIndex: number, text: string, fromBlocks?: number[]) => Promise<void>;
     deriveTitleFromBlocks: (pageIndex: number, blockIds: number[]) => void;
     // Persisted visual entities from backend
     entities: any[]; // typed later via api/entities
@@ -96,13 +98,14 @@ interface AppState {
     toggleLinkTarget: (targetId: string) => void;
     finishLinking: () => Promise<void>;
     cancelLinking: () => void;
-    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
-    startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'note') => void;
+    creatingEntity: { type: 'drawing' | 'legend' | 'schedule' | 'assembly_group' | 'note' | 'symbol_definition' | 'component_definition' | 'symbol_instance' | 'component_instance'; startX: number; startY: number; parentId?: string | null; meta?: any } | null;
+    startEntityCreation: (type: 'drawing' | 'legend' | 'schedule' | 'assembly_group' | 'note') => void;
     startDefinitionCreation: (type: 'symbol_definition' | 'component_definition', parentId: string | null, meta: any) => void;
-    startInstanceStamp: (kind: 'symbol' | 'component', definitionId: string, opts?: { sizePts?: number; recognized_text?: string }) => void;
+    startInstanceStamp: (kind: 'symbol' | 'component', definitionId: string, opts?: { sizePts?: number; recognized_text?: string; definition_item_id?: string; definition_item_type?: string }) => void;
     cancelEntityCreation: () => void;
     finalizeEntityCreation: (x1: number, y1: number, x2: number, y2: number) => Promise<void>;
     selectedEntityId: string | null;
+    _explicitSelection: boolean;
     setSelectedEntityId: (id: string | null) => void;
     selectEntity: (id: string | null) => void;
     updateEntityBBox: (id: string, bbox: [number, number, number, number]) => Promise<void>;
@@ -111,7 +114,7 @@ interface AppState {
     // Panel tabs
     rightPanelTab: 'blocks' | 'entities' | 'explorer';
     leftTab: 'sheets' | 'search';
-    explorerTab: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes';
+    explorerTab: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes' | 'legends' | 'legendItems' | 'schedules' | 'scheduleItems' | 'assemblies' | 'assemblyGroups';
     // UI layout (Sprint 1)
     leftPanel: { widthPx: number; collapsed: boolean };
     rightPanel: { widthPx: number; collapsed: boolean };
@@ -120,9 +123,9 @@ interface AppState {
     toggleLeftCollapsed: () => void;
     toggleRightCollapsed: () => void;
     setLeftTab: (t: 'sheets' | 'search') => void;
-    setExplorerTab: (t: 'scopes' | 'symbolsInst') => void;
+    setExplorerTab: (t: 'scopes' | 'symbolsInst' | 'symbolsDef' | 'componentsDef' | 'componentsInst' | 'spaces' | 'notes' | 'legends' | 'legendItems' | 'schedules' | 'scheduleItems' | 'assemblies' | 'assemblyGroups') => void;
     // Layer visibility (authoritative for overlays)
-    layers: { ocr: boolean; drawings: boolean; legends: boolean; schedules: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
+    layers: { ocr: boolean; drawings: boolean; legends: boolean; schedules: boolean; assemblyGroups: boolean; symbols: boolean; components: boolean; notes: boolean; scopes: boolean };
     setLayer: (k: keyof AppState['layers'], v: boolean) => void;
     // Right inspector sizing
     rightInspectorHeightPx: number;
@@ -160,6 +163,20 @@ interface AppState {
     historyIdMap: Record<string, string>; // originalId -> currentId mapping for recreated entities
     // Persisted Notes from OCR selection
     promoteSelectionToNotePersist: (pageIndex: number) => Promise<void>;
+    // Scope creation mode
+    scopeCreationMode: {
+        active: boolean;
+        type: 'canvas' | 'conceptual' | null;
+    };
+    addingScopeLocationTo: string | null; // Track which scope ID is getting a location added
+    startScopeCreation: (type: 'canvas' | 'conceptual') => void;
+    cancelScopeCreation: () => void;
+    startAddingScopeLocation: (scopeId: string) => void;
+    createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<void>;
+    updateScopeLocation: (scopeId: string, sheet: number, bbox: number[]) => Promise<void>;
+    removeScopeLocation: (scopeId: string) => Promise<void>;
+    // OCR helpers
+    getOCRBlocksInBBox: (pageIndex: number, bbox: [number, number, number, number]) => Array<{ index: number; text: string; bbox: [number, number, number, number] }>;
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
@@ -193,7 +210,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     leftTab: 'sheets',
     leftPanel: { widthPx: lsNum('ui:leftWidth', 240), collapsed: lsBool('ui:leftCollapsed', false) },
     rightPanel: { widthPx: lsNum('ui:rightWidth', 360), collapsed: lsBool('ui:rightCollapsed', false) },
-    layers: { ocr: false, drawings: true, legends: true, schedules: true, symbols: true, components: true, notes: true, scopes: true },
+    layers: { ocr: false, drawings: true, legends: true, schedules: true, assemblyGroups: true, symbols: true, components: true, notes: true, scopes: true },
     rightInspectorHeightPx: lsNum('ui:rightInspectorHeight', 260),
     explorerTab: 'scopes',
     scrollTarget: null,
@@ -206,6 +223,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     uiDensity: (() => { try { return (localStorage.getItem('ui:density') as any) || 'comfortable'; } catch { return 'comfortable'; } })(),
     creatingEntity: null,
     selectedEntityId: null,
+    _explicitSelection: false,
     selectedSpaceId: null,
     activeSheetFilter: null,
     focusBBoxPts: null,
@@ -259,6 +277,18 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 if (!r.ok) throw new Error('Status fetch failed');
                 const data = await r.json();
                 set({ manifest: data });
+                
+                // Load page titles from manifest
+                if (data.page_titles) {
+                    const pageTitles: Record<number, { text: string; fromBlocks?: number[] }> = {};
+                    for (const [pageIndex, text] of Object.entries(data.page_titles)) {
+                        if (typeof text === 'string') {
+                            pageTitles[parseInt(pageIndex, 10)] = { text };
+                        }
+                    }
+                    set({ pageTitles });
+                }
+                
                 if (data.status === 'complete') {
                     // Derive total pages if not yet set
                     const pages = (get() as any).pages as number[];
@@ -512,12 +542,33 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     updateNoteType: (id, note_type) => set(state => ({
         notes: state.notes.map(n => n.id === id ? { ...n, note_type } : n)
     })),
-    setPageTitle: (pageIndex, raw, fromBlocks) => set(state => {
+    setPageTitle: async (pageIndex, raw, fromBlocks) => {
         let text = (raw || '').replace(/\s+/g, ' ').trim();
-        if (!text) return {};
+        if (!text) return;
         if (text.length > 120) text = text.slice(0, 117).trimEnd() + '...';
-        return { pageTitles: { ...state.pageTitles, [pageIndex]: { text, fromBlocks: fromBlocks && fromBlocks.length ? fromBlocks : undefined } } };
-    }),
+        
+        // Update local state immediately
+        set(state => ({ 
+            pageTitles: { 
+                ...state.pageTitles, 
+                [pageIndex]: { text, fromBlocks: fromBlocks && fromBlocks.length ? fromBlocks : undefined } 
+            } 
+        }));
+        
+        // Persist to backend
+        const { projectId } = get();
+        if (projectId) {
+            try {
+                await fetch(`/api/projects/${projectId}/page-titles`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page_index: pageIndex, text })
+                });
+            } catch (e) {
+                console.error('[setPageTitle] Failed to persist to backend:', e);
+            }
+        }
+    },
     deriveTitleFromBlocks: (pageIndex, blockIds) => {
         const { pageOcr, setPageTitle } = get();
         const ocr = pageOcr[pageIndex];
@@ -751,10 +802,19 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 payload.defined_in_id = creatingEntity.parentId;
             } else if (creatingEntity.type === 'symbol_instance') {
                 payload.symbol_definition_id = creatingEntity.meta?.definitionId;
-                if (creatingEntity.meta?.recognized_text) payload.recognized_text = creatingEntity.meta.recognized_text;
+                if (creatingEntity.meta?.recognized_text) {
+                    payload.recognized_text = creatingEntity.meta.recognized_text;
+                }
+                // Both definition_item_id and definition_item_type must be present together
+                if (creatingEntity.meta?.definition_item_id && creatingEntity.meta?.definition_item_type) {
+                    payload.definition_item_id = creatingEntity.meta.definition_item_id;
+                    payload.definition_item_type = creatingEntity.meta.definition_item_type;
+                }
             } else if (creatingEntity.type === 'component_instance') {
                 payload.component_definition_id = creatingEntity.meta?.definitionId;
             }
+
+            Object.assign(payload, deriveEntityFlags(creatingEntity.type as EntityType, payload, null));
             const resp = await fetch(`/api/projects/${projectId}/entities`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });
@@ -781,7 +841,18 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         }
     },
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
-    selectEntity: (id) => set({ selectedEntityId: id, rightPanelTab: 'entities' } as any),
+    selectEntity: (id) => {
+        // When explicitly selecting from UI (e.g., Explorer), mark it with a flag
+        // to prevent canvas sync from overriding it
+        set({ selectedEntityId: id, rightPanelTab: 'entities', _explicitSelection: true } as any);
+        // Clear the flag after a brief moment to allow normal sync to resume
+        setTimeout(() => {
+            const current = (get() as any).selectedEntityId;
+            if (current === id) {
+                set({ _explicitSelection: false } as any);
+            }
+        }, 100);
+    },
     updateEntityBBox: async (id, bbox) => {
         const { projectId, addToast, fetchEntities, fetchPageOcr, pushHistory } = get() as any;
         if (!projectId) return;
@@ -922,6 +993,11 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
     historyFuture: [],
     pushHistory: (entry: any) => set(state => ({ historyPast: [...(state as any).historyPast, entry], historyFuture: [] } as any)),
     historyIdMap: {},
+    scopeCreationMode: {
+        active: false,
+        type: null,
+    },
+    addingScopeLocationTo: null,
     promoteSelectionToNotePersist: async (pageIndex: number) => {
         const { projectId, addToast, pageOcr, selectedBlocks, fetchEntities } = get() as any;
         if (!projectId) return;
@@ -1087,5 +1163,231 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 await st.fetchLinks();
             }
         } catch (e) { console.error('Redo failed', e); }
-    }
+    },
+    // Scope creation actions
+    startScopeCreation: (type: 'canvas' | 'conceptual') => {
+        set({ 
+            scopeCreationMode: { active: true, type },
+        });
+        
+        // If canvas type, trigger drawing mode via ui_v2
+        if (type === 'canvas') {
+            import('./ui_v2').then(({ useUIV2Store }) => {
+                const startDrawing = useUIV2Store.getState().startDrawing;
+                startDrawing('Scope');
+            }).catch((err) => {
+                console.error('[startScopeCreation] Failed to import UI V2 store:', err);
+            });
+        }
+        // For 'conceptual', the modal component will handle the UI
+    },
+    cancelScopeCreation: () => {
+        set({ 
+            scopeCreationMode: { active: false, type: null },
+        });
+    },
+    startAddingScopeLocation: (scopeId: string) => {
+        console.log('[startAddingScopeLocation] Starting to add location to scope:', scopeId);
+        
+        // Store which scope is getting a location added
+        set({ addingScopeLocationTo: scopeId });
+        
+        // Start canvas drawing mode for scope bbox
+        // Note: startDrawing is in the UI V2 store, not the project store
+        // Import it dynamically to avoid circular dependency
+        import('./ui_v2').then(({ useUIV2Store }) => {
+            const startDrawing = useUIV2Store.getState().startDrawing;
+            console.log('[startAddingScopeLocation] Starting drawing mode for scope');
+            startDrawing('Scope');
+        }).catch((err) => {
+            console.error('[startAddingScopeLocation] Failed to import UI V2 store:', err);
+        });
+    },
+    createScope: async (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => {
+        const { projectId, entities, addToast, fetchEntities } = get() as any;
+        if (!projectId) {
+            addToast({ kind: 'error', message: 'No project loaded' });
+            return;
+        }
+        
+        // Check for duplicate names
+        if (data.name) {
+            const duplicate = entities.find((e: any) => 
+                e.entity_type === 'scope' && 
+                (e.name?.toLowerCase() === data.name.toLowerCase() || 
+                 e.description?.toLowerCase() === data.name.toLowerCase())
+            );
+            
+            if (duplicate) {
+                const confirmCreate = window.confirm(
+                    `A scope with similar name "${duplicate.name || duplicate.description}" already exists. Create anyway?`
+                );
+                if (!confirmCreate) return;
+            }
+        }
+        
+        // Build payload - only include non-empty strings
+        const payload: any = {
+            entity_type: 'scope',
+        };
+        
+        // Only include name/description if they have actual content
+        if (data.name && data.name.trim()) {
+            payload.name = data.name.trim();
+        }
+        if (data.description && data.description.trim()) {
+            payload.description = data.description.trim();
+        }
+        
+        // Only add spatial fields if provided (for canvas scopes)
+        if (data.source_sheet_number !== undefined && data.bounding_box) {
+            payload.source_sheet_number = data.source_sheet_number;
+            payload.bounding_box = data.bounding_box;
+        }
+        
+        console.log('[createScope] Sending payload:', JSON.stringify(payload, null, 2));
+        
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            
+            if (!resp.ok) {
+                let msg = 'Create scope failed';
+                try { 
+                    const j = await resp.json(); 
+                    // Handle FastAPI validation error format (array of error objects)
+                    if (Array.isArray(j.detail)) {
+                        msg = j.detail.map((err: any) => err.msg).join(', ');
+                    } else if (typeof j.detail === 'string') {
+                        msg = j.detail;
+                    }
+                } catch (parseError) {
+                    console.error('Failed to parse error response:', parseError);
+                }
+                throw new Error(msg);
+            }
+            
+            const created = await resp.json();
+            await fetchEntities();
+            
+            set({ 
+                scopeCreationMode: { active: false, type: null },
+                selectedEntityId: created.id,
+                rightPanelTab: 'entities',
+            } as any);
+            
+            addToast({ kind: 'success', message: `Scope "${data.name}" created` });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to create scope' });
+        }
+    },
+    updateScopeLocation: async (scopeId: string, sheet: number, bbox: number[]) => {
+        const { projectId, addToast, fetchEntities } = get() as any;
+        if (!projectId) return;
+        
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities/${scopeId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_sheet_number: sheet,
+                    bounding_box: bbox,
+                }),
+            });
+            
+            if (!resp.ok) {
+                let msg = 'Update scope location failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            
+            await fetchEntities();
+            
+            // Navigate to the sheet and select the scope to show the result
+            set({
+                currentPageIndex: sheet - 1, // Convert 1-based to 0-based
+                selectedEntityId: scopeId,
+                rightPanelTab: 'entities',
+            } as any);
+            
+            addToast({ kind: 'success', message: 'Canvas location added to scope' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to update scope location' });
+        }
+    },
+    removeScopeLocation: async (scopeId: string) => {
+        const { projectId, addToast, fetchEntities } = get() as any;
+        if (!projectId) return;
+        
+        const confirmRemove = window.confirm(
+            'Remove canvas location from this scope? It will become a conceptual scope (project-level).'
+        );
+        
+        if (!confirmRemove) return;
+        
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities/${scopeId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_sheet_number: null,
+                    bounding_box: null,
+                }),
+            });
+            
+            if (!resp.ok) {
+                let msg = 'Remove scope location failed';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            
+            await fetchEntities();
+            console.log('[removeScopeLocation] Successfully removed location and refreshed entities');
+            addToast({ kind: 'success', message: 'Scope converted to conceptual (canvas location removed)' });
+        } catch (e: any) {
+            console.error('[removeScopeLocation] Error:', e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to remove scope location' });
+        }
+    },
+    
+    // OCR helper: Get all OCR blocks that intersect with a given bounding box
+    getOCRBlocksInBBox: (pageIndex: number, bbox: [number, number, number, number]) => {
+        const { pageOcr } = get() as any;
+        const ocr = pageOcr[pageIndex];
+        
+        if (!ocr || !Array.isArray(ocr)) {
+            console.log('[getOCRBlocksInBBox] No OCR data for page', pageIndex);
+            return [];
+        }
+        
+        const [x1, y1, x2, y2] = bbox;
+        const blocksInBBox: Array<{ index: number; text: string; bbox: [number, number, number, number] }> = [];
+        
+        for (let i = 0; i < ocr.length; i++) {
+            const block = ocr[i];
+            if (!block.bbox || block.bbox.length !== 4) continue;
+            
+            const [bx1, by1, bx2, by2] = block.bbox;
+            
+            // Check if block intersects with note bbox
+            // Two rectangles intersect if they don't NOT overlap
+            const intersects = !(bx2 < x1 || bx1 > x2 || by2 < y1 || by1 > y2);
+            
+            if (intersects && block.text && block.text.trim()) {
+                blocksInBBox.push({ 
+                    index: i, 
+                    text: block.text.trim(), 
+                    bbox: [bx1, by1, bx2, by2] 
+                });
+            }
+        }
+        
+        console.log(`[getOCRBlocksInBBox] Found ${blocksInBBox.length} OCR blocks in bbox`, { pageIndex, bbox, blocks: blocksInBBox });
+        return blocksInBBox;
+    },
 }));
