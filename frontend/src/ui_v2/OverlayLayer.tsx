@@ -10,7 +10,7 @@ import { ChipsTray } from './linking/ChipsTray';
 import type { OCRBlock } from './overlays/OCRPicker';
 import '../ui_v2/theme/tokens.css';
 import { useUIV2Actions, useUIV2ContextMenu, useUIV2Drawing, useUIV2InlineForm, useUIV2Linking, useUIV2OCRPicker, useUIV2OCRSelection, useUIV2Selection } from '../state/ui_v2';
-import type { Selection } from '../state/ui_v2';
+import type { Selection, OCRSelectionMode } from '../state/ui_v2';
 import { useProjectStore } from '../state/store';
 import { createEntity, patchEntity } from '../api/entities';
 import { createLink as apiCreateLink, deleteLink } from '../api/links';
@@ -51,7 +51,8 @@ const HANDLE_CURSOR: Record<ResizeHandle, string> = {
 const MIN_HANDLE_SIZE = 8;
 
 // Z-order mapping: lower numbers render first (bottom layer), higher numbers render last (top layer)
-const TYPE_Z_ORDER: Record<Entity['entity_type'], number> = {
+// Only includes entity types that can be rendered on canvas (have bounding boxes)
+const TYPE_Z_ORDER: Partial<Record<Entity['entity_type'], number>> = {
   drawing: 0,  // Drawings at bottom (can't block clicks to instances)
   legend: 1,
   schedule: 1,
@@ -60,7 +61,8 @@ const TYPE_Z_ORDER: Record<Entity['entity_type'], number> = {
   symbol_definition: 3,
   component_definition: 3,
   symbol_instance: 4,  // Instances on top (must be fully clickable)
-  component_instance: 4
+  component_instance: 4,
+  assembly_group: 1,  // Assembly groups render like schedules
 };
 
 function computeResizeRect(
@@ -96,7 +98,8 @@ function computeResizeRect(
   return { x, y, width, height };
 }
 
-const entityTypeMap: Record<Entity['entity_type'], TagEntityType> = {
+// Map entity types to UI tag types (only for entities that appear on canvas)
+const entityTypeMap: Partial<Record<Entity['entity_type'], TagEntityType>> = {
   drawing: 'Drawing',
   legend: 'Legend',
   schedule: 'Schedule',
@@ -106,12 +109,14 @@ const entityTypeMap: Record<Entity['entity_type'], TagEntityType> = {
   component_definition: 'CompDef',
   symbol_instance: 'SymbolInst',
   component_instance: 'CompInst',
+  assembly_group: 'AssemblyGroup',
 };
 
-const formTypeByEntity: Partial<Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst'>> = {
+const formTypeByEntity: Partial<Record<Entity['entity_type'], 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst'>> = {
   drawing: 'Drawing',
   legend: 'Legend',
   schedule: 'Schedule',
+  assembly_group: 'AssemblyGroup',
   scope: 'Scope',
   note: 'Note',
   symbol_definition: 'SymbolDef',
@@ -263,6 +268,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           return layers.legends !== false;
         case 'schedule':
           return layers.schedules !== false;
+        case 'assembly_group':
+          return layers.assemblyGroups !== false;
         case 'note':
           return layers.notes !== false;
         case 'symbol_definition':
@@ -278,17 +285,22 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }
     });
     return filtered
+      .filter((entity) => {
+        // Filter out entities without bounding boxes (they can't be displayed on canvas)
+        return entity.bounding_box != null;
+      })
       .map((entity) => {
         // Recompute validation flags with links to get accurate completion status
         const attrs = { ...entity, id: entity.id };
         const recomputedFlags = deriveEntityFlags(entity.entity_type, attrs, links);
         const entityWithFreshFlags = { ...entity, ...recomputedFlags };
         
+        const tagType = entityTypeMap[entity.entity_type] ?? 'Drawing';  // Default to Drawing if not mapped
         return {
           entity,
-          tagType: entityTypeMap[entity.entity_type],
+          tagType,
           bboxPx: pdfBoxToDisplay(
-            [entity.bounding_box.x1, entity.bounding_box.y1, entity.bounding_box.x2, entity.bounding_box.y2],
+            [entity.bounding_box!.x1, entity.bounding_box!.y1, entity.bounding_box!.x2, entity.bounding_box!.y2],
             { pageWidthPts, pageHeightPts, nativeWidth: meta.nativeWidth, nativeHeight: meta.nativeHeight },
             scale
           ),
@@ -380,7 +392,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         setSelection([
           {
             id: entity.id,
-            type: entityTypeMap[entity.entity_type],
+            type: entityTypeMap[entity.entity_type] ?? 'Drawing',
             sheetId: String(entity.source_sheet_number),
           },
         ]);
@@ -490,7 +502,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     minimizeForm();
     
     // Start OCR selection mode
-    const formContext = {
+    const formContext: OCRSelectionMode['formContext'] = {
       type: inlineForm.type!,
       at: inlineForm.at ?? undefined,
       pendingBBox: inlineForm.pendingBBox ?? undefined,
@@ -619,8 +631,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         initialValues.description = (entity as any).description ?? '';
       } else if (entity.entity_type === 'legend') {
         initialValues.title = (entity as any).title ?? '';
+        initialValues.notes = (entity as any).notes ?? '';
       } else if (entity.entity_type === 'schedule') {
         initialValues.title = (entity as any).title ?? '';
+        initialValues.notes = (entity as any).notes ?? '';
+        initialValues.schedule_type = (entity as any).schedule_type ?? '';
+      } else if (entity.entity_type === 'assembly_group') {
+        initialValues.title = (entity as any).title ?? '';
+        initialValues.notes = (entity as any).notes ?? '';
       } else if (entity.entity_type === 'scope') {
         initialValues.name = (entity as any).name ?? '';
         initialValues.description = (entity as any).description ?? '';
@@ -645,7 +663,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       }
       const formAt = contextMenu.at ?? { x: 0, y: 0 };
       openForm({
-        type: formType,
+        type: formType as 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef',
         entityId: entity.id,
         at: formAt,
         pendingBBox: undefined,
@@ -680,6 +698,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         return;
       }
 
+      if (!entity.bounding_box) {
+        addToast({ kind: 'warning', message: 'Cannot duplicate entity without bounding box' });
+        return;
+      }
+
       const offset = Math.min(48, Math.max(16, Math.floor(pageWidthPts * 0.02)));
       const width = entity.bounding_box.x2 - entity.bounding_box.x1;
       const height = entity.bounding_box.y2 - entity.bounding_box.y1;
@@ -708,8 +731,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         payload.description = (entity as any).description ?? '';
       } else if (entity.entity_type === 'legend') {
         payload.title = (entity as any).title ?? '';
+        payload.notes = (entity as any).notes ?? '';
       } else if (entity.entity_type === 'schedule') {
         payload.title = (entity as any).title ?? '';
+        payload.notes = (entity as any).notes ?? '';
+        payload.schedule_type = (entity as any).schedule_type ?? '';
+      } else if (entity.entity_type === 'assembly_group') {
+        payload.title = (entity as any).title ?? '';
+        payload.notes = (entity as any).notes ?? '';
       } else if (entity.entity_type === 'scope') {
         payload.name = (entity as any).name ?? '';
         payload.description = (entity as any).description ?? '';
@@ -726,10 +755,15 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         payload.scope = (entity as any).scope ?? 'sheet';
         payload.specifications = (entity as any).specifications ?? {};
       } else if (entity.entity_type === 'symbol_instance') {
-        // Copy definition reference and recognized text
+        // Copy definition reference, recognized text, and definition item linkage
         // NOTE: Links (JUSTIFIED_BY to scopes) are NOT copied - user must re-link
         payload.symbol_definition_id = (entity as any).symbol_definition_id;
         payload.recognized_text = (entity as any).recognized_text ?? '';
+        // Copy definition item linkage if present
+        if ((entity as any).definition_item_id && (entity as any).definition_item_type) {
+          payload.definition_item_id = (entity as any).definition_item_id;
+          payload.definition_item_type = (entity as any).definition_item_type;
+        }
       } else if (entity.entity_type === 'component_instance') {
         // Copy definition reference and recognized text
         // NOTE: Links (JUSTIFIED_BY to scopes) are NOT copied - user must re-link
@@ -745,7 +779,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         setSelection([
           {
             id: created.id,
-            type: entityTypeMap[created.entity_type],
+            type: entityTypeMap[created.entity_type] ?? 'Drawing',
             sheetId: String(created.source_sheet_number),
           },
         ]);
@@ -875,7 +909,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           setSelection([
             {
               id: active.id,
-              type: entityTypeMap[updated.entity_type],
+              type: entityTypeMap[updated.entity_type] ?? 'Drawing',
               sheetId: String(updated.source_sheet_number),
             },
           ]);
@@ -938,19 +972,16 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         return; // Early return to prevent multiple handlers
       }
       
-      // Check for stamping mode first (legacy creatingEntity)
-      const isStamping = creatingEntity && 
-                        (creatingEntity.type === 'symbol_instance' || 
-                         creatingEntity.type === 'component_instance');
-      
-      if (event.key === 'Escape' && isStamping) {
+      // Cancel ANY entity creation mode (drawing, stamping, etc.)
+      if (event.key === 'Escape' && creatingEntity) {
         event.preventDefault();
-        console.log('[DEBUG] Escape pressed - canceling stamping mode');
+        console.log('[DEBUG] Escape pressed - canceling entity creation mode:', creatingEntity.type);
         cancelEntityCreation(); // Cancel legacy state
         cancelDrawing();        // Cancel UI V2 state
         return;
       }
       
+      // Fallback: cancel drawing mode if active but no creatingEntity
       if (event.key === 'Escape' && drawing.active) {
         event.preventDefault();
         cancelDrawing();
@@ -991,28 +1022,52 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     };
   }, [definitionEntity]);
 
-  // Bridge legacy stamp mode (creatingEntity) to UI V2 drawing state
+  // Bridge legacy entity creation (creatingEntity) to UI V2 drawing state
   // Extract definitionId to detect when user switches stamp types
   const definitionId = creatingEntity?.meta?.definitionId;
   
+  // Map backend entity types to UI V2 drawing types
+  type DrawableEntityType = 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
+  const legacyToUIV2TypeMap: Partial<Record<string, DrawableEntityType>> = {
+    'drawing': 'Drawing',
+    'legend': 'Legend',
+    'schedule': 'Schedule',
+    'note': 'Note',
+    'scope': 'Scope',
+    'symbol_definition': 'SymbolDef',
+    'component_definition': 'CompDef',
+    'symbol_instance': 'SymbolInst',
+    'component_instance': 'CompInst',
+    'assembly_group': 'Schedule', // Assembly groups draw like schedules
+  };
+  
   useEffect(() => {
     if (!creatingEntity) {
-      // If legacy stamp mode was cancelled, sync to UI V2
-      if (drawing.active && (drawing.entityType === 'SymbolInst' || drawing.entityType === 'CompInst')) {
+      // Don't cancel drawing if we're in new definition creation workflow
+      const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+      if (isNewDefinitionCreation) {
+        console.log('[OverlayLayer] New definition workflow active, keeping drawing mode');
+        return;
+      }
+      
+      // If legacy creation mode was cancelled, sync to UI V2
+      if (drawing.active) {
         cancelDrawing();
       }
       return;
     }
 
-    // Only bridge for instance stamping (symbol_instance, component_instance)
-    if (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance') {
-      const targetType = creatingEntity.type === 'symbol_instance' ? 'SymbolInst' : 'CompInst';
-      
-      // Activate UI V2 drawing mode if not already active for this type
-      // Re-run when definitionId changes (user switched stamp types)
-      if (!drawing.active || drawing.entityType !== targetType) {
-        startDrawing(targetType);
-      }
+    // Map the legacy entity type to UI V2 drawing type
+    const targetType = legacyToUIV2TypeMap[creatingEntity.type];
+    if (!targetType) {
+      console.warn('[OverlayLayer] Unknown entity type for drawing:', creatingEntity.type);
+      return;
+    }
+    
+    // Activate UI V2 drawing mode if not already active for this type
+    // Re-run when definitionId changes (user switched stamp types for instances)
+    if (!drawing.active || drawing.entityType !== targetType || (definitionId && drawing.active)) {
+      startDrawing(targetType);
     }
   }, [creatingEntity, drawing.active, drawing.entityType, startDrawing, cancelDrawing, definitionId]);
 
@@ -1145,7 +1200,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
             .filter((linkedEntity: Entity | undefined): linkedEntity is Entity => Boolean(linkedEntity))
             .map((linkedEntity: Entity) => ({
               id: linkedEntity.id,
-              type: entityTypeMap[linkedEntity.entity_type],
+              type: entityTypeMap[linkedEntity.entity_type] ?? 'Drawing',
               sheetId: String(linkedEntity.source_sheet_number),
             }));
           startLinking(target, existing);
@@ -1197,7 +1252,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           await Promise.all(linksToDelete.map((link: { id: string }) => deleteLink(projectId, link.id)));
           await fetchLinks();
           addToast({ kind: 'success', message: `${linksToDelete.length} link${linksToDelete.length > 1 ? 's' : ''} removed` });
-          setSelection([makeSelection({ entity, tagType: entityTypeMap[entity.entity_type], bboxPx: { x: 0, y: 0, width: 0, height: 0 }, isIncomplete: false })]);
+          setSelection([makeSelection({ entity, tagType: entityTypeMap[entity.entity_type] ?? 'Drawing', bboxPx: { x: 0, y: 0, width: 0, height: 0 }, isIncomplete: false })]);
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to remove links' });
@@ -1452,6 +1507,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         payload.symbol_definition_id = creatingEntity.meta?.definitionId;
         if (creatingEntity.meta?.recognized_text) {
           payload.recognized_text = creatingEntity.meta.recognized_text;
+        }
+        // Copy definition item linkage if present
+        if (creatingEntity.meta?.definition_item_id && creatingEntity.meta?.definition_item_type) {
+          payload.definition_item_id = creatingEntity.meta.definition_item_id;
+          payload.definition_item_type = creatingEntity.meta.definition_item_type;
         }
       } else if (creatingEntity.type === 'component_instance') {
         payload.component_definition_id = creatingEntity.meta?.definitionId;
@@ -1828,12 +1888,13 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       const pending = pendingBBoxRef.current || inlineForm.pendingBBox;
       if (!pending) {
         // If no pending bbox, start drawing mode (right-click workflow)
-        let type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
+        let type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
         if (entityType === 'Symbol Instance') type = 'SymbolInst';
         else if (entityType === 'Component Instance') type = 'CompInst';
         else if (entityType === 'Drawing') type = 'Drawing';
         else if (entityType === 'Legend') type = 'Legend';
         else if (entityType === 'Schedule') type = 'Schedule';
+        else if (entityType === 'Assembly Group') type = 'AssemblyGroup';
         else if (entityType === 'Scope') type = 'Scope';
         else if (entityType === 'Note') type = 'Note';
         else if (entityType === 'Symbol Definition') type = 'SymbolDef';
@@ -1846,12 +1907,13 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
 
       // If we have a pending bbox, open the form directly (click-drag workflow)
       closeContext();
-      let type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
+      let type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null = null;
       if (entityType === 'Symbol Instance') type = 'SymbolInst';
       else if (entityType === 'Component Instance') type = 'CompInst';
       else if (entityType === 'Drawing') type = 'Drawing';
       else if (entityType === 'Legend') type = 'Legend';
       else if (entityType === 'Schedule') type = 'Schedule';
+      else if (entityType === 'Assembly Group') type = 'AssemblyGroup';
       else if (entityType === 'Scope') type = 'Scope';
       else if (entityType === 'Note') type = 'Note';
       else if (entityType === 'Symbol Definition') type = 'SymbolDef';
@@ -1889,8 +1951,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           patch.description = formData.description ?? (entity as any).description ?? '';
         } else if (inlineForm.type === 'Legend') {
           patch.title = formData.title ?? (entity as any).title ?? '';
+          patch.notes = formData.notes ?? (entity as any).notes ?? '';
         } else if (inlineForm.type === 'Schedule') {
           patch.title = formData.title ?? (entity as any).title ?? '';
+          patch.notes = formData.notes ?? (entity as any).notes ?? '';
+          patch.schedule_type = formData.scheduleType ?? (entity as any).schedule_type ?? '';
+        } else if (inlineForm.type === 'AssemblyGroup') {
+          patch.title = formData.title ?? (entity as any).title ?? '';
+          patch.notes = formData.notes ?? (entity as any).notes ?? '';
         } else if (inlineForm.type === 'Scope') {
           patch.name = formData.name ?? (entity as any).name ?? '';
           patch.description = formData.description ?? (entity as any).description ?? '';
@@ -1939,7 +2007,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           setSelection([
             {
               id: entity.id,
-              type: entityTypeMap[entity.entity_type],
+              type: entityTypeMap[entity.entity_type] ?? 'Drawing',
               sheetId: String(entity.source_sheet_number),
             },
           ]);
@@ -2009,6 +2077,7 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           source_sheet_number: sheetNumber,
           bounding_box: pending.bboxPdf,
           title: formData.title ?? '',
+          notes: formData.notes ?? '',
         };
         Object.assign(payload, deriveEntityFlags('legend', payload, null));
         try {
@@ -2037,6 +2106,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           source_sheet_number: sheetNumber,
           bounding_box: pending.bboxPdf,
           title: formData.title ?? '',
+          notes: formData.notes ?? '',
+          schedule_type: formData.scheduleType ?? '',
         };
         Object.assign(payload, deriveEntityFlags('schedule', payload, null));
         try {
@@ -2058,6 +2129,35 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         } catch (error: any) {
           console.error(error);
           addToast({ kind: 'error', message: error?.message || 'Failed to create schedule' });
+        }
+      } else if (inlineForm.type === 'AssemblyGroup') {
+        const payload: any = {
+          entity_type: 'assembly_group',
+          source_sheet_number: sheetNumber,
+          bounding_box: pending.bboxPdf,
+          title: formData.title ?? '',
+          notes: formData.notes ?? '',
+        };
+        Object.assign(payload, deriveEntityFlags('assembly_group', payload, null));
+        try {
+          const created = await createEntity(projectId, payload);
+          await fetchEntities();
+          setSelection([
+            {
+              id: created.id,
+              type: 'AssemblyGroup',
+              sheetId: pending.sheetId,
+            },
+          ]);
+          try {
+            pushHistory({ type: 'create_entity', entity: created });
+          } catch (e) {
+            console.warn('history push failed', e);
+          }
+          addToast({ kind: 'success', message: 'Assembly Group created' });
+        } catch (error: any) {
+          console.error(error);
+          addToast({ kind: 'error', message: error?.message || 'Failed to create assembly group' });
         }
       } else if (inlineForm.type === 'SymbolInst') {
         const symbolDefinitionId = typeof formData.symbolDefinitionId === 'string' ? formData.symbolDefinitionId : '';
@@ -2548,6 +2648,8 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
               ? 'LegendForm'
               : inlineForm.type === 'Schedule'
               ? 'ScheduleForm'
+              : inlineForm.type === 'AssemblyGroup'
+              ? 'AssemblyGroupForm'
               : 'DrawingForm'
           }
           x={formViewportPosition.x}

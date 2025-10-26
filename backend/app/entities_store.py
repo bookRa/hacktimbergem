@@ -15,7 +15,11 @@ from .entities_models import (
     BoundingBox,
     Drawing,
     Legend,
+    LegendItem,
     Schedule,
+    ScheduleItem,
+    AssemblyGroup,
+    Assembly,
     Note,
     Scope,
     SymbolDefinition,
@@ -44,7 +48,11 @@ def load_entities(project_id: str) -> List[EntityUnion]:
         cls = {
             "drawing": Drawing,
             "legend": Legend,
+            "legend_item": LegendItem,
             "schedule": Schedule,
+            "schedule_item": ScheduleItem,
+            "assembly_group": AssemblyGroup,
+            "assembly": Assembly,
             "note": Note,
             "scope": Scope,
             "symbol_definition": SymbolDefinition,
@@ -114,9 +122,77 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
             description=getattr(payload, "description", None),
         )
     elif payload.entity_type == "legend":
-        ent = Legend(**base_kwargs, title=getattr(payload, "title", None))
+        ent = Legend(
+            **base_kwargs,
+            title=getattr(payload, "title", None),
+            notes=getattr(payload, "notes", None),
+        )
+    elif payload.entity_type == "legend_item":
+        # Validate parent legend exists
+        parent = _get_entity_by_id(entities, getattr(payload, "legend_id", ""))
+        if not parent or getattr(parent, "entity_type", None) != "legend":
+            raise ValueError("legend_id not found or invalid")
+        ent = LegendItem(
+            **base_kwargs,
+            legend_id=getattr(payload, "legend_id"),
+            symbol_text=getattr(payload, "symbol_text", None),
+            description=getattr(payload, "description", None),
+            notes=getattr(payload, "notes", None),
+        )
     elif payload.entity_type == "schedule":
-        ent = Schedule(**base_kwargs, title=getattr(payload, "title", None))
+        ent = Schedule(
+            **base_kwargs,
+            title=getattr(payload, "title", None),
+            schedule_type=getattr(payload, "schedule_type", None),
+            notes=getattr(payload, "notes", None),
+        )
+    elif payload.entity_type == "schedule_item":
+        # Validate parent schedule exists
+        parent = _get_entity_by_id(entities, getattr(payload, "schedule_id", ""))
+        if not parent or getattr(parent, "entity_type", None) != "schedule":
+            raise ValueError("schedule_id not found or invalid")
+        # Validate drawing_id if provided
+        drawing_id = getattr(payload, "drawing_id", None)
+        if drawing_id:
+            drawing = _get_entity_by_id(entities, drawing_id)
+            if not drawing or getattr(drawing, "entity_type", None) != "drawing":
+                raise ValueError("drawing_id not found or invalid")
+        ent = ScheduleItem(
+            **base_kwargs,
+            schedule_id=getattr(payload, "schedule_id"),
+            mark=getattr(payload, "mark", None),
+            description=getattr(payload, "description", None),
+            notes=getattr(payload, "notes", None),
+            specifications=getattr(payload, "specifications", None),
+            drawing_id=drawing_id,
+        )
+    elif payload.entity_type == "assembly_group":
+        ent = AssemblyGroup(
+            **base_kwargs,
+            title=getattr(payload, "title", None),
+            notes=getattr(payload, "notes", None),
+        )
+    elif payload.entity_type == "assembly":
+        # Validate parent assembly_group exists
+        parent = _get_entity_by_id(entities, getattr(payload, "assembly_group_id", ""))
+        if not parent or getattr(parent, "entity_type", None) != "assembly_group":
+            raise ValueError("assembly_group_id not found or invalid")
+        # Validate drawing_id if provided
+        drawing_id = getattr(payload, "drawing_id", None)
+        if drawing_id:
+            drawing = _get_entity_by_id(entities, drawing_id)
+            if not drawing or getattr(drawing, "entity_type", None) != "drawing":
+                raise ValueError("drawing_id not found or invalid")
+        ent = Assembly(
+            **base_kwargs,
+            assembly_group_id=getattr(payload, "assembly_group_id"),
+            code=getattr(payload, "code", None),
+            name=getattr(payload, "name", None),
+            description=getattr(payload, "description", None),
+            notes=getattr(payload, "notes", None),
+            specifications=getattr(payload, "specifications", None),
+            drawing_id=drawing_id,
+        )
     elif payload.entity_type == "note":
         ent = Note(**base_kwargs, text=getattr(payload, "text", None))
     elif payload.entity_type == "scope":
@@ -151,10 +227,25 @@ def create_entity(project_id: str, payload: CreateEntityUnion) -> EntityUnion:
         # Scope check
         if getattr(sym_def, "scope", "sheet") == "sheet" and getattr(sym_def, "source_sheet_number", None) != payload.source_sheet_number:
             raise ValueError("SymbolDefinition scope is 'sheet' and must be used on the same sheet")
+        
+        # Validate definition_item if provided
+        definition_item_id = getattr(payload, "definition_item_id", None)
+        definition_item_type = getattr(payload, "definition_item_type", None)
+        if definition_item_id and definition_item_type:
+            def_item = _get_entity_by_id(entities, definition_item_id)
+            if not def_item:
+                raise ValueError("definition_item_id not found")
+            expected_type = definition_item_type
+            actual_type = getattr(def_item, "entity_type", None)
+            if actual_type != expected_type:
+                raise ValueError(f"definition_item_type mismatch: expected {expected_type}, got {actual_type}")
+        
         ent = SymbolInstance(
             **base_kwargs,
             symbol_definition_id=getattr(payload, "symbol_definition_id"),
             recognized_text=getattr(payload, "recognized_text", None),
+            definition_item_id=definition_item_id,
+            definition_item_type=definition_item_type,
             instantiated_in_id=None,
         )
     elif payload.entity_type == "component_instance":
@@ -221,6 +312,18 @@ def update_entity(
     component_definition_id: str | None = None,
     recognized_text: str | None = None,
     instantiated_in_id: str | None = _NOT_PROVIDED,  # type: ignore  # Manual drawing link for instances
+    # New fields for container/item types
+    notes: str | None = None,
+    schedule_type: str | None = None,
+    legend_id: str | None = None,
+    schedule_id: str | None = None,
+    assembly_group_id: str | None = None,
+    symbol_text: str | None = None,
+    mark: str | None = None,
+    code: str | None = None,
+    drawing_id: str | None = None,
+    definition_item_id: str | None = None,
+    definition_item_type: str | None = None,
     status: str | None = None,
     validation: dict | ValidationInfo | None = None,
 ) -> EntityUnion:
@@ -265,13 +368,74 @@ def update_entity(
                 data["validation"] = ValidationInfo.parse_obj(validation)
             except Exception:
                 raise ValueError("Invalid validation payload")
-    # Title for drawing/legend/schedule; text for note
-    if title is not None and data["entity_type"] in {"drawing", "legend", "schedule"}:
+    # Title for drawing/legend/schedule/assembly_group; text for note
+    if title is not None and data["entity_type"] in {"drawing", "legend", "schedule", "assembly_group"}:
         data["title"] = title
     if text is not None and data["entity_type"] == "note":
         data["text"] = text
-    if description is not None and data["entity_type"] in {"drawing", "scope", "symbol_definition", "component_definition"}:
+    if description is not None and data["entity_type"] in {"drawing", "scope", "symbol_definition", "component_definition", "legend_item", "schedule_item", "assembly"}:
         data["description"] = description
+    
+    # Notes field for containers and items
+    if notes is not None and data["entity_type"] in {"legend", "schedule", "assembly_group", "legend_item", "schedule_item", "assembly"}:
+        data["notes"] = notes
+    
+    # Schedule type
+    if schedule_type is not None and data["entity_type"] == "schedule":
+        data["schedule_type"] = schedule_type
+    
+    # Item-specific fields
+    if data["entity_type"] == "legend_item":
+        if legend_id is not None:
+            # Validate parent exists
+            parent = _get_entity_by_id(entities, legend_id)
+            if not parent or getattr(parent, "entity_type", None) != "legend":
+                raise ValueError("legend_id not found or invalid")
+            data["legend_id"] = legend_id
+        if symbol_text is not None:
+            data["symbol_text"] = symbol_text
+    
+    if data["entity_type"] == "schedule_item":
+        if schedule_id is not None:
+            # Validate parent exists
+            parent = _get_entity_by_id(entities, schedule_id)
+            if not parent or getattr(parent, "entity_type", None) != "schedule":
+                raise ValueError("schedule_id not found or invalid")
+            data["schedule_id"] = schedule_id
+        if mark is not None:
+            data["mark"] = mark
+        if specifications is not None:
+            if not isinstance(specifications, dict):
+                raise ValueError("specifications must be an object")
+            data["specifications"] = specifications
+        if drawing_id is not None:
+            # Validate drawing exists
+            drawing = _get_entity_by_id(entities, drawing_id)
+            if not drawing or getattr(drawing, "entity_type", None) != "drawing":
+                raise ValueError("drawing_id not found or invalid")
+            data["drawing_id"] = drawing_id
+    
+    if data["entity_type"] == "assembly":
+        if assembly_group_id is not None:
+            # Validate parent exists
+            parent = _get_entity_by_id(entities, assembly_group_id)
+            if not parent or getattr(parent, "entity_type", None) != "assembly_group":
+                raise ValueError("assembly_group_id not found or invalid")
+            data["assembly_group_id"] = assembly_group_id
+        if code is not None:
+            data["code"] = code
+        if name is not None:
+            data["name"] = name
+        if specifications is not None:
+            if not isinstance(specifications, dict):
+                raise ValueError("specifications must be an object")
+            data["specifications"] = specifications
+        if drawing_id is not None:
+            # Validate drawing exists
+            drawing = _get_entity_by_id(entities, drawing_id)
+            if not drawing or getattr(drawing, "entity_type", None) != "drawing":
+                raise ValueError("drawing_id not found or invalid")
+            data["drawing_id"] = drawing_id
     # Definitions metadata
     if data["entity_type"] in {"symbol_definition", "component_definition"}:
         if name is not None:
@@ -294,7 +458,11 @@ def update_entity(
     cls_map = {
         "drawing": Drawing,
         "legend": Legend,
+        "legend_item": LegendItem,
         "schedule": Schedule,
+        "schedule_item": ScheduleItem,
+        "assembly_group": AssemblyGroup,
+        "assembly": Assembly,
         "note": Note,
         "scope": Scope,
         "symbol_definition": SymbolDefinition,
@@ -325,6 +493,26 @@ def update_entity(
                 data["symbol_definition_id"] = symbol_definition_id
             if recognized_text is not None:
                 data["recognized_text"] = recognized_text
+            # Handle definition_item linking
+            if definition_item_id is not None or definition_item_type is not None:
+                if definition_item_id and definition_item_type:
+                    # Validate definition item exists and matches type
+                    def_item = _get_entity_by_id(entities, definition_item_id)
+                    if not def_item:
+                        raise ValueError("definition_item_id not found")
+                    expected_type = definition_item_type
+                    actual_type = getattr(def_item, "entity_type", None)
+                    if actual_type != expected_type:
+                        raise ValueError(f"definition_item_type mismatch: expected {expected_type}, got {actual_type}")
+                    data["definition_item_id"] = definition_item_id
+                    data["definition_item_type"] = definition_item_type
+                elif definition_item_id is None and definition_item_type is None:
+                    # Clear both (allow unsetting)
+                    data["definition_item_id"] = None
+                    data["definition_item_type"] = None
+                else:
+                    # One provided without the other
+                    raise ValueError("Both definition_item_id and definition_item_type must be provided together or both set to None")
         if data["entity_type"] == "component_instance":
             if component_definition_id is not None:
                 comp_def = _get_entity_by_id(entities, component_definition_id)
@@ -396,6 +584,27 @@ def delete_entity(project_id: str, entity_id: str) -> bool:
                 raise ValueError("Cannot delete definition with existing instances")
             if getattr(e, "entity_type", None) == "component_instance" and getattr(e, "component_definition_id", None) == entity_id:
                 raise ValueError("Cannot delete definition with existing instances")
+    
+    # Guard: prevent deleting containers if they have child items
+    if target and getattr(target, "entity_type", None) == "legend":
+        for e in entities:
+            if getattr(e, "entity_type", None) == "legend_item" and getattr(e, "legend_id", None) == entity_id:
+                raise ValueError("Cannot delete legend with existing legend items")
+    if target and getattr(target, "entity_type", None) == "schedule":
+        for e in entities:
+            if getattr(e, "entity_type", None) == "schedule_item" and getattr(e, "schedule_id", None) == entity_id:
+                raise ValueError("Cannot delete schedule with existing schedule items")
+    if target and getattr(target, "entity_type", None) == "assembly_group":
+        for e in entities:
+            if getattr(e, "entity_type", None) == "assembly" and getattr(e, "assembly_group_id", None) == entity_id:
+                raise ValueError("Cannot delete assembly group with existing assemblies")
+    
+    # Guard: prevent deleting items if symbol instances reference them
+    if target and getattr(target, "entity_type", None) in {"legend_item", "schedule_item", "assembly"}:
+        for e in entities:
+            if getattr(e, "entity_type", None) == "symbol_instance" and getattr(e, "definition_item_id", None) == entity_id:
+                raise ValueError("Cannot delete definition item with symbol instances referencing it")
+    
     # Guard: prevent deleting any entity referenced by links (graph edges)
     try:
         from .links_store import load_links  # type: ignore

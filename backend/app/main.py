@@ -35,6 +35,7 @@ class ProjectStatus(BaseModel):
     started_at: float | None = None
     completed_at: float | None = None
     error: str | None = None
+    page_titles: dict[str, str] = {}  # Map of page index (as string) to title
 
 
 @app.post("/api/projects")
@@ -85,6 +86,37 @@ async def get_original_pdf(project_id: str):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Original PDF not found")
     return FileResponse(path, media_type="application/pdf")
+
+
+# --------- Page Titles Endpoints ---------
+
+
+class PageTitleUpdate(BaseModel):
+    page_index: int
+    text: str
+
+
+@app.patch("/api/projects/{project_id}/page-titles")
+async def update_page_title(project_id: str, body: PageTitleUpdate):
+    """Update a single page title in the manifest."""
+    from .ingest import patch_manifest
+    
+    m = read_manifest(project_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Ensure page_titles exists in manifest (backwards compatibility)
+    if "page_titles" not in m:
+        m["page_titles"] = {}
+    
+    # Update the specific page title
+    page_titles = m.get("page_titles", {})
+    page_titles[str(body.page_index)] = body.text
+    
+    # Patch manifest with updated page_titles
+    patch_manifest(project_id, page_titles=page_titles)
+    
+    return {"success": True, "page_index": body.page_index, "text": body.text}
 
 
 # --------- Entities Endpoints ---------
@@ -168,6 +200,29 @@ async def patch_entity_endpoint(
         kwargs["status"] = body["status"]
     if "validation" in body:
         kwargs["validation"] = body["validation"]
+    # New fields for container/item types
+    if "notes" in body:
+        kwargs["notes"] = body["notes"]
+    if "schedule_type" in body:
+        kwargs["schedule_type"] = body["schedule_type"]
+    if "legend_id" in body:
+        kwargs["legend_id"] = body["legend_id"]
+    if "schedule_id" in body:
+        kwargs["schedule_id"] = body["schedule_id"]
+    if "assembly_group_id" in body:
+        kwargs["assembly_group_id"] = body["assembly_group_id"]
+    if "symbol_text" in body:
+        kwargs["symbol_text"] = body["symbol_text"]
+    if "mark" in body:
+        kwargs["mark"] = body["mark"]
+    if "code" in body:
+        kwargs["code"] = body["code"]
+    if "drawing_id" in body:
+        kwargs["drawing_id"] = body["drawing_id"]
+    if "definition_item_id" in body:
+        kwargs["definition_item_id"] = body["definition_item_id"]
+    if "definition_item_type" in body:
+        kwargs["definition_item_type"] = body["definition_item_type"]
     
     try:
         ent = update_entity(

@@ -21,6 +21,9 @@ export const RightExplorer: React.FC = () => {
         <div className="right-explorer" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <button onClick={() => setTab('scopes')} style={btn(tab==='scopes')}>Scopes</button>
+                <button onClick={() => setTab('legends')} style={btn(tab==='legends')}>Legends</button>
+                <button onClick={() => setTab('schedules')} style={btn(tab==='schedules')}>Schedules</button>
+                <button onClick={() => setTab('assemblies')} style={btn(tab==='assemblies')}>Assemblies</button>
                 <button onClick={() => setTab('symbolsDef')} style={btn(tab==='symbolsDef')}>Symbols ▸ Definitions</button>
                 <button onClick={() => setTab('symbolsInst')} style={btn(tab==='symbolsInst')}>Symbols ▸ Instances</button>
                 <button onClick={() => setTab('componentsDef')} style={btn(tab==='componentsDef')}>Components ▸ Definitions</button>
@@ -29,6 +32,9 @@ export const RightExplorer: React.FC = () => {
                 <button onClick={() => setTab('notes')} style={btn(tab==='notes')}>Notes</button>
             </div>
             {tab === 'scopes' && <ScopesList concepts={concepts} selectedScopeId={selectedScopeId} setSelectedScopeId={setSelectedScopeId} entities={entities} setHover={(id)=>setHoverScopeId(id)} />}
+            {tab === 'legends' && <LegendsList entities={entities} />}
+            {tab === 'schedules' && <SchedulesList entities={entities} />}
+            {tab === 'assemblies' && <AssembliesList entities={entities} />}
             {tab === 'symbolsDef' && <SymbolsDefinitions entities={entities} />}
             {tab === 'symbolsInst' && <SymbolsInstances entities={entities} hoverEntityId={hoverEntityId} />}
             {tab === 'componentsDef' && <ComponentsDefinitions entities={entities} />}
@@ -669,6 +675,415 @@ const NotesList: React.FC<{ entities: any[] }> = ({ entities }) => {
                 );
             })}
             {notes.length === 0 && <div style={{ fontSize: 12, opacity: .7 }}>(No notes on this sheet)</div>}
+        </div>
+    );
+};
+
+const LegendsList: React.FC<{ entities: any[] }> = ({ entities }) => {
+    const { selectEntity, setCurrentPageIndex, startEntityCreation } = useProjectStore((s: any) => ({
+        selectEntity: s.selectEntity,
+        setCurrentPageIndex: s.setCurrentPageIndex,
+        startEntityCreation: s.startEntityCreation,
+    }));
+    const [expandedLegends, setExpandedLegends] = React.useState<Set<string>>(new Set());
+    
+    const legends = entities.filter((e: any) => e.entity_type === 'legend');
+    const legendItems = entities.filter((e: any) => e.entity_type === 'legend_item');
+    
+    const toggleExpanded = (legendId: string) => {
+        const newSet = new Set(expandedLegends);
+        if (newSet.has(legendId)) {
+            newSet.delete(legendId);
+        } else {
+            newSet.add(legendId);
+        }
+        setExpandedLegends(newSet);
+    };
+    
+    return (
+        <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: '#64748b', paddingLeft: 4 }}>
+                    {legends.length} legend{legends.length !== 1 ? 's' : ''} • {legendItems.length} item{legendItems.length !== 1 ? 's' : ''}
+                </div>
+                <button
+                    onClick={() => startEntityCreation('legend')}
+                    style={{
+                        background: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        fontWeight: 500
+                    }}
+                >
+                    + New Legend
+                </button>
+            </div>
+            
+            {legends.map(legend => {
+                const items = legendItems.filter((item: any) => item.legend_id === legend.id);
+                const isExpanded = expandedLegends.has(legend.id);
+                
+                return (
+                    <div key={legend.id} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
+                        <div style={{ padding: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: isExpanded ? '1px solid #e1e6eb' : 'none' }}>
+                            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => toggleExpanded(legend.id)}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 600 }}>
+                                        {isExpanded ? '▼' : '▶'}
+                                    </span>
+                                    <div>
+                                        <div style={{ fontSize: 12, fontWeight: 600 }}>{legend.title || `Legend ${legend.id.slice(0, 6)}`}</div>
+                                        <div style={{ fontSize: 10, color: '#64748b' }}>
+                                            Sheet {legend.source_sheet_number} • {items.length} item{items.length !== 1 ? 's' : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        selectEntity(legend.id);
+                                    }}
+                                    style={btn(false)}
+                                    title="Edit legend"
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentPageIndex(legend.source_sheet_number - 1);
+                                        selectEntity(legend.id);
+                                    }}
+                                    style={btn(false)}
+                                    title="Jump to legend"
+                                >
+                                    Jump
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {isExpanded && (
+                            <div style={{ padding: '8px' }}>
+                                {items.length === 0 ? (
+                                    <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', padding: '8px 0' }}>
+                                        No items yet
+                                    </div>
+                                ) : (
+                                    items.map((item: any) => (
+                                        <div
+                                            key={item.id}
+                                            onClick={() => selectEntity(item.id)}
+                                            style={{
+                                                padding: 6,
+                                                borderRadius: 6,
+                                                border: '1px solid #e1e6eb',
+                                                background: '#f9fafb',
+                                                marginBottom: 6,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>
+                                                {item.symbol_text ? `${item.symbol_text}: ` : ''}{item.description || `Item ${item.id.slice(0, 6)}`}
+                                            </div>
+                                            {item.notes && (
+                                                <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                                                    {item.notes.slice(0, 60)}{item.notes.length > 60 ? '...' : ''}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+            
+            {legends.length === 0 && (
+                <div style={{ fontSize: 12, opacity: .7, paddingLeft: 4 }}>
+                    (No legends yet. Click "+ New Legend" to create one on the canvas)
+                </div>
+            )}
+        </div>
+    );
+};
+
+const SchedulesList: React.FC<{ entities: any[] }> = ({ entities }) => {
+    const { selectEntity, setCurrentPageIndex, startEntityCreation } = useProjectStore((s: any) => ({
+        selectEntity: s.selectEntity,
+        setCurrentPageIndex: s.setCurrentPageIndex,
+        startEntityCreation: s.startEntityCreation,
+    }));
+    const [expandedSchedules, setExpandedSchedules] = React.useState<Set<string>>(new Set());
+    
+    const schedules = entities.filter((e: any) => e.entity_type === 'schedule');
+    const scheduleItems = entities.filter((e: any) => e.entity_type === 'schedule_item');
+    
+    const toggleExpanded = (scheduleId: string) => {
+        const newSet = new Set(expandedSchedules);
+        if (newSet.has(scheduleId)) {
+            newSet.delete(scheduleId);
+        } else {
+            newSet.add(scheduleId);
+        }
+        setExpandedSchedules(newSet);
+    };
+    
+    return (
+        <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: '#64748b', paddingLeft: 4 }}>
+                    {schedules.length} schedule{schedules.length !== 1 ? 's' : ''} • {scheduleItems.length} item{scheduleItems.length !== 1 ? 's' : ''}
+                </div>
+                <button
+                    onClick={() => startEntityCreation('schedule')}
+                    style={{
+                        background: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        fontWeight: 500
+                    }}
+                >
+                    + New Schedule
+                </button>
+            </div>
+            
+            {schedules.map(schedule => {
+                const items = scheduleItems.filter((item: any) => item.schedule_id === schedule.id);
+                const isExpanded = expandedSchedules.has(schedule.id);
+                
+                return (
+                    <div key={schedule.id} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
+                        <div style={{ padding: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: isExpanded ? '1px solid #e1e6eb' : 'none' }}>
+                            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => toggleExpanded(schedule.id)}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 600 }}>
+                                        {isExpanded ? '▼' : '▶'}
+                                    </span>
+                                    <div>
+                                        <div style={{ fontSize: 12, fontWeight: 600 }}>{schedule.title || `Schedule ${schedule.id.slice(0, 6)}`}</div>
+                                        <div style={{ fontSize: 10, color: '#64748b' }}>
+                                            {schedule.schedule_type ? `${schedule.schedule_type} • ` : ''}Sheet {schedule.source_sheet_number} • {items.length} item{items.length !== 1 ? 's' : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        selectEntity(schedule.id);
+                                    }}
+                                    style={btn(false)}
+                                    title="Edit schedule"
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentPageIndex(schedule.source_sheet_number - 1);
+                                        selectEntity(schedule.id);
+                                    }}
+                                    style={btn(false)}
+                                    title="Jump to schedule"
+                                >
+                                    Jump
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {isExpanded && (
+                            <div style={{ padding: '8px' }}>
+                                {items.length === 0 ? (
+                                    <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', padding: '8px 0' }}>
+                                        No items yet
+                                    </div>
+                                ) : (
+                                    items.map((item: any) => {
+                                        const hasDrawing = item.drawing_id && entities.find((e: any) => e.id === item.drawing_id);
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                onClick={() => selectEntity(item.id)}
+                                                style={{
+                                                    padding: 6,
+                                                    borderRadius: 6,
+                                                    border: '1px solid #e1e6eb',
+                                                    background: '#f9fafb',
+                                                    marginBottom: 6,
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>
+                                                    {item.mark ? `[${item.mark}] ` : ''}{item.description || `Item ${item.id.slice(0, 6)}`}
+                                                </div>
+                                                <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                                                    {hasDrawing && '📐 '}
+                                                    {item.notes && item.notes.slice(0, 60)}{item.notes && item.notes.length > 60 ? '...' : ''}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+            
+            {schedules.length === 0 && (
+                <div style={{ fontSize: 12, opacity: .7, paddingLeft: 4 }}>
+                    (No schedules yet. Click "+ New Schedule" to create one on the canvas)
+                </div>
+            )}
+        </div>
+    );
+};
+
+const AssembliesList: React.FC<{ entities: any[] }> = ({ entities }) => {
+    const { selectEntity, setCurrentPageIndex, startEntityCreation } = useProjectStore((s: any) => ({
+        selectEntity: s.selectEntity,
+        setCurrentPageIndex: s.setCurrentPageIndex,
+        startEntityCreation: s.startEntityCreation,
+    }));
+    const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(new Set());
+    
+    const assemblyGroups = entities.filter((e: any) => e.entity_type === 'assembly_group');
+    const assemblies = entities.filter((e: any) => e.entity_type === 'assembly');
+    
+    const toggleExpanded = (groupId: string) => {
+        const newSet = new Set(expandedGroups);
+        if (newSet.has(groupId)) {
+            newSet.delete(groupId);
+        } else {
+            newSet.add(groupId);
+        }
+        setExpandedGroups(newSet);
+    };
+    
+    return (
+        <div style={{ overflow: 'auto', maxHeight: '30vh' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: '#64748b', paddingLeft: 4 }}>
+                    {assemblyGroups.length} group{assemblyGroups.length !== 1 ? 's' : ''} • {assemblies.length} assembl{assemblies.length !== 1 ? 'ies' : 'y'}
+                </div>
+                <button
+                    onClick={() => startEntityCreation('assembly_group')}
+                    style={{
+                        background: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        fontWeight: 500
+                    }}
+                >
+                    + New Assembly Group
+                </button>
+            </div>
+            
+            {assemblyGroups.map(group => {
+                const items = assemblies.filter((item: any) => item.assembly_group_id === group.id);
+                const isExpanded = expandedGroups.has(group.id);
+                
+                return (
+                    <div key={group.id} style={{ border: '1px solid #e1e6eb', borderRadius: 6, marginBottom: 8, background: '#fff' }}>
+                        <div style={{ padding: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: isExpanded ? '1px solid #e1e6eb' : 'none' }}>
+                            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => toggleExpanded(group.id)}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 600 }}>
+                                        {isExpanded ? '▼' : '▶'}
+                                    </span>
+                                    <div>
+                                        <div style={{ fontSize: 12, fontWeight: 600 }}>{group.title || `Assembly Group ${group.id.slice(0, 6)}`}</div>
+                                        <div style={{ fontSize: 10, color: '#64748b' }}>
+                                            Sheet {group.source_sheet_number} • {items.length} assembl{items.length !== 1 ? 'ies' : 'y'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        selectEntity(group.id);
+                                    }}
+                                    style={btn(false)}
+                                    title="Edit assembly group"
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentPageIndex(group.source_sheet_number - 1);
+                                        selectEntity(group.id);
+                                    }}
+                                    style={btn(false)}
+                                    title="Jump to assembly group"
+                                >
+                                    Jump
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {isExpanded && (
+                            <div style={{ padding: '8px' }}>
+                                {items.length === 0 ? (
+                                    <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', padding: '8px 0' }}>
+                                        No assemblies yet
+                                    </div>
+                                ) : (
+                                    items.map((item: any) => {
+                                        const hasDrawing = item.drawing_id && entities.find((e: any) => e.id === item.drawing_id);
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                onClick={() => selectEntity(item.id)}
+                                                style={{
+                                                    padding: 6,
+                                                    borderRadius: 6,
+                                                    border: '1px solid #e1e6eb',
+                                                    background: '#f9fafb',
+                                                    marginBottom: 6,
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>
+                                                    {item.code ? `[${item.code}] ` : ''}{item.name || item.description || `Assembly ${item.id.slice(0, 6)}`}
+                                                </div>
+                                                <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                                                    {hasDrawing && '📐 '}
+                                                    {item.notes && item.notes.slice(0, 60)}{item.notes && item.notes.length > 60 ? '...' : ''}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+            
+            {assemblyGroups.length === 0 && (
+                <div style={{ fontSize: 12, opacity: .7, paddingLeft: 4 }}>
+                    (No assembly groups yet. Click "+ New Assembly Group" to create one on the canvas)
+                </div>
+            )}
         </div>
     );
 };

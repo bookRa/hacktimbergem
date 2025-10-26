@@ -44,6 +44,7 @@ def init_manifest(project_id: str):
         "started_at": time.time(),
         "completed_at": None,
         "error": None,
+        "page_titles": {},  # Store sheet titles per page index (0-based)
     }
     write_manifest(project_id, m)
     return m

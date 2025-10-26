@@ -3,7 +3,7 @@ import { shallow } from 'zustand/shallow';
 import type { OCRBlock } from '../ui_v2/overlays/OCRPicker';
 
 export type Selection = {
-  type: 'Drawing' | 'Legend' | 'Schedule' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope';
+  type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'Note' | 'Space' | 'SymbolDef' | 'CompDef' | 'SymbolInst' | 'CompInst' | 'Scope';
   id: string;
   sheetId?: string;
 };
@@ -16,7 +16,7 @@ type ContextMenuState = {
 
 type InlineFormState = {
   open: boolean;
-  type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
+  type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
   entityId?: string;
   at?: { x: number; y: number } | null;
   pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } | null;
@@ -27,7 +27,7 @@ type InlineFormState = {
 
 type DrawingState = {
   active: boolean;
-  entityType?: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
+  entityType?: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
 };
 
 type OCRPickerState = {
@@ -36,12 +36,12 @@ type OCRPickerState = {
   onSelect?: (block: OCRBlock) => void;
 };
 
-type OCRSelectionMode = {
+export type OCRSelectionMode = {
   active: boolean;
   selectedBlocks: Array<{ pageIndex: number; blockIndex: number; text: string; bbox: [number, number, number, number] }>;
   targetField: 'recognizedText' | 'name' | 'description' | 'text';
   formContext?: {
-    type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
+    type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
     at?: { x: number; y: number };
     pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] };
     initialValues?: Record<string, any>;
@@ -66,7 +66,7 @@ type UIActions = {
   openContext: (payload: { at: { x: number; y: number }; target?: Selection; pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } }) => void;
   closeContext: () => void;
   openForm: (payload: {
-    type: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
+    type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
     entityId?: string;
     at?: { x: number; y: number };
     pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] };
@@ -76,7 +76,7 @@ type UIActions = {
   closeForm: () => void;
   minimizeForm: () => void;
   restoreForm: () => void;
-  startDrawing: (entityType: 'Drawing' | 'Legend' | 'Schedule' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef') => void;
+  startDrawing: (entityType: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef') => void;
   cancelDrawing: () => void;
   openOCRPicker: (pageIndex: number, onSelect: (block: OCRBlock) => void) => void;
   closeOCRPicker: () => void;

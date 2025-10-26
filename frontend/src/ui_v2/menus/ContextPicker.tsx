@@ -108,6 +108,13 @@ const entityTypes: EntityDescriptor[] = [
     icon: CalendarIcon 
   },
   { 
+    type: 'Assembly Group', 
+    label: 'Assembly Group', 
+    description: 'Assembly Group', 
+    tooltip: 'Container for wall/floor/ceiling assembly details and callouts',
+    icon: BoxIcon 
+  },
+  { 
     type: 'Note', 
     label: 'Note', 
     description: 'Note', 

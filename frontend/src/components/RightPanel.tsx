@@ -304,6 +304,28 @@ export const RightPanel: React.FC = () => {
                             <button disabled={selected.length < 2} onClick={() => mergeSelectedBlocks(currentPageIndex)} style={{ ...miniBtn(selected.length < 2), fontSize: 10 }}>
                                 Merge
                             </button>
+                            <button onClick={() => {
+                                // Get text from all selected blocks
+                                const ocr = pageOcr[currentPageIndex];
+                                if (!ocr) return;
+                                const blocks = ocr.blocks || [];
+                                const allText = selected
+                                    .map((blockIndex: number) => blocks[blockIndex]?.text || '')
+                                    .filter((text: string) => text.trim())
+                                    .join('\n');
+                                
+                                if (allText) {
+                                    navigator.clipboard.writeText(allText).then(
+                                        () => addToast({ kind: 'success', message: 'OCR text copied to clipboard' }),
+                                        (err) => {
+                                            console.error('Failed to copy text:', err);
+                                            addToast({ kind: 'error', message: 'Failed to copy text' });
+                                        }
+                                    );
+                                }
+                            }} style={{ ...miniBtn(false), fontSize: 10, background: '#6366f1' }}>
+                                Copy Text
+                            </button>
                             <button onClick={() => promoteSelectionToNote(currentPageIndex)} style={{ ...miniBtn(false), fontSize: 10 }}>
                                 → Note
                             </button>

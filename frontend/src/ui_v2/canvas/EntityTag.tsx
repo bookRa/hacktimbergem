@@ -6,6 +6,7 @@ export type EntityType =
   | 'Drawing'
   | 'Legend'
   | 'Schedule'
+  | 'AssemblyGroup'
   | 'Note'
   | 'Space'
   | 'SymbolDef'
@@ -104,6 +105,7 @@ const entityConfig: Record<
   Drawing: { icon: TriangleIcon, label: 'DWG' },
   Legend: { icon: SquareIcon, label: 'LEG' },
   Schedule: { icon: CalendarIcon, label: 'SCH' },
+  AssemblyGroup: { icon: BoxIcon, label: 'ASM' },
   Note: { icon: NoteIcon, label: 'NOT' },
   Space: { icon: HomeIcon, label: 'SPC' },
   SymbolDef: { icon: ShapesIcon, label: 'SYM' },
