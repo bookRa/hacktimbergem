@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectStore } from '../../state/store';
+import { EvidencePicker } from './EvidencePicker';
 
 interface EvidenceLinksSectionProps {
   scopeId: string;
@@ -10,6 +11,8 @@ export const EvidenceLinksSection: React.FC<EvidenceLinksSectionProps> = ({
   scopeId, 
   evidenceLinks 
 }) => {
+  const [showPicker, setShowPicker] = React.useState(false);
+  
   const { entities, deleteLinkById } = useProjectStore((s: any) => ({
     entities: s.entities,
     deleteLinkById: s.deleteLinkById,
@@ -30,14 +33,19 @@ export const EvidenceLinksSection: React.FC<EvidenceLinksSectionProps> = ({
 
   return (
     <div style={styles.container}>
-      <h3 style={styles.title}>
-        Evidence Links ({evidenceEntities.length})
-      </h3>
+      <div style={styles.header}>
+        <h3 style={styles.title}>
+          Evidence Links ({evidenceEntities.length})
+        </h3>
+        <button onClick={() => setShowPicker(true)} style={styles.addButton}>
+          + Add Evidence
+        </button>
+      </div>
 
       {evidenceEntities.length === 0 ? (
         <div style={styles.empty}>
           <p style={styles.emptyText}>
-            No additional evidence linked yet. Add notes or other symbol instances as evidence.
+            No additional evidence linked yet. Click "Add Evidence" to link notes or symbol instances.
           </p>
         </div>
       ) : (
@@ -76,6 +84,11 @@ export const EvidenceLinksSection: React.FC<EvidenceLinksSectionProps> = ({
           ))}
         </div>
       )}
+      
+      {/* Evidence Picker Modal */}
+      {showPicker && (
+        <EvidencePicker scopeId={scopeId} onClose={() => setShowPicker(false)} />
+      )}
     </div>
   );
 };
@@ -87,11 +100,28 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '20px',
     boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
   },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
+  },
   title: {
-    margin: '0 0 16px 0',
+    margin: 0,
     fontSize: '16px',
     fontWeight: 600,
     color: '#0f172a',
+  },
+  addButton: {
+    padding: '6px 12px',
+    border: 'none',
+    backgroundColor: '#3b82f6',
+    color: '#ffffff',
+    cursor: 'pointer',
+    fontSize: '13px',
+    borderRadius: '4px',
+    fontWeight: 500,
+    transition: 'background-color 0.2s',
   },
   empty: {
     padding: '24px',

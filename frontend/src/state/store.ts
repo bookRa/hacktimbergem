@@ -1422,11 +1422,10 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         }
         
         try {
-            // Fetch entities and links (scope editor will derive what it needs from store)
+            // Fetch entities and all links (scope editor will filter what it needs)
             await Promise.all([
                 fetchEntities(),
-                fetchLinks({ source_id: scopeId }), // Evidence links
-                fetchLinks({ target_id: scopeId })  // Reverse links (e.g., symbols linked to scope)
+                fetchLinks()  // Fetch all links, scope editor will filter by scopeId
             ]);
             
             set((state) => ({

@@ -49,6 +49,26 @@ export const EntityThumbnail: React.FC<EntityThumbnailProps> = ({ entity }) => {
           throw new Error('Missing page data');
         }
 
+        // Get raster dimensions from OCR data or calculate from PDF dimensions
+        // OCR data structure: { width_pts, height_pts, blocks: [...] }
+        const pageWidthPts = ocrData.width_pts || ocrData.width || 612; // Letter size fallback
+        const pageHeightPts = ocrData.height_pts || ocrData.height || 792;
+        
+        // Raster is rendered at 300 DPI, so: pixels = (points / 72) * 300
+        const dpiScale = 300 / 72;
+        const rasterWidthPx = Math.round(pageWidthPts * dpiScale);
+        const rasterHeightPx = Math.round(pageHeightPts * dpiScale);
+
+        console.log('[EntityThumbnail] Rendering thumbnail:', {
+          entityId: entity.id,
+          pageIndex,
+          bboxPdf: [entity.bounding_box.x1, entity.bounding_box.y1, entity.bounding_box.x2, entity.bounding_box.y2],
+          pageWidthPts,
+          pageHeightPts,
+          rasterWidthPx,
+          rasterHeightPx
+        });
+
         // Extract bbox screenshot
         const url = await extractBBoxScreenshotCached(
           entity.id,  // Use entity id as scope id for caching
@@ -61,10 +81,10 @@ export const EntityThumbnail: React.FC<EntityThumbnailProps> = ({ entity }) => {
               entity.bounding_box.x2,
               entity.bounding_box.y2,
             ],
-            pageWidthPts: ocrData.width_pts,
-            pageHeightPts: ocrData.height_pts,
-            rasterWidthPx: ocrData.width_px || 0,
-            rasterHeightPx: ocrData.height_px || 0,
+            pageWidthPts,
+            pageHeightPts,
+            rasterWidthPx,
+            rasterHeightPx,
             rotation: 0,
             padding: 8,
           }

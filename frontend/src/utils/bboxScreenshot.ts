@@ -49,17 +49,29 @@ export async function extractBBoxScreenshot(options: BBoxScreenshotOptions): Pro
         const canvasBbox = pdfToCanvas(bboxPdf, renderMeta);
         let [cx1, cy1, cx2, cy2] = canvasBbox;
         
+        // Ensure coordinates are in correct order
+        if (cx1 > cx2) [cx1, cx2] = [cx2, cx1];
+        if (cy1 > cy2) [cy1, cy2] = [cy2, cy1];
+        
         // Add padding and clamp to image bounds
-        cx1 = Math.max(0, cx1 - padding);
-        cy1 = Math.max(0, cy1 - padding);
-        cx2 = Math.min(rasterWidthPx, cx2 + padding);
-        cy2 = Math.min(rasterHeightPx, cy2 + padding);
+        cx1 = Math.max(0, Math.floor(cx1 - padding));
+        cy1 = Math.max(0, Math.floor(cy1 - padding));
+        cx2 = Math.min(rasterWidthPx, Math.ceil(cx2 + padding));
+        cy2 = Math.min(rasterHeightPx, Math.ceil(cy2 + padding));
         
         const width = cx2 - cx1;
         const height = cy2 - cy1;
         
         if (width <= 0 || height <= 0) {
-          reject(new Error('Invalid bbox dimensions'));
+          console.error('[extractBBoxScreenshot] Invalid dimensions:', {
+            bboxPdf,
+            canvasBbox,
+            width,
+            height,
+            rasterWidthPx,
+            rasterHeightPx
+          });
+          reject(new Error(`Invalid bbox dimensions: width=${width}, height=${height}`));
           return;
         }
         
