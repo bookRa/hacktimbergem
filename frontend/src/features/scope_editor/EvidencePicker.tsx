@@ -1,6 +1,7 @@
 import React from 'react';
 import { useProjectStore } from '../../state/store';
 import { createLink } from '../../api/links';
+import { EntityCard } from './EntityCard';
 
 interface EvidencePickerProps {
   scopeId: string;
@@ -10,7 +11,7 @@ interface EvidencePickerProps {
 export const EvidencePicker: React.FC<EvidencePickerProps> = ({ scopeId, onClose }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [entityType, setEntityType] = React.useState<'note' | 'symbol_instance' | 'component_instance'>('note');
+  const [entityType, setEntityType] = React.useState<'note' | 'symbol_instance' | 'component_instance'>('symbol_instance');
 
   const { entities, links, projectId, addToast, fetchLinks } = useProjectStore((s: any) => ({
     entities: s.entities,
@@ -119,35 +120,29 @@ export const EvidencePicker: React.FC<EvidencePickerProps> = ({ scopeId, onClose
         <div style={styles.list}>
           {availableEntities.length === 0 ? (
             <div style={styles.empty}>
-              No {entityType === 'note' ? 'notes' : entityType === 'symbol_instance' ? 'symbols' : 'components'} available
+              <div style={styles.emptyIcon}>
+                {entityType === 'note' ? '📝' : entityType === 'symbol_instance' ? '🔷' : '⬡'}
+              </div>
+              <div style={styles.emptyText}>
+                No {entityType === 'note' ? 'notes' : entityType === 'symbol_instance' ? 'symbol instances' : 'component instances'} available
+              </div>
+              <div style={styles.emptyHint}>
+                Try selecting a different entity type or check if entities exist in the project.
+              </div>
             </div>
           ) : (
-            availableEntities.map((entity: any) => {
-              const isSelected = selectedIds.has(entity.id);
-              const displayText = entity.text || entity.recognized_text || entity.name || entity.id.slice(0, 8);
-              
-              return (
-                <div
+            <div style={styles.cardGrid}>
+              {availableEntities.map((entity: any) => (
+                <EntityCard
                   key={entity.id}
-                  onClick={() => toggleSelection(entity.id)}
-                  style={{
-                    ...styles.item,
-                    ...(isSelected ? styles.itemSelected : {})
-                  }}
-                >
-                  <div style={styles.itemIcon}>
-                    {entityType === 'note' ? '📝' : entityType === 'symbol_instance' ? '🔷' : '⬡'}
-                  </div>
-                  <div style={styles.itemDetails}>
-                    <div style={styles.itemText}>{displayText}</div>
-                    {entity.source_sheet_number && (
-                      <div style={styles.itemLocation}>Sheet {entity.source_sheet_number}</div>
-                    )}
-                  </div>
-                  {isSelected && <div style={styles.checkmark}>✓</div>}
-                </div>
-              );
-            })
+                  entity={entity}
+                  showThumbnail={true}
+                  showRelationships={true}
+                  onSelect={toggleSelection}
+                  isSelected={selectedIds.has(entity.id)}
+                />
+              ))}
+            </div>
           )}
         </div>
 
@@ -269,48 +264,29 @@ const styles: Record<string, React.CSSProperties> = {
   empty: {
     padding: '48px 24px',
     textAlign: 'center',
-    color: '#94a3b8',
-    fontSize: '14px',
-  },
-  item: {
     display: 'flex',
-    alignItems: 'flex-start',
+    flexDirection: 'column',
+    alignItems: 'center',
     gap: '12px',
-    padding: '12px',
-    borderWidth: '2px',
-    borderStyle: 'solid',
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
-    borderRadius: '6px',
-    marginBottom: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
   },
-  itemSelected: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#eff6ff',
+  emptyIcon: {
+    fontSize: '48px',
+    opacity: 0.3,
   },
-  itemIcon: {
-    fontSize: '20px',
-  },
-  itemDetails: {
-    flex: 1,
-  },
-  itemText: {
-    fontSize: '14px',
+  emptyText: {
+    color: '#64748b',
+    fontSize: '15px',
     fontWeight: 600,
-    color: '#0f172a',
-    marginBottom: '2px',
   },
-  itemLocation: {
-    fontSize: '12px',
+  emptyHint: {
     color: '#94a3b8',
-    fontWeight: 500,
+    fontSize: '13px',
+    maxWidth: '300px',
   },
-  checkmark: {
-    fontSize: '18px',
-    color: '#3b82f6',
-    fontWeight: 700,
+  cardGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr',
+    gap: '12px',
   },
   footer: {
     padding: '16px 24px',

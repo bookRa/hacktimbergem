@@ -1,6 +1,7 @@
 import React from 'react';
 import { useProjectStore } from '../../state/store';
 import { EvidencePicker } from './EvidencePicker';
+import { EntityCard } from './EntityCard';
 
 interface EvidenceLinksSectionProps {
   scopeId: string;
@@ -51,34 +52,18 @@ export const EvidenceLinksSection: React.FC<EvidenceLinksSectionProps> = ({
       ) : (
         <div style={styles.list}>
           {evidenceEntities.map(({ link, entity }) => (
-            <div key={link.id} style={styles.evidenceItem}>
-              <div style={styles.evidenceHeader}>
-                <span style={styles.evidenceIcon}>
-                  {entity.entity_type === 'note' ? '📝' :
-                   entity.entity_type === 'symbol_instance' ? '🔷' : '📎'}
-                </span>
-                <div style={styles.evidenceDetails}>
-                  <div style={styles.evidenceType}>
-                    {entity.entity_type === 'note' ? 'Note' :
-                     entity.entity_type === 'symbol_instance' ? 'Symbol Instance' :
-                     entity.entity_type}
-                  </div>
-                  <div style={styles.evidenceText}>
-                    {entity.text || entity.recognized_text || entity.name || entity.id.slice(0, 8)}
-                  </div>
-                  {entity.source_sheet_number && (
-                    <div style={styles.evidenceLocation}>
-                      Sheet {entity.source_sheet_number}
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div key={link.id} style={styles.evidenceCardWrapper}>
+              <EntityCard
+                entity={entity}
+                showThumbnail={true}
+                showRelationships={true}
+              />
               <button 
                 onClick={() => handleRemove(link.id)} 
                 style={styles.removeButton}
                 title="Remove evidence"
               >
-                ×
+                × Remove
               </button>
             </div>
           ))}
@@ -138,61 +123,25 @@ const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '12px',
   },
-  evidenceItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    padding: '12px',
-    backgroundColor: '#f8fafc',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-  },
-  evidenceHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '10px',
-    flex: 1,
-  },
-  evidenceIcon: {
-    fontSize: '18px',
-  },
-  evidenceDetails: {
-    flex: 1,
-  },
-  evidenceType: {
-    fontSize: '11px',
-    fontWeight: 600,
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    marginBottom: '2px',
-  },
-  evidenceText: {
-    fontSize: '13px',
-    color: '#0f172a',
-    marginBottom: '2px',
-    lineHeight: 1.4,
-  },
-  evidenceLocation: {
-    fontSize: '11px',
-    color: '#94a3b8',
-    fontWeight: 500,
+  evidenceCardWrapper: {
+    position: 'relative',
   },
   removeButton: {
-    border: 'none',
-    background: 'none',
-    fontSize: '24px',
-    color: '#cbd5e1',
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    padding: '4px 10px',
+    border: '1px solid #fca5a5',
+    backgroundColor: '#ffffff',
+    color: '#dc2626',
     cursor: 'pointer',
-    padding: '0',
-    width: '24px',
-    height: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'color 0.2s',
+    fontSize: '12px',
+    borderRadius: '4px',
+    fontWeight: 500,
+    transition: 'all 0.2s',
+    zIndex: 10,
   },
 };
 

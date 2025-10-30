@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useProjectStore } from '../state/store';
+import { ScopeComposer } from '../features/scope_editor/ScopeComposer';
 
 interface ScopeCreationModalProps {}
 
@@ -97,6 +98,11 @@ export const ScopeCreationModal: React.FC<ScopeCreationModalProps> = () => {
 
   const isConceptual = scopeCreationMode.type === 'conceptual';
   const isCanvas = scopeCreationMode.type === 'canvas';
+
+  // Use new ScopeComposer for conceptual scopes
+  if (isConceptual) {
+    return <ScopeComposer onClose={cancelScopeCreation} />;
+  }
 
   return (
     <>
