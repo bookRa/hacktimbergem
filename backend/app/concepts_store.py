@@ -114,14 +114,20 @@ def update_concept(
 
 
 def delete_concept(project_id: str, concept_id: str) -> bool:
-    # Prevent deletion if any links reference this concept
+    # CASCADE: Delete any links referencing this concept
     # Local import to avoid circular dependency
-    from .links_store import load_links  # type: ignore
+    from .links_store import load_links, save_links  # type: ignore
 
     links = load_links(project_id)
-    for l in links:
-        if getattr(l, "source_id", None) == concept_id or getattr(l, "target_id", None) == concept_id:
-            raise ValueError("Cannot delete concept referenced by links")
+    # Filter out links that reference the concept being deleted
+    filtered_links = [
+        l for l in links 
+        if getattr(l, "source_id", None) != concept_id and getattr(l, "target_id", None) != concept_id
+    ]
+    if len(filtered_links) < len(links):
+        # Some links were removed, save the updated list
+        save_links(project_id, filtered_links)
+    
     concepts = load_concepts(project_id)
     new_concepts = [c for c in concepts if getattr(c, "id", None) != concept_id]
     if len(new_concepts) == len(concepts):

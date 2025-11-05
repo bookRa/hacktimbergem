@@ -1,6 +1,7 @@
 import React from 'react';
 import { useProjectStore } from '../../state/store';
 import { EntityCard } from './EntityCard';
+import { createLink } from '../../api/links';
 
 interface ScopeComposerProps {
   onClose: () => void;
@@ -14,10 +15,12 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
   const [scopeName, setScopeName] = React.useState('');
   const [scopeDescription, setScopeDescription] = React.useState('');
 
-  const { entities, createScope, addToast } = useProjectStore((s: any) => ({
+  const { entities, createScope, addToast, projectId, fetchLinks } = useProjectStore((s: any) => ({
     entities: s.entities,
     createScope: s.createScope,
     addToast: s.addToast,
+    projectId: s.projectId,
+    fetchLinks: s.fetchLinks,
   }));
 
   // Filter entities
@@ -90,16 +93,34 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
 
     try {
       // Create the scope
-      await createScope({
+      const createdScope = await createScope({
         name: scopeName.trim(),
         description: scopeDescription.trim() || undefined,
       });
 
-      // TODO: After creation, link selected entities as evidence
-      // This would require getting the created scope ID and creating links
-      // For now, user can add evidence from the scope editor
+      // Link selected entities as evidence (JUSTIFIED_BY links)
+      if (createdScope && selectedEntities.size > 0 && projectId) {
+        const linkPromises = Array.from(selectedEntities).map(targetId =>
+          createLink(projectId, {
+            rel_type: 'JUSTIFIED_BY',
+            source_id: createdScope.id,
+            target_id: targetId,
+          })
+        );
+        
+        await Promise.all(linkPromises);
+        
+        // Refresh links in the store
+        await fetchLinks();
+        
+        addToast({ 
+          kind: 'success', 
+          message: `Scope "${scopeName}" created with ${selectedEntities.size} evidence link(s)` 
+        });
+      } else {
+        addToast({ kind: 'success', message: `Scope "${scopeName}" created` });
+      }
 
-      addToast({ kind: 'success', message: `Scope "${scopeName}" created. You can now link evidence from the scope editor.` });
       onClose();
     } catch (e: any) {
       console.error('[ScopeComposer] Error creating scope:', e);
@@ -167,7 +188,7 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
               </div>
 
               <div style={styles.hint}>
-                💡 After creation, selected entities will be available to link as evidence from the scope editor.
+                💡 Selected entities will be linked as evidence when the scope is created.
               </div>
             </div>
           </div>
@@ -523,5 +544,6 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'background-color 0.2s',
   },
 };
+
 
 

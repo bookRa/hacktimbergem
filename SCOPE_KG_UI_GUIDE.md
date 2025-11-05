@@ -322,3 +322,4 @@ Compact Cards (Review Mode)
 Refer to `SCOPE_EDITOR_KG_OVERHAUL.md` for technical details and architecture.
 
 
+

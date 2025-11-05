@@ -605,17 +605,22 @@ def delete_entity(project_id: str, entity_id: str) -> bool:
             if getattr(e, "entity_type", None) == "symbol_instance" and getattr(e, "definition_item_id", None) == entity_id:
                 raise ValueError("Cannot delete definition item with symbol instances referencing it")
     
-    # Guard: prevent deleting any entity referenced by links (graph edges)
+    # CASCADE: Delete any links referencing this entity
     try:
-        from .links_store import load_links  # type: ignore
+        from .links_store import load_links, save_links  # type: ignore
         links = load_links(project_id)
-        for l in links:
-            if getattr(l, "source_id", None) == entity_id or getattr(l, "target_id", None) == entity_id:
-                raise ValueError("Cannot delete entity referenced by links")
-    except Exception:
-        # If links store fails to load, be conservative and allow deletion to avoid deadlocks.
-        # Future: log this condition.
-        pass
+        # Filter out links that reference the entity being deleted
+        filtered_links = [
+            l for l in links 
+            if getattr(l, "source_id", None) != entity_id and getattr(l, "target_id", None) != entity_id
+        ]
+        if len(filtered_links) < len(links):
+            # Some links were removed, save the updated list
+            save_links(project_id, filtered_links)
+    except Exception as e:
+        # If links store fails, log but continue with entity deletion
+        print(f"Warning: Failed to cascade delete links for entity {entity_id}: {e}")
+    
     new_entities = [e for e in entities if getattr(e, "id", None) != entity_id]
     if len(new_entities) == len(entities):
         return False

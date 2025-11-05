@@ -172,7 +172,7 @@ interface AppState {
     startScopeCreation: (type: 'canvas' | 'conceptual') => void;
     cancelScopeCreation: () => void;
     startAddingScopeLocation: (scopeId: string) => void;
-    createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<void>;
+    createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<any>;
     updateScopeLocation: (scopeId: string, sheet: number, bbox: number[]) => Promise<void>;
     removeScopeLocation: (scopeId: string) => Promise<void>;
     // OCR helpers
@@ -1296,9 +1296,11 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             } as any);
             
             addToast({ kind: 'success', message: `Scope "${data.name}" created` });
+            return created; // Return the created scope entity
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e?.message || 'Failed to create scope' });
+            throw e; // Re-throw to allow caller to handle
         }
     },
     updateScopeLocation: async (scopeId: string, sheet: number, bbox: number[]) => {
