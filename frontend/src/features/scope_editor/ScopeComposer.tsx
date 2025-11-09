@@ -14,24 +14,61 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [scopeName, setScopeName] = React.useState('');
   const [scopeDescription, setScopeDescription] = React.useState('');
+  const [selectedSheets, setSelectedSheets] = React.useState<Set<number>>(new Set());
+  const [linkStatusFilter, setLinkStatusFilter] = React.useState<'all' | 'complete' | 'incomplete'>('all');
+  const [expandedEntities, setExpandedEntities] = React.useState<Set<string>>(new Set());
 
-  const { entities, createScope, addToast, projectId, fetchLinks } = useProjectStore((s: any) => ({
+  const { entities, createScope, addToast, projectId, fetchLinks, pageTitles } = useProjectStore((s: any) => ({
     entities: s.entities,
     createScope: s.createScope,
     addToast: s.addToast,
     projectId: s.projectId,
     fetchLinks: s.fetchLinks,
+    pageTitles: s.pageTitles || {},
   }));
 
+  // Get unique sheet numbers with counts
+  const sheetCounts = React.useMemo(() => {
+    const counts: Record<number, number> = {};
+    entities.forEach((e: any) => {
+      if (e.entity_type === entityType && e.source_sheet_number) {
+        counts[e.source_sheet_number] = (counts[e.source_sheet_number] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [entities, entityType]);
+
+  const availableSheets = React.useMemo(() => {
+    return Object.keys(sheetCounts).map(Number).sort((a, b) => a - b);
+  }, [sheetCounts]);
+
   // Filter entities
-  const availableEntities = entities.filter((e: any) => {
-    if (e.entity_type !== entityType) return false;
-    
-    if (!searchTerm) return true;
-    
-    const text = (e.text || e.recognized_text || e.name || e.description || '').toLowerCase();
-    return text.includes(searchTerm.toLowerCase());
-  });
+  const availableEntities = React.useMemo(() => {
+    return entities.filter((e: any) => {
+      // Entity type filter
+      if (e.entity_type !== entityType) return false;
+      
+      // Sheet filter
+      if (selectedSheets.size > 0 && e.source_sheet_number) {
+        if (!selectedSheets.has(e.source_sheet_number)) return false;
+      }
+      
+      // Link status filter (only for symbols)
+      if (entityType === 'symbol_instance' && linkStatusFilter !== 'all') {
+        const hasDefinition = !!e.definition_item_id;
+        if (linkStatusFilter === 'complete' && !hasDefinition) return false;
+        if (linkStatusFilter === 'incomplete' && hasDefinition) return false;
+      }
+      
+      // Search filter
+      if (searchTerm) {
+        const text = (e.text || e.recognized_text || e.name || e.description || '').toLowerCase();
+        if (!text.includes(searchTerm.toLowerCase())) return false;
+      }
+      
+      return true;
+    });
+  }, [entities, entityType, selectedSheets, linkStatusFilter, searchTerm]);
 
   const toggleSelection = (entityId: string) => {
     const newSet = new Set(selectedEntities);
@@ -41,6 +78,39 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
       newSet.add(entityId);
     }
     setSelectedEntities(newSet);
+  };
+
+  const toggleExpanded = (entityId: string) => {
+    const newSet = new Set(expandedEntities);
+    if (newSet.has(entityId)) {
+      newSet.delete(entityId);
+    } else {
+      newSet.add(entityId);
+    }
+    setExpandedEntities(newSet);
+  };
+
+  const toggleSheetFilter = (sheetNum: number) => {
+    const newSet = new Set(selectedSheets);
+    if (newSet.has(sheetNum)) {
+      newSet.delete(sheetNum);
+    } else {
+      newSet.add(sheetNum);
+    }
+    setSelectedSheets(newSet);
+  };
+
+  const clearFilters = () => {
+    setSelectedSheets(new Set());
+    setLinkStatusFilter('all');
+    setSearchTerm('');
+  };
+
+  const hasActiveFilters = selectedSheets.size > 0 || linkStatusFilter !== 'all' || searchTerm.length > 0;
+
+  const getSheetLabel = (sheetNum: number) => {
+    const title = pageTitles[sheetNum - 1]?.text;
+    return title ? `Sheet ${sheetNum}: ${title}` : `Sheet ${sheetNum}`;
   };
 
   const handleNext = () => {
@@ -152,9 +222,10 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
                   <EntityCard
                     key={entity.id}
                     entity={entity}
-                    showThumbnail={true}
+                    mode="compact"
+                    showThumbnail={false}
                     showRelationships={false}
-                    compact={true}
+                    pageTitles={pageTitles}
                   />
                 ))}
               </div>
@@ -246,6 +317,67 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
             placeholder="Search entities..."
             style={styles.searchInput}
           />
+
+          {/* Filters */}
+          <div style={styles.filtersContainer}>
+            {/* Sheet Filters */}
+            {availableSheets.length > 1 && (
+              <div style={styles.filterSection}>
+                <div style={styles.filterLabel}>Sheets:</div>
+                {availableSheets.map(sheetNum => (
+                  <button
+                    key={sheetNum}
+                    onClick={() => toggleSheetFilter(sheetNum)}
+                    style={{
+                      ...styles.filterChip,
+                      ...(selectedSheets.has(sheetNum) ? styles.filterChipActive : {})
+                    }}
+                  >
+                    {getSheetLabel(sheetNum)} ({sheetCounts[sheetNum]})
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Link Status Filter (for symbols only) */}
+            {entityType === 'symbol_instance' && (
+              <div style={styles.filterSection}>
+                <div style={styles.filterLabel}>Status:</div>
+                <button
+                  onClick={() => setLinkStatusFilter('all')}
+                  style={{
+                    ...styles.filterChip,
+                    ...(linkStatusFilter === 'all' ? styles.filterChipActive : {})
+                  }}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setLinkStatusFilter('complete')}
+                  style={{
+                    ...styles.filterChip,
+                    ...(linkStatusFilter === 'complete' ? styles.filterChipActive : {})
+                  }}
+                >
+                  Has definition
+                </button>
+                <button
+                  onClick={() => setLinkStatusFilter('incomplete')}
+                  style={{
+                    ...styles.filterChip,
+                    ...(linkStatusFilter === 'incomplete' ? styles.filterChipActive : {})
+                  }}
+                >
+                  Missing definition
+                </button>
+                {hasActiveFilters && (
+                  <button onClick={clearFilters} style={styles.clearFiltersButton}>
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div style={styles.browseContent}>
@@ -259,15 +391,19 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
               </div>
             </div>
           ) : (
-            <div style={styles.cardGrid}>
+            <div style={styles.listGrid}>
               {availableEntities.map((entity: any) => (
                 <EntityCard
                   key={entity.id}
                   entity={entity}
+                  mode="list"
                   showThumbnail={true}
                   showRelationships={true}
                   onSelect={toggleSelection}
                   isSelected={selectedEntities.has(entity.id)}
+                  isExpanded={expandedEntities.has(entity.id)}
+                  onToggleExpand={toggleExpanded}
+                  pageTitles={pageTitles}
                 />
               ))}
             </div>
@@ -315,9 +451,9 @@ const styles: Record<string, React.CSSProperties> = {
   modal: {
     backgroundColor: '#ffffff',
     borderRadius: '8px',
-    width: '90%',
-    maxWidth: '900px',
-    maxHeight: '85vh',
+    width: '95%',
+    maxWidth: '1400px',
+    maxHeight: '90vh',
     display: 'flex',
     flexDirection: 'column',
     boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
@@ -356,7 +492,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #e2e8f0',
   },
   controls: {
-    padding: '16px 24px',
+    padding: '14px 24px',
     borderBottom: '1px solid #e2e8f0',
   },
   typeButtons: {
@@ -425,6 +561,66 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'grid',
     gridTemplateColumns: '1fr',
     gap: '12px',
+  },
+  listGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+    gap: '10px',
+    alignItems: 'start',
+  },
+  filtersContainer: {
+    marginTop: '10px',
+    paddingTop: '10px',
+    borderTop: '1px solid #e2e8f0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  filterSection: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  filterLabel: {
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    flexShrink: 0,
+  },
+  filterChip: {
+    padding: '3px 10px',
+    fontSize: '11px',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#64748b',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: 500,
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
+  },
+  filterChipActive: {
+    backgroundColor: '#3b82f6',
+    color: '#ffffff',
+    borderColor: '#3b82f6',
+  },
+  clearFiltersButton: {
+    padding: '3px 10px',
+    fontSize: '10px',
+    border: '1px solid #e2e8f0',
+    backgroundColor: '#f8fafc',
+    color: '#64748b',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    transition: 'all 0.2s',
+    marginLeft: '4px',
   },
   section: {
     display: 'flex',
