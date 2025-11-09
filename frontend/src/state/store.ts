@@ -172,11 +172,22 @@ interface AppState {
     startScopeCreation: (type: 'canvas' | 'conceptual') => void;
     cancelScopeCreation: () => void;
     startAddingScopeLocation: (scopeId: string) => void;
-    createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<void>;
+    createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<any>;
     updateScopeLocation: (scopeId: string, sheet: number, bbox: number[]) => Promise<void>;
     removeScopeLocation: (scopeId: string) => Promise<void>;
     // OCR helpers
     getOCRBlocksInBBox: (pageIndex: number, bbox: [number, number, number, number]) => Array<{ index: number; text: string; bbox: [number, number, number, number] }>;
+    // Scope Editor
+    scopeEditor: {
+        currentScopeId: string | null;
+        loading: boolean;
+        error: string | null;
+    };
+    loadScopeEditor: (scopeId: string) => Promise<void>;
+    closeScopeEditor: () => void;
+    linkSymbolToScope: (scopeId: string, symbolId: string) => Promise<void>;
+    unlinkSymbolFromScope: (scopeId: string, symbolId: string) => Promise<void>;
+    copyScopeDescription: (scopeId: string, text: string) => Promise<void>;
 }
 
 export type ProjectStore = AppState; // backward export name for existing imports
@@ -998,6 +1009,11 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         type: null,
     },
     addingScopeLocationTo: null,
+    scopeEditor: {
+        currentScopeId: null,
+        loading: false,
+        error: null,
+    },
     promoteSelectionToNotePersist: async (pageIndex: number) => {
         const { projectId, addToast, pageOcr, selectedBlocks, fetchEntities } = get() as any;
         if (!projectId) return;
@@ -1280,9 +1296,11 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
             } as any);
             
             addToast({ kind: 'success', message: `Scope "${data.name}" created` });
+            return created; // Return the created scope entity
         } catch (e: any) {
             console.error(e);
             addToast({ kind: 'error', message: e?.message || 'Failed to create scope' });
+            throw e; // Re-throw to allow caller to handle
         }
     },
     updateScopeLocation: async (scopeId: string, sheet: number, bbox: number[]) => {
@@ -1389,5 +1407,136 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         
         console.log(`[getOCRBlocksInBBox] Found ${blocksInBBox.length} OCR blocks in bbox`, { pageIndex, bbox, blocks: blocksInBBox });
         return blocksInBBox;
+    },
+    
+    // Scope Editor Actions
+    loadScopeEditor: async (scopeId: string) => {
+        set((state) => ({
+            scopeEditor: { ...state.scopeEditor, currentScopeId: scopeId, loading: true, error: null }
+        } as any));
+        
+        const { projectId, fetchEntities, fetchLinks, addToast } = get() as any;
+        if (!projectId) {
+            set((state) => ({
+                scopeEditor: { ...state.scopeEditor, loading: false, error: 'No project loaded' }
+            } as any));
+            return;
+        }
+        
+        try {
+            // Fetch entities and all links (scope editor will filter what it needs)
+            await Promise.all([
+                fetchEntities(),
+                fetchLinks()  // Fetch all links, scope editor will filter by scopeId
+            ]);
+            
+            set((state) => ({
+                scopeEditor: { ...state.scopeEditor, loading: false }
+            } as any));
+        } catch (e: any) {
+            console.error('[loadScopeEditor] Error:', e);
+            set((state) => ({
+                scopeEditor: { ...state.scopeEditor, loading: false, error: e?.message || 'Failed to load scope' }
+            } as any));
+            addToast({ kind: 'error', message: 'Failed to load scope editor' });
+        }
+    },
+    
+    closeScopeEditor: () => {
+        set((state) => ({
+            scopeEditor: { currentScopeId: null, loading: false, error: null }
+        } as any));
+    },
+    
+    linkSymbolToScope: async (scopeId: string, symbolId: string) => {
+        const { projectId, addToast, fetchLinks, links, entities } = get() as any;
+        if (!projectId) {
+            addToast({ kind: 'error', message: 'No project loaded' });
+            return;
+        }
+        
+        // Check if symbol is already linked to another scope (1:1 enforcement)
+        const existingLink = links.find((l: any) => 
+            l.rel_type === 'JUSTIFIED_BY' && 
+            l.target_id === symbolId
+        );
+        
+        if (existingLink && existingLink.source_id !== scopeId) {
+            const otherScope = entities.find((e: any) => e.id === existingLink.source_id);
+            const scopeName = otherScope?.name || otherScope?.description || existingLink.source_id.slice(0, 6);
+            
+            const confirmRelink = window.confirm(
+                `This symbol is already linked to scope "${scopeName}". Unlink and relink to current scope?`
+            );
+            
+            if (!confirmRelink) return;
+            
+            // Unlink from other scope first
+            try {
+                await fetch(`/api/projects/${projectId}/links/${existingLink.id}`, { method: 'DELETE' });
+            } catch (e) {
+                console.error('[linkSymbolToScope] Failed to unlink from other scope:', e);
+                addToast({ kind: 'error', message: 'Failed to unlink symbol from other scope' });
+                return;
+            }
+        }
+        
+        // Create new link
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/links`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    rel_type: 'JUSTIFIED_BY',
+                    source_id: scopeId,
+                    target_id: symbolId
+                })
+            });
+            
+            if (!resp.ok) {
+                let msg = 'Failed to link symbol';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            
+            await fetchLinks();
+            addToast({ kind: 'success', message: 'Symbol linked to scope' });
+        } catch (e: any) {
+            console.error('[linkSymbolToScope] Error:', e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to link symbol' });
+        }
+    },
+    
+    unlinkSymbolFromScope: async (scopeId: string, symbolId: string) => {
+        const { projectId, addToast, fetchLinks, links } = get() as any;
+        if (!projectId) {
+            addToast({ kind: 'error', message: 'No project loaded' });
+            return;
+        }
+        
+        const link = links.find((l: any) => 
+            l.rel_type === 'JUSTIFIED_BY' && 
+            l.source_id === scopeId && 
+            l.target_id === symbolId
+        );
+        
+        if (!link) {
+            addToast({ kind: 'error', message: 'Link not found' });
+            return;
+        }
+        
+        try {
+            await fetch(`/api/projects/${projectId}/links/${link.id}`, { method: 'DELETE' });
+            await fetchLinks();
+            addToast({ kind: 'success', message: 'Symbol unlinked from scope' });
+        } catch (e: any) {
+            console.error('[unlinkSymbolFromScope] Error:', e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to unlink symbol' });
+        }
+    },
+    
+    copyScopeDescription: async (scopeId: string, text: string) => {
+        const { updateEntityMeta } = get() as any;
+        await updateEntityMeta(scopeId, { description: text });
     },
 }));

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useProjectStore } from '../state/store';
+import { navigateToScope } from '../utils/router';
 import { useUIV2Linking, useUIV2Actions } from '../state/ui_v2';
 
 export const RightExplorer: React.FC = () => {
@@ -48,11 +49,12 @@ export const RightExplorer: React.FC = () => {
 const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; setSelectedScopeId: (id: string | null) => void; entities: any[]; setHover: (id: string | null) => void; }> = ({ concepts, selectedScopeId, setSelectedScopeId, entities, setHover }) => {
     // FIX: Query entities array, not concepts (scopes are stored as entities)
     const scopes = entities.filter((e: any) => e.entity_type === 'scope');
-    const { links, selectEntity, setCurrentPageIndex, startScopeCreation } = useProjectStore((s: any) => ({
+    const { links, selectEntity, setCurrentPageIndex, startScopeCreation, projectId } = useProjectStore((s: any) => ({
         links: s.links,
         selectEntity: s.selectEntity,
         setCurrentPageIndex: s.setCurrentPageIndex,
         startScopeCreation: s.startScopeCreation,
+        projectId: s.projectId,
     }));
     
     // Separate conceptual (no bbox) from canvas-based (has bbox)
@@ -140,12 +142,12 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                selectEntity(s.id);
+                                                navigateToScope(s.id, projectId);
                                             }}
                                             style={btn(false)}
-                                            title="Edit scope"
+                                            title="Open scope editor"
                                         >
-                                            Edit
+                                            Open Editor
                                         </button>
                                     </div>
                                 </div>
@@ -191,12 +193,12 @@ const ScopesList: React.FC<{ concepts: any[]; selectedScopeId: string | null; se
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                selectEntity(s.id);
+                                                navigateToScope(s.id, projectId);
                                             }}
                                             style={btn(false)}
-                                            title="Edit scope"
+                                            title="Open scope editor"
                                         >
-                                            Edit
+                                            Open Editor
                                         </button>
                                         <button
                                             onClick={(e) => {

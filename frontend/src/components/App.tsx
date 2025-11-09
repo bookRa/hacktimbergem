@@ -9,16 +9,35 @@ import { useProjectStore, ProjectStore } from '../state/store';
 import { StatusBanner } from './StatusBanner';
 import { ToastContainer } from './ToastContainer';
 import { ScopeCreationModal } from './ScopeCreationModal';
+import { ScopeEditor } from '../pages/ScopeEditor';
+import { parseRoute, onRouteChange } from '../utils/router';
 
 export const App: React.FC = () => {
+    const [currentRoute, setCurrentRoute] = React.useState(() => parseRoute());
+    
     const pdfDoc = useProjectStore((s: ProjectStore) => s.pdfDoc);
     const { initProjectById, projectId } = useProjectStore((s: any) => ({ initProjectById: s.initProjectById, projectId: s.projectId }));
+    
+    // Listen for route changes
+    React.useEffect(() => {
+        const unsubscribe = onRouteChange((route) => {
+            setCurrentRoute(route);
+        });
+        return unsubscribe;
+    }, []);
+    
     React.useEffect(() => {
         // Restore project ONLY via URL hash (#p=projectId). Root without hash should show Upload.
         const tryInit = async () => {
-            const hash = typeof window !== 'undefined' ? window.location.hash : '';
-            const match = hash && hash.match(/#p=([a-f0-9]+)/i);
-            const pid = match?.[1] || null;
+            const route = parseRoute();
+            let pid: string | null = null;
+            
+            if (route.type === 'project') {
+                pid = route.projectId;
+            } else if (route.type === 'scope') {
+                pid = route.projectId;
+            }
+            
             if (pid && !projectId) {
                 await initProjectById(pid);
             }
@@ -28,6 +47,7 @@ export const App: React.FC = () => {
         return () => clearTimeout(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectId]);
+    
     const { leftPanel, rightPanel, setLeftPanelWidth, setRightPanelWidth, toggleLeftCollapsed, toggleRightCollapsed } = useProjectStore((s: any) => ({
         leftPanel: s.leftPanel,
         rightPanel: s.rightPanel,
@@ -36,6 +56,7 @@ export const App: React.FC = () => {
         toggleLeftCollapsed: s.toggleLeftCollapsed,
         toggleRightCollapsed: s.toggleRightCollapsed,
     }));
+    
     const onDragLeft = (e: React.MouseEvent) => {
         const startX = e.clientX;
         const startW = leftPanel.widthPx;
@@ -53,6 +74,18 @@ export const App: React.FC = () => {
         window.addEventListener('mouseup', onUp);
     };
     const COLLAPSED_RAIL = 36;
+    
+    // Render Scope Editor if route is scope
+    if (currentRoute.type === 'scope') {
+        return (
+            <div className="app-shell">
+                <StatusBanner />
+                <ToastContainer />
+                <ScopeEditor scopeId={currentRoute.scopeId} />
+            </div>
+        );
+    }
+    
     return (
         <div className="app-shell">
             <StatusBanner />
