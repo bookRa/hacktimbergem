@@ -277,6 +277,10 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         get().fetchEntities();
         get().fetchConcepts();
         get().fetchLinks();
+        // Fetch OCR data for the current page (note: pollManifest also does this now, but this is a safety net)
+        const currentPageIndex = get().currentPageIndex;
+        get().fetchPageOcr(currentPageIndex);
+        get().fetchPageImage(currentPageIndex);
     },
     pollManifest: async () => {
         const { projectId } = get();
@@ -316,6 +320,10 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                     get().fetchEntities();
                     get().fetchConcepts();
                     get().fetchLinks();
+                    // Fetch OCR data for the current page so it's available immediately
+                    const currentPageIndex = get().currentPageIndex;
+                    get().fetchPageOcr(currentPageIndex);
+                    get().fetchPageImage(currentPageIndex);
                     done = true;
                 } else if (data.status === 'error') {
                     set({ manifestStatus: 'error' });
