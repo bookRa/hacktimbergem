@@ -1,4 +1,4 @@
-from backend.app.coords import (
+from app.coords import (
     RenderMeta,
     canvas_to_pdf,
     pdf_to_canvas,
