@@ -1,40 +1,34 @@
-"""Application configuration using Pydantic settings.
+"""Application configuration.
 
-Environment variables prefixed with TIMBERGEM_ are automatically loaded.
+Settings can be configured via environment variables prefixed with TIMBERGEM_
 Example: TIMBERGEM_PROJECTS_DIR=/path/to/projects
 """
 
-from pydantic import BaseSettings
+import os
+from dataclasses import dataclass
 
 
-class Settings(BaseSettings):
+@dataclass
+class Settings:
     """Application settings loaded from environment."""
     
     # Storage
-    projects_dir: str = "projects"
+    projects_dir: str = os.getenv("TIMBERGEM_PROJECTS_DIR", "projects")
     
     # Rendering
-    render_dpi: int = 300
+    render_dpi: int = int(os.getenv("TIMBERGEM_RENDER_DPI", "300"))
     
     # OCR
-    ocr_engine: str = "pymupdf"  # Future: "tesseract", "azure_cv", "google_vision"
+    ocr_engine: str = os.getenv("TIMBERGEM_OCR_ENGINE", "pymupdf")
     
     # AI Detection
-    ai_detection_enabled: bool = True
-    vision_model_endpoint: str = ""  # For future vision model services
-    vision_model_confidence_threshold: float = 0.7
+    ai_detection_enabled: bool = os.getenv("TIMBERGEM_AI_DETECTION_ENABLED", "true").lower() == "true"
+    vision_model_endpoint: str = os.getenv("TIMBERGEM_VISION_MODEL_ENDPOINT", "")
+    vision_model_confidence_threshold: float = float(os.getenv("TIMBERGEM_VISION_MODEL_CONFIDENCE_THRESHOLD", "0.7"))
     
     # API
     api_title: str = "Timbergem Backend"
     api_version: str = "0.2.0"  # Bumped for Clean Architecture
-    
-    class Config:
-        env_prefix = "TIMBERGEM_"
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 __all__ = ["Settings"]
-
-
-
