@@ -114,12 +114,9 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
   };
 
   const handleNext = () => {
-    if (selectedEntities.size === 0) {
-      addToast({ kind: 'error', message: 'Please select at least one entity' });
-      return;
-    }
+    // Allow proceeding even with 0 entities - user can create scope with just name/description
     
-    // Auto-generate name and description from selected entities
+    // Auto-generate name and description from selected entities (if any)
     const selectedList = Array.from(selectedEntities).map(id => 
       entities.find((e: any) => e.id === id)
     ).filter(Boolean);
@@ -156,15 +153,16 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
   };
 
   const handleCreate = async () => {
-    if (!scopeName.trim()) {
-      addToast({ kind: 'error', message: 'Please enter a scope name' });
+    // Validate that at least name or description is provided
+    if (!scopeName.trim() && !scopeDescription.trim()) {
+      addToast({ kind: 'error', message: 'Please enter a name or description for the scope' });
       return;
     }
 
     try {
       // Create the scope
       const createdScope = await createScope({
-        name: scopeName.trim(),
+        name: scopeName.trim() || undefined,
         description: scopeDescription.trim() || undefined,
       });
 
@@ -185,10 +183,10 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
         
         addToast({ 
           kind: 'success', 
-          message: `Scope "${scopeName}" created with ${selectedEntities.size} evidence link(s)` 
+          message: `Scope "${scopeName || scopeDescription}" created with ${selectedEntities.size} evidence link(s)` 
         });
       } else {
-        addToast({ kind: 'success', message: `Scope "${scopeName}" created` });
+        addToast({ kind: 'success', message: `Scope "${scopeName || scopeDescription}" created` });
       }
 
       onClose();
@@ -212,31 +210,33 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
           </div>
 
           <div style={styles.composeContent}>
-            {/* Selected Entities Preview */}
-            <div style={styles.section}>
-              <div style={styles.sectionTitle}>
-                Selected Entities ({selectedList.length})
+            {/* Selected Entities Preview - Only show if entities are selected */}
+            {selectedList.length > 0 && (
+              <div style={styles.section}>
+                <div style={styles.sectionTitle}>
+                  Selected Entities ({selectedList.length})
+                </div>
+                <div style={styles.selectedGrid}>
+                  {selectedList.map((entity) => (
+                    <EntityCard
+                      key={entity.id}
+                      entity={entity}
+                      mode="compact"
+                      showThumbnail={false}
+                      showRelationships={false}
+                      pageTitles={pageTitles}
+                    />
+                  ))}
+                </div>
               </div>
-              <div style={styles.selectedGrid}>
-                {selectedList.map((entity) => (
-                  <EntityCard
-                    key={entity.id}
-                    entity={entity}
-                    mode="compact"
-                    showThumbnail={false}
-                    showRelationships={false}
-                    pageTitles={pageTitles}
-                  />
-                ))}
-              </div>
-            </div>
+            )}
 
             {/* Scope Details Form */}
             <div style={styles.section}>
               <div style={styles.sectionTitle}>Scope Details</div>
               
               <div style={styles.formGroup}>
-                <label style={styles.label}>Name *</label>
+                <label style={styles.label}>Name</label>
                 <input
                   type="text"
                   value={scopeName}
@@ -259,7 +259,9 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
               </div>
 
               <div style={styles.hint}>
-                💡 Selected entities will be linked as evidence when the scope is created.
+                {selectedList.length > 0 
+                  ? '💡 Selected entities will be linked as evidence when the scope is created.'
+                  : '💡 At least a name or description is required. You can add evidence links later.'}
               </div>
             </div>
           </div>
@@ -420,11 +422,7 @@ export const ScopeComposer: React.FC<ScopeComposerProps> = ({ onClose }) => {
             </button>
             <button
               onClick={handleNext}
-              disabled={selectedEntities.size === 0}
-              style={{
-                ...styles.nextButton,
-                ...(selectedEntities.size === 0 ? styles.nextButtonDisabled : {})
-              }}
+              style={styles.nextButton}
             >
               Next: Compose →
             </button>

@@ -77,7 +77,14 @@ export interface AssemblyEntity extends Omit<BaseEntity, 'source_sheet_number' |
     bounding_box?: BoundingBox | null;
 }
 export interface NoteEntity extends BaseEntity { entity_type: 'note'; text?: string | null; }
-export interface ScopeEntity extends BaseEntity { entity_type: 'scope'; name?: string | null; description?: string | null; }
+// Scope can be conceptual (no bbox) or canvas-based (with bbox)
+export interface ScopeEntity extends Omit<BaseEntity, 'source_sheet_number' | 'bounding_box'> { 
+    entity_type: 'scope'; 
+    name?: string | null; 
+    description?: string | null;
+    source_sheet_number?: number | null;
+    bounding_box?: BoundingBox | null;
+}
 
 export interface SymbolDefinitionEntity extends BaseEntity { entity_type: 'symbol_definition'; name: string; description?: string | null; visual_pattern_description?: string | null; scope: 'project' | 'sheet'; defined_in_id?: string | null }
 export interface ComponentDefinitionEntity extends BaseEntity { entity_type: 'component_definition'; name: string; description?: string | null; specifications?: Record<string, any> | null; scope: 'project' | 'sheet'; defined_in_id?: string | null }
@@ -115,7 +122,7 @@ export type CreateEntityInput =
     | ({ entity_type: 'assembly_group'; source_sheet_number: number; bounding_box: number[]; title?: string | null; notes?: string | null } & EntityFlags)
     | ({ entity_type: 'assembly'; assembly_group_id: string; code?: string | null; name?: string | null; description?: string | null; notes?: string | null; specifications?: Record<string, any> | null; drawing_id?: string | null; source_sheet_number?: number | null; bounding_box?: number[] | null } & EntityFlags)
     | ({ entity_type: 'note'; source_sheet_number: number; bounding_box: number[]; text?: string | null } & EntityFlags)
-    | ({ entity_type: 'scope'; source_sheet_number: number; bounding_box: number[]; name?: string | null; description?: string | null } & EntityFlags)
+    | ({ entity_type: 'scope'; source_sheet_number?: number | null; bounding_box?: number[] | null; name?: string | null; description?: string | null } & EntityFlags)
     | ({ entity_type: 'symbol_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; visual_pattern_description?: string | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)
     | ({ entity_type: 'component_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; specifications?: Record<string, any> | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)
     | ({ entity_type: 'symbol_instance'; source_sheet_number: number; bounding_box: number[]; symbol_definition_id: string; recognized_text?: string | null; definition_item_id?: string | null; definition_item_type?: 'assembly' | 'schedule_item' | 'legend_item' | null } & EntityFlags)

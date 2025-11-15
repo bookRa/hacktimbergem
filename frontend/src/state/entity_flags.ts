@@ -30,7 +30,8 @@ export function deriveEntityFlags(
     case 'scope': {
       const hasName = trimString(attrs.name).length > 0;
       const hasDescription = trimString(attrs.description).length > 0;
-      missing.scope = !(hasName && hasDescription);
+      // Allow scope with either name OR description (not both required)
+      missing.scope = !(hasName || hasDescription);
       break;
     }
     case 'symbol_definition':
