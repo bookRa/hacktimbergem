@@ -1,11 +1,4 @@
-"""
-Placeholder use case for top-down scope extraction.
-
-The concrete implementation will orchestrate:
-1. Loading OCR/layout data for a sheet via IOCRService
-2. Passing that data to a ScopeSuggestionStrategy (LLM, LayoutLM, heuristics)
-3. Writing accepted suggestions through CreateEntityUseCase so manual + AI paths match
-"""
+"""Legend parsing orchestration use case."""
 
 from __future__ import annotations
 
@@ -21,10 +14,10 @@ from app.use_cases.entities.create_entity import CreateEntityUseCase
 from app.use_cases.ai.types import AIUseCaseResult
 
 
-class ScopeSuggestionStrategy(Protocol):
-    """Strategy interface for proposing scope/notes/assembly entities."""
+class LegendParserStrategy(Protocol):
+    """Strategy that converts OCR/layout blocks into legend entities."""
 
-    def propose(
+    def parse(
         self,
         *,
         project_id: str,
@@ -36,19 +29,12 @@ class ScopeSuggestionStrategy(Protocol):
 
 
 @dataclass(slots=True)
-class DetectScopesUseCase:
-    """
-    Future orchestration entrypoint for Workstream #1 (top-down scopes).
-
-    Args:
-        ocr_service: Provides OCR/layout data from ingestion outputs
-        create_entity: Existing use case that performs validation/persistence
-        strategy: Optional suggestion backend (LLM, heuristics, hybrid)
-    """
+class LegendParserUseCase:
+    """Coordinates OCR retrieval and legend parsing strategies."""
 
     ocr_service: IOCRService
     create_entity: CreateEntityUseCase
-    strategy: ScopeSuggestionStrategy | None = None
+    parser: LegendParserStrategy | None = None
     layout_service: LayoutSegmentationService | None = None
     telemetry: Telemetry | None = None
 
@@ -60,18 +46,17 @@ class DetectScopesUseCase:
         dry_run: bool = True,
         limit: int | None = None,
     ) -> AIUseCaseResult:
-        """Run the configured scope detection strategy."""
-        if not self.strategy:
-            raise RuntimeError("ScopeSuggestionStrategy is not configured")
+        if not self.parser:
+            raise RuntimeError("LegendParserStrategy is not configured")
 
         span_attributes = {
             "project_id": project_id,
             "sheet_number": sheet_number,
             "dry_run": dry_run,
-            "stage": "scopes",
+            "stage": "legends",
         }
         telemetry_ctx = (
-            self.telemetry.span("DetectScopesUseCase.execute", span_attributes)
+            self.telemetry.span("LegendParserUseCase.execute", span_attributes)
             if self.telemetry
             else nullcontext()
         )
@@ -83,7 +68,7 @@ class DetectScopesUseCase:
                 if self.layout_service
                 else None
             )
-            proposals = self.strategy.propose(
+            proposals = self.parser.parse(
                 project_id=project_id,
                 sheet_number=sheet_number,
                 ocr=ocr,
@@ -117,5 +102,5 @@ class DetectScopesUseCase:
             return result
 
 
-__all__ = ["DetectScopesUseCase", "ScopeSuggestionStrategy"]
+__all__ = ["LegendParserUseCase", "LegendParserStrategy"]
 

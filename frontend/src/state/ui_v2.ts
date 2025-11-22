@@ -1,5 +1,6 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { shallow } from 'zustand/shallow';
+import type { EntityStatus, EntityValidation, EntityType as ApiEntityType } from '../api/entities';
 import type { OCRBlock } from '../ui_v2/overlays/OCRPicker';
 
 export type Selection = {
@@ -18,6 +19,11 @@ type InlineFormState = {
   open: boolean;
   type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef' | null;
   entityId?: string;
+  entityType?: ApiEntityType | null;
+  entitySheet?: number | null;
+  entityValidation?: EntityValidation | null;
+  entityStatus?: EntityStatus | null;
+  entityHasBoundingBox?: boolean;
   at?: { x: number; y: number } | null;
   pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] } | null;
   initialValues?: Record<string, any> | null;
@@ -68,6 +74,11 @@ type UIActions = {
   openForm: (payload: {
     type: 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef';
     entityId?: string;
+    entityType?: ApiEntityType;
+    entitySheet?: number | null;
+    entityValidation?: EntityValidation | null;
+    entityStatus?: EntityStatus | null;
+    entityHasBoundingBox?: boolean;
     at?: { x: number; y: number };
     pendingBBox?: { sheetId: string; bboxPdf: [number, number, number, number] };
     initialValues?: Record<string, any> | null;
@@ -111,7 +122,21 @@ export type UIState = {
 const initialState: Omit<UIState, keyof UIActions> = {
   mode: 'select',
   contextMenu: { open: false, at: null, target: undefined },
-  inlineForm: { open: false, type: null, at: null, pendingBBox: null, entityId: undefined, initialValues: null, mode: 'create', minimized: false },
+  inlineForm: {
+    open: false,
+    type: null,
+    entityId: undefined,
+    entityType: null,
+    entitySheet: null,
+    entityValidation: null,
+    entityStatus: null,
+    entityHasBoundingBox: false,
+    at: null,
+    pendingBBox: null,
+    initialValues: null,
+    mode: 'create',
+    minimized: false,
+  },
   drawing: { active: false, entityType: null },
   ocrPicker: { open: false },
   ocrSelectionMode: { active: false, selectedBlocks: [], targetField: 'recognizedText' },
@@ -139,12 +164,29 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   closeContext: () => {
     set({ contextMenu: { open: false, at: null, target: undefined } });
   },
-  openForm: ({ type, entityId, at, pendingBBox, initialValues = null, mode = 'create' }) => {
+  openForm: ({
+    type,
+    entityId,
+    entityType,
+    entitySheet = null,
+    entityValidation = null,
+    entityStatus = null,
+    entityHasBoundingBox = false,
+    at,
+    pendingBBox,
+    initialValues = null,
+    mode = 'create',
+  }) => {
     set({
       inlineForm: {
         open: true,
         type,
         entityId,
+        entityType: entityType ?? null,
+        entitySheet,
+        entityValidation,
+        entityStatus,
+        entityHasBoundingBox,
         at: at ?? null,
         pendingBBox: pendingBBox ?? get().inlineForm.pendingBBox ?? null,
         initialValues,
@@ -154,7 +196,23 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
   },
   closeForm: () => {
     // Regular form close - don't restore during normal workflow
-    set({ inlineForm: { open: false, type: null, at: null, entityId: undefined, pendingBBox: null, initialValues: null, mode: 'create', minimized: false } });
+    set({
+      inlineForm: {
+        open: false,
+        type: null,
+        entityId: undefined,
+        entityType: null,
+        entitySheet: null,
+        entityValidation: null,
+        entityStatus: null,
+        entityHasBoundingBox: false,
+        at: null,
+        pendingBBox: null,
+        initialValues: null,
+        mode: 'create',
+        minimized: false,
+      },
+    });
   },
   minimizeForm: () => {
     set((state) => ({
@@ -174,6 +232,16 @@ export const useUIV2Store = createWithEqualityFn<UIState>((set, get) => ({
     const isCompletingDefinitionDrawing = (window as any).__completingDefinitionDrawing;
     const pendingInstanceForm = (window as any).__pendingInstanceForm;
     const isNewDefinitionCreation = (window as any).__isNewDefinitionCreation;
+    import('./store')
+      .then(({ useProjectStore }) => {
+        const { groundingRequest, clearGroundingRequest } = useProjectStore.getState();
+        if (groundingRequest) {
+          clearGroundingRequest();
+        }
+      })
+      .catch(() => {
+        // ignore import errors (store may not be available during tests)
+      });
     
     console.log('[DEBUG] cancelDrawing called', {
       isCompletingDefinitionDrawing,

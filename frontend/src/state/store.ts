@@ -175,6 +175,10 @@ interface AppState {
     createScope: (data: { name: string; description?: string; source_sheet_number?: number; bounding_box?: number[] }) => Promise<any>;
     updateScopeLocation: (scopeId: string, sheet: number, bbox: number[]) => Promise<void>;
     removeScopeLocation: (scopeId: string) => Promise<void>;
+    groundingRequest: { id: string; entityType: EntityType; sheetNumber: number | null; uiType: 'Legend' | 'Schedule' | 'AssemblyGroup' | 'Note' } | null;
+    startGroundingEntity: (opts: { id: string; entityType: EntityType; sheetNumber?: number | null }) => void;
+    clearGroundingRequest: () => void;
+    applyGroundingToEntity: (entityId: string, sheetNumber: number, bboxPdf: [number, number, number, number]) => Promise<void>;
     // OCR helpers
     getOCRBlocksInBBox: (pageIndex: number, bbox: [number, number, number, number]) => Array<{ index: number; text: string; bbox: [number, number, number, number] }>;
     // Scope Editor
@@ -197,6 +201,13 @@ const lsNum = (k: string, def: number) => {
 };
 const lsBool = (k: string, def: boolean) => {
     try { const v = localStorage.getItem(k); return v ? v === '1' : def; } catch { return def; }
+};
+
+const groundingUiTypeByEntity: Partial<Record<EntityType, 'Legend' | 'Schedule' | 'AssemblyGroup' | 'Note'>> = {
+    legend: 'Legend',
+    schedule: 'Schedule',
+    assembly_group: 'AssemblyGroup',
+    note: 'Note',
 };
 
 export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppState => ({
@@ -890,7 +901,10 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 rotation: 0 as 0,
             };
             const beforeEnt = (get() as any).entities.find((e: any) => e.id === id);
-            const beforeBox = beforeEnt ? [beforeEnt.bounding_box.x1, beforeEnt.bounding_box.y1, beforeEnt.bounding_box.x2, beforeEnt.bounding_box.y2] : null;
+            const beforeBox =
+                beforeEnt && beforeEnt.bounding_box
+                    ? [beforeEnt.bounding_box.x1, beforeEnt.bounding_box.y1, beforeEnt.bounding_box.x2, beforeEnt.bounding_box.y2]
+                    : null;
             const [px1, py1, px2, py2] = canvasToPdf(bbox as any, renderMeta as any);
             const afterBox = [px1, py1, px2, py2];
             await fetch(`/api/projects/${projectId}/entities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bounding_box: afterBox }) });
@@ -1017,6 +1031,7 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         type: null,
     },
     addingScopeLocationTo: null,
+    groundingRequest: null,
     scopeEditor: {
         currentScopeId: null,
         loading: false,
@@ -1087,7 +1102,13 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
                 await st.fetchEntities();
             } else if (entry.type === 'delete_entity') {
                 const e = entry.entity;
-                const payload: any = { entity_type: e.entity_type, source_sheet_number: e.source_sheet_number, bounding_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] };
+                const payload: any = { entity_type: e.entity_type };
+                if (typeof e.source_sheet_number === 'number') {
+                    payload.source_sheet_number = e.source_sheet_number;
+                }
+                if (e.bounding_box) {
+                    payload.bounding_box = [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2];
+                }
                 if (['drawing','legend','schedule'].includes(e.entity_type)) payload.title = e.title || null;
                 if (e.entity_type === 'note') payload.text = e.text || null;
                 if (['symbol_definition','component_definition'].includes(e.entity_type)) {
@@ -1137,7 +1158,13 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         try {
             if (entry.type === 'create_entity') {
                 const e = entry.entity;
-                const payload: any = { entity_type: e.entity_type, source_sheet_number: e.source_sheet_number, bounding_box: [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2] };
+                const payload: any = { entity_type: e.entity_type };
+                if (typeof e.source_sheet_number === 'number') {
+                    payload.source_sheet_number = e.source_sheet_number;
+                }
+                if (e.bounding_box) {
+                    payload.bounding_box = [e.bounding_box.x1, e.bounding_box.y1, e.bounding_box.x2, e.bounding_box.y2];
+                }
                 if (['drawing','legend','schedule'].includes(e.entity_type)) payload.title = e.title || null;
                 if (e.entity_type === 'note') payload.text = e.text || null;
                 if (['symbol_definition','component_definition'].includes(e.entity_type)) {
@@ -1378,6 +1405,53 @@ export const useProjectStore = createWithEqualityFn<AppState>((set, get): AppSta
         } catch (e: any) {
             console.error('[removeScopeLocation] Error:', e);
             addToast({ kind: 'error', message: e?.message || 'Failed to remove scope location' });
+        }
+    },
+    startGroundingEntity: ({ id, entityType, sheetNumber = null }) => {
+        const uiType = groundingUiTypeByEntity[entityType];
+        if (!uiType) {
+            get().addToast({ kind: 'warning', message: 'Grounding not supported for this entity' });
+            return;
+        }
+        set({ groundingRequest: { id, entityType, sheetNumber, uiType } });
+        import('./ui_v2')
+            .then(({ useUIV2Store }) => {
+                const startDrawing = useUIV2Store.getState().startDrawing;
+                startDrawing(uiType);
+            })
+            .catch((err) => {
+                console.error('[startGroundingEntity] Failed to import UI V2 store:', err);
+                get().addToast({ kind: 'error', message: 'Unable to start grounding flow' });
+                set({ groundingRequest: null });
+            });
+        get().addToast({ kind: 'info', message: 'Draw a bounding box to ground this entity' });
+    },
+    clearGroundingRequest: () => set({ groundingRequest: null }),
+    applyGroundingToEntity: async (entityId: string, sheetNumber: number, bboxPdf: [number, number, number, number]) => {
+        const { projectId, addToast, fetchEntities } = get() as any;
+        if (!projectId) return;
+        try {
+            const resp = await fetch(`/api/projects/${projectId}/entities/${entityId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_sheet_number: sheetNumber,
+                    bounding_box: bboxPdf,
+                }),
+            });
+            if (!resp.ok) {
+                let msg = 'Failed to save bounding box';
+                try { const j = await resp.json(); msg = j.detail || msg; } catch {}
+                throw new Error(msg);
+            }
+            await fetchEntities();
+            addToast({ kind: 'success', message: 'Bounding box saved' });
+        } catch (e: any) {
+            console.error('[applyGroundingToEntity] Error:', e);
+            addToast({ kind: 'error', message: e?.message || 'Failed to add bounding box' });
+            throw e;
+        } finally {
+            set({ groundingRequest: null });
         }
     },
     

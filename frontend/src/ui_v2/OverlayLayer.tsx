@@ -5,7 +5,7 @@ import { BBox, BBoxVariant } from './canvas/BBox';
 import { EntityTag, EntityType as TagEntityType } from './canvas/EntityTag';
 import { ContextPicker } from './menus/ContextPicker';
 import { EntityMenu } from './menus/EntityMenu';
-import { InlineEntityForm } from './forms/InlineEntityForm';
+import { InlineEntityForm, FormVariant } from './forms/InlineEntityForm';
 import { ChipsTray } from './linking/ChipsTray';
 import type { OCRBlock } from './overlays/OCRPicker';
 import '../ui_v2/theme/tokens.css';
@@ -64,6 +64,15 @@ const TYPE_Z_ORDER: Partial<Record<Entity['entity_type'], number>> = {
   component_instance: 4,
   assembly_group: 1,  // Assembly groups render like schedules
 };
+
+const PAGE_SCOPED_TYPES: Entity['entity_type'][] = ['legend', 'schedule', 'assembly_group', 'note'];
+const PAGE_SCOPED_TYPE_SET = new Set(PAGE_SCOPED_TYPES);
+const PAGE_SCOPED_FORM_TYPES = new Set<FormVariant>([
+  'LegendForm',
+  'ScheduleForm',
+  'AssemblyGroupForm',
+  'NoteForm',
+]);
 
 function computeResizeRect(
   start: { x: number; y: number; width: number; height: number },
@@ -229,6 +238,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     setHoverScopeId,
     creatingEntity,
     cancelEntityCreation,
+    groundingRequest,
+    applyGroundingToEntity,
+    clearGroundingRequest,
+    startGroundingEntity,
   } = useProjectStore((state: any) => ({
     entities: state.entities as Entity[],
     pagesMeta: state.pagesMeta,
@@ -249,6 +262,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
     setHoverScopeId: state.setHoverScopeId,
     creatingEntity: state.creatingEntity,
     cancelEntityCreation: state.cancelEntityCreation,
+    groundingRequest: state.groundingRequest,
+    applyGroundingToEntity: state.applyGroundingToEntity,
+    clearGroundingRequest: state.clearGroundingRequest,
+    startGroundingEntity: state.startGroundingEntity,
   }));
 
   const pageEntities = useMemo<DisplayEntity[]>(() => {
@@ -340,6 +357,43 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
         value: entity.id,
       }));
   }, [entities]);
+
+  const isPageScopedEntity = inlineForm.entityType ? PAGE_SCOPED_TYPE_SET.has(inlineForm.entityType) : false;
+  const scopeState = isPageScopedEntity
+    ? inlineForm.entityHasBoundingBox
+      ? 'region'
+      : 'page'
+    : null;
+  const needsGrounding = Boolean(
+    isPageScopedEntity && inlineForm.entityValidation?.missing?.bounding_box
+  );
+  const showGroundingButton =
+    inlineForm.mode === 'edit' &&
+    Boolean(inlineForm.entityId && inlineForm.entityType && needsGrounding);
+
+  const handleRequestGrounding = useCallback(() => {
+    if (
+      !showGroundingButton ||
+      !inlineForm.entityId ||
+      !inlineForm.entityType ||
+      !startGroundingEntity
+    ) {
+      return;
+    }
+    startGroundingEntity({
+      id: inlineForm.entityId,
+      entityType: inlineForm.entityType,
+      sheetNumber: inlineForm.entitySheet ?? undefined,
+    });
+    closeForm();
+  }, [
+    closeForm,
+    inlineForm.entityId,
+    inlineForm.entitySheet,
+    inlineForm.entityType,
+    showGroundingButton,
+    startGroundingEntity,
+  ]);
 
   const selectionSyncSourceRef = useRef<'idle' | 'ui' | 'store'>('idle');
 
@@ -665,6 +719,11 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
       openForm({
         type: formType as 'Drawing' | 'Legend' | 'Schedule' | 'AssemblyGroup' | 'SymbolInst' | 'CompInst' | 'Scope' | 'Note' | 'SymbolDef' | 'CompDef',
         entityId: entity.id,
+        entityType: entity.entity_type,
+        entitySheet: (entity as any).source_sheet_number ?? null,
+        entityValidation: (entity as any).validation ?? null,
+        entityStatus: (entity as any).status ?? null,
+        entityHasBoundingBox: Boolean(entity.bounding_box),
         at: formAt,
         pendingBBox: undefined,
         initialValues,
@@ -1809,6 +1868,14 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           return;
         }
 
+        if (groundingRequest && drawing.entityType === groundingRequest.uiType) {
+          applyGroundingToEntity(groundingRequest.id, Number(sheetId), bboxPdf).catch(
+            (err: any) => console.error('[OverlayLayer] Failed to ground entity', err)
+          );
+          cancelDrawing();
+          return;
+        }
+
         // Check if we're in stamp mode (instance creation with pre-selected definition)
         const isStampMode = creatingEntity && 
                            (creatingEntity.type === 'symbol_instance' || creatingEntity.type === 'component_instance') &&
@@ -2667,6 +2734,10 @@ export function OverlayLayer({ pageIndex, scale, wrapperRef }: OverlayLayerProps
           minimized={inlineForm.minimized}
           symbolDefinitionOptions={symbolDefinitionOptions}
           componentDefinitionOptions={componentDefinitionOptions}
+          needsGrounding={inlineForm.mode === 'edit' && needsGrounding}
+          scopeState={scopeState}
+          sheetNumber={inlineForm.entitySheet ?? null}
+          onAddBoundingBox={showGroundingButton ? handleRequestGrounding : undefined}
         />,
         document.body
       )}

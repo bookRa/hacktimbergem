@@ -5,7 +5,8 @@ This is the unified path for both UI and AI-driven entity creation.
 """
 
 import uuid
-from typing import Optional
+from contextlib import nullcontext
+from typing import Optional, TYPE_CHECKING
 from app.domain.models import (
     CreateEntityUnion,
     EntityUnion,
@@ -24,10 +25,15 @@ from app.domain.models import (
     SymbolInstance,
     ComponentInstance,
     ValidationInfo,
+    PageAnchoredEntity,
+    MissingValidation,
 )
 from app.domain.services.entity_validator import EntityValidator
 from app.domain.services.spatial_analyzer import SpatialAnalyzer
 from app.repositories.entity_repository import IEntityRepository
+
+if TYPE_CHECKING:  # pragma: no cover
+    from app.telemetry import Telemetry
 
 
 class CreateEntityUseCase:
@@ -42,7 +48,8 @@ class CreateEntityUseCase:
         self,
         entity_repo: IEntityRepository,
         validator: EntityValidator,
-        spatial_analyzer: SpatialAnalyzer
+        spatial_analyzer: SpatialAnalyzer,
+        telemetry: "Telemetry | None" = None
     ):
         """
         Initialize use case.
@@ -55,6 +62,7 @@ class CreateEntityUseCase:
         self.entity_repo = entity_repo
         self.validator = validator
         self.spatial_analyzer = spatial_analyzer
+        self.telemetry = telemetry
     
     def execute(self, project_id: str, payload: CreateEntityUnion) -> EntityUnion:
         """
@@ -70,18 +78,59 @@ class CreateEntityUseCase:
         Raises:
             ValueError: If validation fails or required references don't exist
         """
-        # 1. Validate payload
-        self.validator.validate_create(payload)
-        
-        # 2. Load existing entities (for validation and auto-linking)
-        sheet_num = getattr(payload, "source_sheet_number", None)
-        existing = self.entity_repo.find_by_sheet(project_id, sheet_num) if sheet_num else []
-        
-        # 3. Build entity with ID and validated bounding box
-        entity = self._build_entity(project_id, payload, existing)
-        
-        # 4. Persist
-        return self.entity_repo.save(project_id, entity)
+        span_attributes = {
+            "project_id": project_id,
+            "entity_type": getattr(payload, "entity_type", None),
+            "sheet_number": getattr(payload, "source_sheet_number", None),
+        }
+        telemetry_ctx = (
+            self.telemetry.span("CreateEntityUseCase.execute", span_attributes)
+            if self.telemetry
+            else nullcontext()
+        )
+        with telemetry_ctx as span:
+            # 1. Validate payload
+            self.validator.validate_create(payload)
+
+            # 2. Load existing entities (for validation and auto-linking)
+            sheet_num = getattr(payload, "source_sheet_number", None)
+            existing = (
+                self.entity_repo.find_by_sheet(project_id, sheet_num)
+                if sheet_num
+                else []
+            )
+
+            # 3. Build entity with ID and validated bounding box
+            entity = self._build_entity(project_id, payload, existing)
+            entity = self._mark_missing_bbox(entity)
+
+            # 4. Persist
+            saved = self.entity_repo.save(project_id, entity)
+            if span:
+                span.set_attribute("timbergem.entity.id", saved.id)
+            return saved
+
+    def _mark_missing_bbox(self, entity: EntityUnion) -> EntityUnion:
+        """Set validation.missing.bounding_box for page-scoped entities."""
+        if not isinstance(entity, PageAnchoredEntity):
+            return entity
+        if entity.bounding_box is not None:
+            return entity
+
+        existing_validation = entity.validation
+        missing = getattr(existing_validation, "missing", None)
+        missing_payload = missing.model_dump() if missing else {}
+
+        if missing_payload.get("bounding_box"):
+            return entity
+
+        missing_payload["bounding_box"] = True
+        entity.validation = ValidationInfo(
+            missing=MissingValidation(**missing_payload)
+        )
+        if entity.status is None:
+            entity.status = "incomplete"
+        return entity
     
     def _build_entity(
         self,
@@ -286,6 +335,8 @@ class CreateEntityUseCase:
                 )
                 if drawing:
                     instantiated_in_id = drawing.id
+                else:
+                    raise ValueError("Symbol instance must be placed within a drawing on the same sheet")
             
             return SymbolInstance(
                 **base_kwargs,
@@ -314,6 +365,8 @@ class CreateEntityUseCase:
                 )
                 if drawing:
                     instantiated_in_id = drawing.id
+                else:
+                    raise ValueError("Component instance must be placed within a drawing on the same sheet")
             
             return ComponentInstance(
                 **base_kwargs,

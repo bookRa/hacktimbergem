@@ -12,11 +12,13 @@ existing entity/link use cases so that manual and automated flows stay unified.
 
 from .detect_scopes import DetectScopesUseCase
 from .detect_symbols import DetectSymbolsUseCase
+from .legend_parser import LegendParserUseCase
 from .link_contexts import LinkContextsUseCase
 
 __all__ = [
     "DetectScopesUseCase",
     "DetectSymbolsUseCase",
+    "LegendParserUseCase",
     "LinkContextsUseCase",
 ]
 

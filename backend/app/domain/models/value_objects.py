@@ -58,6 +58,7 @@ class MissingValidation(BaseModel):
     drawing: Optional[bool] = None
     definition: Optional[bool] = None
     scope: Optional[bool] = None
+    bounding_box: Optional[bool] = None
 
     class Config:
         frozen = True

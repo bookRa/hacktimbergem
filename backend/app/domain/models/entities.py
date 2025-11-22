@@ -1,8 +1,9 @@
 """Entity domain models for visual annotations on construction drawings.
 
-All entities with spatial representation must have source_sheet_number and bounding_box
-(except conceptual entities like Scope which can exist without spatial grounding).
-Bounding boxes are always stored in unrotated PDF point space.
+Most entities with spatial representation must have source_sheet_number and bounding_box.
+Page-anchored containers (legends, schedules, assembly groups, notes) may omit the
+bounding box until grounded by a human or specialized detector. Bounding boxes are always
+stored in unrotated PDF point space.
 """
 
 from __future__ import annotations
@@ -27,6 +28,12 @@ class BaseVisualEntity(BaseModel):
         orm_mode = True
 
 
+class PageAnchoredEntity(BaseVisualEntity):
+    """Base class for sheet-anchored entities that may lack a bounding box."""
+
+    bounding_box: Optional[BoundingBox] = None
+
+
 class Drawing(BaseVisualEntity):
     """Drawing viewport on a sheet."""
     entity_type: Literal["drawing"] = "drawing"
@@ -34,20 +41,20 @@ class Drawing(BaseVisualEntity):
     description: str | None = None
 
 
-class Note(BaseVisualEntity):
+class Note(PageAnchoredEntity):
     """Text note or annotation block."""
     entity_type: Literal["note"] = "note"
     text: str | None = None
 
 
-class Legend(BaseVisualEntity):
+class Legend(PageAnchoredEntity):
     """Container for keynote legend entries."""
     entity_type: Literal["legend"] = "legend"
     title: str | None = None
     notes: str | None = None
 
 
-class Schedule(BaseVisualEntity):
+class Schedule(PageAnchoredEntity):
     """Container for door/window/finish/equipment schedules."""
     entity_type: Literal["schedule"] = "schedule"
     title: str | None = None
@@ -55,7 +62,7 @@ class Schedule(BaseVisualEntity):
     notes: str | None = None
 
 
-class AssemblyGroup(BaseVisualEntity):
+class AssemblyGroup(PageAnchoredEntity):
     """Container for assembly details/callouts."""
     entity_type: Literal["assembly_group"] = "assembly_group"
     title: str | None = None
@@ -343,6 +350,21 @@ class CreateEntityBase(BaseModel):
     validation: Optional[ValidationInfo] = None
 
 
+class CreatePageAnchoredEntityBase(CreateEntityBase):
+    """Base payload for entities that can be page-scoped."""
+
+    source_sheet_number: int
+    bounding_box: Optional[List[float]] = None
+
+    @model_validator(mode="after")
+    def _validate_bbox(self):  # type: ignore
+        bbox = self.bounding_box
+        if bbox is not None:
+            if len(bbox) != 4:
+                raise ValueError("bounding_box must have exactly 4 values [x1, y1, x2, y2]")
+        return self
+
+
 class CreateDrawing(CreateEntityBase):
     entity_type: Literal["drawing"]
     source_sheet_number: int
@@ -351,10 +373,8 @@ class CreateDrawing(CreateEntityBase):
     description: str | None = None
 
 
-class CreateLegend(CreateEntityBase):
+class CreateLegend(CreatePageAnchoredEntityBase):
     entity_type: Literal["legend"]
-    source_sheet_number: int
-    bounding_box: List[float]
     title: str | None = None
     notes: str | None = None
 
@@ -385,10 +405,8 @@ class CreateLegendItem(CreateEntityBase):
         return self
 
 
-class CreateSchedule(CreateEntityBase):
+class CreateSchedule(CreatePageAnchoredEntityBase):
     entity_type: Literal["schedule"]
-    source_sheet_number: int
-    bounding_box: List[float]
     title: str | None = None
     schedule_type: str | None = None
     notes: str | None = None
@@ -422,10 +440,8 @@ class CreateScheduleItem(CreateEntityBase):
         return self
 
 
-class CreateAssemblyGroup(CreateEntityBase):
+class CreateAssemblyGroup(CreatePageAnchoredEntityBase):
     entity_type: Literal["assembly_group"]
-    source_sheet_number: int
-    bounding_box: List[float]
     title: str | None = None
     notes: str | None = None
 
@@ -459,10 +475,8 @@ class CreateAssembly(CreateEntityBase):
         return self
 
 
-class CreateNote(CreateEntityBase):
+class CreateNote(CreatePageAnchoredEntityBase):
     entity_type: Literal["note"]
-    source_sheet_number: int
-    bounding_box: List[float]
     text: str | None = None
 
 

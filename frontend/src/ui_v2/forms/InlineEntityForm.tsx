@@ -38,6 +38,10 @@ interface InlineEntityFormProps {
   onRequestDefinition?: (draft: Record<string, unknown>) => void;
   onRequestComponentDefinition?: (draft: Record<string, unknown>) => void;
   onDefinitionCreated?: (definitionId: string, definitionName: string) => void;
+  needsGrounding?: boolean;
+  scopeState?: 'page' | 'region' | null;
+  sheetNumber?: number | null;
+  onAddBoundingBox?: () => void;
 }
 
 const PlusIcon = () => (
@@ -63,6 +67,13 @@ const symbolScopeOptions = [
   { label: 'Project', value: 'project' },
 ];
 
+const pageScopedVariants = new Set<FormVariant>([
+  'LegendForm',
+  'ScheduleForm',
+  'AssemblyGroupForm',
+  'NoteForm',
+]);
+
 export function InlineEntityForm({
   variant,
   open = false,
@@ -82,9 +93,17 @@ export function InlineEntityForm({
   onRequestDefinition,
   onRequestComponentDefinition,
   onDefinitionCreated,
+  needsGrounding = false,
+  scopeState = null,
+  sheetNumber = null,
+  onAddBoundingBox,
 }: InlineEntityFormProps) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [showDefinitionForm, setShowDefinitionForm] = useState(false);
+  const showScopeBadge = Boolean(scopeState && pageScopedVariants.has(variant));
+  const showGroundingBanner = Boolean(
+    needsGrounding && showScopeBadge && typeof onAddBoundingBox === 'function'
+  );
 
   useEffect(() => {
     if (!open) {
@@ -609,6 +628,50 @@ export function InlineEntityForm({
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {showScopeBadge ? (
+            <div
+              style={{
+                padding: '8px 12px',
+                borderRadius: 'var(--tg-radius-sm)',
+                fontSize: 'var(--tg-font-xs)',
+                backgroundColor:
+                  scopeState === 'page' ? 'var(--tg-info)' : 'var(--tg-success)',
+                color:
+                  scopeState === 'page'
+                    ? 'var(--tg-info-contrast)'
+                    : 'var(--tg-success-contrast)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span>{scopeState === 'page' ? 'Page scope (needs bounding box)' : 'Region scope'}</span>
+              {sheetNumber ? <span>• Sheet {sheetNumber}</span> : null}
+            </div>
+          ) : null}
+
+          {showGroundingBanner ? (
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: 'var(--tg-radius-sm)',
+                backgroundColor: 'var(--tg-warn)',
+                color: 'var(--tg-warn-contrast)',
+                fontSize: 'var(--tg-font-xs)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>Needs grounding — add a bounding box so this entity can live on the canvas.</span>
+              <TGButton size="sm" variant="outline" onClick={onAddBoundingBox}>
+                + Add bounding box
+              </TGButton>
+            </div>
+          ) : null}
+
           {showDefinitionForm ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>

@@ -7,7 +7,7 @@ The old main.py is preserved for reference during migration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import Settings
-from app.api.routes import entities, concepts, links, projects
+from app.api.routes import entities, concepts, links, projects, ai
 
 # Initialize settings
 settings = Settings()
@@ -30,6 +30,7 @@ app.add_middleware(
 
 # Register routers
 app.include_router(projects.router)
+app.include_router(ai.router)
 app.include_router(entities.router)
 app.include_router(concepts.router)
 app.include_router(links.router)

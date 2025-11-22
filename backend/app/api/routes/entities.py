@@ -3,7 +3,7 @@
 All endpoints use use cases via dependency injection for clean separation of concerns.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Body
+from fastapi import APIRouter, HTTPException, Body, Response
 from typing import List, Optional
 from app.domain.models import EntityUnion, CreateEntityUnion
 from app.use_cases.entities.create_entity import CreateEntityUseCase
@@ -16,6 +16,7 @@ from app.api.dependencies import (
     get_delete_entity_use_case,
     get_list_entities_use_case,
     get_project_repository,
+    get_telemetry_client,
 )
 from app.repositories.project_repository import IProjectRepository
 
@@ -56,7 +57,8 @@ async def list_entities(
 @router.post("/{project_id}/entities", response_model=EntityUnion, status_code=201)
 async def create_entity(
     project_id: str,
-    body: CreateEntityUnion
+    body: CreateEntityUnion,
+    response: Response,
 ):
     """
     Create a new entity.
@@ -66,14 +68,19 @@ async def create_entity(
     """
     # Get dependencies
     project_repo = get_project_repository()
-    use_case = get_create_entity_use_case()
+    telemetry = get_telemetry_client()
+    use_case = get_create_entity_use_case(telemetry=telemetry)
     
     # Verify project exists
     if not project_repo.exists(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
     
     try:
-        return use_case.execute(project_id, body)
+        result = use_case.execute(project_id, body)
+        trace_id = telemetry.current_trace_id()
+        if trace_id:
+            response.headers["X-Trace-Id"] = trace_id
+        return result
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

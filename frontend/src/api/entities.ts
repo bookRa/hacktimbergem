@@ -22,6 +22,7 @@ export type EntityValidation = {
         drawing?: boolean;
         definition?: boolean;
         scope?: boolean;
+        bounding_box?: boolean;
     };
 } | null;
 
@@ -36,7 +37,7 @@ export interface BaseEntity extends EntityFlags {
     id: string;
     entity_type: EntityType;
     source_sheet_number: number; // 1-based sheet number
-    bounding_box: BoundingBox;
+    bounding_box: BoundingBox | null;
     created_at: number;
 }
 
@@ -115,13 +116,13 @@ export type Entity =
 
 export type CreateEntityInput =
     | ({ entity_type: 'drawing'; source_sheet_number: number; bounding_box: number[]; title?: string | null; description?: string | null } & EntityFlags)
-    | ({ entity_type: 'legend'; source_sheet_number: number; bounding_box: number[]; title?: string | null; notes?: string | null } & EntityFlags)
+    | ({ entity_type: 'legend'; source_sheet_number: number; bounding_box?: number[] | null; title?: string | null; notes?: string | null } & EntityFlags)
     | ({ entity_type: 'legend_item'; legend_id: string; symbol_text?: string | null; description?: string | null; notes?: string | null; source_sheet_number?: number | null; bounding_box?: number[] | null } & EntityFlags)
-    | ({ entity_type: 'schedule'; source_sheet_number: number; bounding_box: number[]; title?: string | null; schedule_type?: string | null; notes?: string | null } & EntityFlags)
+    | ({ entity_type: 'schedule'; source_sheet_number: number; bounding_box?: number[] | null; title?: string | null; schedule_type?: string | null; notes?: string | null } & EntityFlags)
     | ({ entity_type: 'schedule_item'; schedule_id: string; mark?: string | null; description?: string | null; notes?: string | null; specifications?: Record<string, any> | null; drawing_id?: string | null; source_sheet_number?: number | null; bounding_box?: number[] | null } & EntityFlags)
-    | ({ entity_type: 'assembly_group'; source_sheet_number: number; bounding_box: number[]; title?: string | null; notes?: string | null } & EntityFlags)
+    | ({ entity_type: 'assembly_group'; source_sheet_number: number; bounding_box?: number[] | null; title?: string | null; notes?: string | null } & EntityFlags)
     | ({ entity_type: 'assembly'; assembly_group_id: string; code?: string | null; name?: string | null; description?: string | null; notes?: string | null; specifications?: Record<string, any> | null; drawing_id?: string | null; source_sheet_number?: number | null; bounding_box?: number[] | null } & EntityFlags)
-    | ({ entity_type: 'note'; source_sheet_number: number; bounding_box: number[]; text?: string | null } & EntityFlags)
+    | ({ entity_type: 'note'; source_sheet_number: number; bounding_box?: number[] | null; text?: string | null } & EntityFlags)
     | ({ entity_type: 'scope'; source_sheet_number?: number | null; bounding_box?: number[] | null; name?: string | null; description?: string | null } & EntityFlags)
     | ({ entity_type: 'symbol_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; visual_pattern_description?: string | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)
     | ({ entity_type: 'component_definition'; source_sheet_number: number; bounding_box: number[]; name: string; description?: string | null; specifications?: Record<string, any> | null; scope?: 'project' | 'sheet'; defined_in_id?: string | null } & EntityFlags)

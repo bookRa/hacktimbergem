@@ -10,10 +10,11 @@ export function deriveEntityFlags(
   attrs: Record<string, any>,
   links?: Array<{ rel_type: string; source_id: string; target_id: string }> | null
 ): EntityFlags {
-  const missing: Record<'drawing' | 'definition' | 'scope', boolean> = {
+  const missing: Record<'drawing' | 'definition' | 'scope' | 'bounding_box', boolean> = {
     drawing: false,
     definition: false,
     scope: false,
+    bounding_box: false,
   };
 
   switch (entityType) {
@@ -61,6 +62,11 @@ export function deriveEntityFlags(
     }
     default:
       break;
+  }
+
+  const pageScoped: EntityType[] = ['legend', 'schedule', 'assembly_group', 'note'];
+  if (pageScoped.includes(entityType)) {
+    missing.bounding_box = !attrs.bounding_box;
   }
 
   type MissingFlags = NonNullable<NonNullable<EntityFlags['validation']>['missing']>;

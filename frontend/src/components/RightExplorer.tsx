@@ -263,6 +263,7 @@ const SymbolsInstances: React.FC<{ entities: any[]; hoverEntityId?: string | nul
     const drawings = entities.filter(e => e.entity_type === 'drawing');
     const grouped = inst.reduce((acc: Record<string, any[]>, e: any) => {
         const d = drawings.find((dr: any) => {
+            if (!dr.bounding_box || !e.bounding_box) return false;
             const bb = dr.bounding_box; const ib = e.bounding_box;
             return ib.x1 >= bb.x1 && ib.y1 >= bb.y1 && ib.x2 <= bb.x2 && ib.y2 <= bb.y2 && dr.source_sheet_number === e.source_sheet_number;
         });
@@ -511,7 +512,7 @@ const ComponentsDefinitions: React.FC<{ entities: any[] }> = ({ entities }) => {
                                     <button onClick={() => { selectEntity(d.id); }} style={btn(false)}>Edit</button>
                                     {d.defined_in_id && (() => {
                                         const parent = schedules.find((l: any) => l.id === d.defined_in_id);
-                                        if (!parent) return null;
+                                        if (!parent || !parent.bounding_box) return null;
                                         return (
                                             <button onClick={() => { const idx = parent.source_sheet_number - 1; if (idx !== currentPageIndex) setCurrentPageIndex(idx); setFocusBBox(idx, [parent.bounding_box.x1, parent.bounding_box.y1, parent.bounding_box.x2, parent.bounding_box.y2]); }} style={btn(false)}>Select in Schedule</button>
                                         );

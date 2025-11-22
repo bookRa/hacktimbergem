@@ -1,0 +1,14 @@
+run_name: sample_scope_detection
+project_id: 0148e57bf39b4c2ca2cd0d629168a4a0
+sheet_number: 1
+stage: scopes
+provider: deepseek_ocr
+model: layoutlmv3
+environment: local
+context_pdf: backend/projects/0148e57bf39b4c2ca2cd0d629168a4a0/original.pdf
+artifact_bucket: automation_playbooks/artifacts
+config_path: configs/sample_scope.yaml
+options:
+  confidence_threshold: 0.7
+  trace_provider: langsmith
+

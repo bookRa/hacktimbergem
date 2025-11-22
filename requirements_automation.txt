@@ -1,0 +1,3 @@
+# Shared dependencies for automation playbooks and notebooks
+PyYAML>=6.0
+

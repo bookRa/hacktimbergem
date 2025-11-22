@@ -23,6 +23,12 @@ export const EntityThumbnail: React.FC<EntityThumbnailProps> = ({ entity }) => {
     let cancelled = false;
 
     const loadThumbnail = async () => {
+      if (!entity.bounding_box) {
+        setError(true);
+        setLoading(false);
+        return;
+      }
+      const bbox = entity.bounding_box;
       if (!entity.bounding_box || !entity.source_sheet_number) {
         setError(true);
         setLoading(false);
@@ -62,7 +68,7 @@ export const EntityThumbnail: React.FC<EntityThumbnailProps> = ({ entity }) => {
         console.log('[EntityThumbnail] Rendering thumbnail:', {
           entityId: entity.id,
           pageIndex,
-          bboxPdf: [entity.bounding_box.x1, entity.bounding_box.y1, entity.bounding_box.x2, entity.bounding_box.y2],
+          bboxPdf: [bbox.x1, bbox.y1, bbox.x2, bbox.y2],
           pageWidthPts,
           pageHeightPts,
           rasterWidthPx,
@@ -76,10 +82,10 @@ export const EntityThumbnail: React.FC<EntityThumbnailProps> = ({ entity }) => {
           {
             pageImageUrl,
             bboxPdf: [
-              entity.bounding_box.x1,
-              entity.bounding_box.y1,
-              entity.bounding_box.x2,
-              entity.bounding_box.y2,
+              bbox.x1,
+              bbox.y1,
+              bbox.x2,
+              bbox.y2,
             ],
             pageWidthPts,
             pageHeightPts,

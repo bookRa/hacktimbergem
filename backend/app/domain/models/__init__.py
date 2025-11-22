@@ -13,6 +13,7 @@ from .value_objects import (
 
 from .entities import (
     BaseVisualEntity,
+    PageAnchoredEntity,
     Drawing,
     Legend,
     LegendItem,
@@ -28,6 +29,7 @@ from .entities import (
     ComponentInstance,
     EntityUnion,
     CreateEntityBase,
+    CreatePageAnchoredEntityBase,
     CreateDrawing,
     CreateLegend,
     CreateLegendItem,
@@ -67,6 +69,7 @@ __all__ = [
     "RenderMeta",
     # Entities
     "BaseVisualEntity",
+    "PageAnchoredEntity",
     "Drawing",
     "Legend",
     "LegendItem",
@@ -82,6 +85,7 @@ __all__ = [
     "ComponentInstance",
     "EntityUnion",
     "CreateEntityBase",
+    "CreatePageAnchoredEntityBase",
     "CreateDrawing",
     "CreateLegend",
     "CreateLegendItem",
